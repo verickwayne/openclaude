@@ -11,6 +11,12 @@ import {
   type AutoCompactTrackingState,
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
+import {
+  createInitialLoopDisciplineState,
+  readDisciplineLevel,
+  readInitialPhase,
+  type LoopDisciplineState,
+} from './types/loopDiscipline.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const reactiveCompact = feature('REACTIVE_COMPACT')
   ? (require('./services/compact/reactiveCompact.js') as typeof import('./services/compact/reactiveCompact.js'))
@@ -223,6 +229,10 @@ type State = {
   // Why the previous iteration continued. Undefined on first iteration.
   // Lets tests assert recovery paths fired without inspecting message contents.
   transition: Continue | undefined
+  // Loop-discipline bag. Phase A: present with safe defaults, no gates
+  // enforce until OPENCLAUDE_IN_LOOP_DISCIPLINE >= 1 and the per-pattern
+  // hooks land (Phases B-G). See docs/plans/20260606224012_in-loop-discipline.md.
+  loopDiscipline: LoopDisciplineState
 }
 
 export async function* query(
@@ -295,6 +305,10 @@ async function* queryLoop(
     continuationNudgeCount: 0,
     pendingToolUseSummary: undefined,
     transition: undefined,
+    loopDiscipline: createInitialLoopDisciplineState(
+      readDisciplineLevel(),
+      readInitialPhase(),
+    ),
   }
   const budgetTracker = feature('TOKEN_BUDGET') ? createBudgetTracker() : null
 
@@ -1191,6 +1205,7 @@ async function* queryLoop(
                 reason: 'collapse_drain_retry',
                 committed: drained.committed,
               },
+              loopDiscipline: state.loopDiscipline,
             }
             state = next
             continue
@@ -1242,6 +1257,7 @@ async function* queryLoop(
             turnCount,
             continuationNudgeCount: state.continuationNudgeCount,
             transition: { reason: 'reactive_compact_retry' },
+            loopDiscipline: state.loopDiscipline,
           }
           state = next
           continue
@@ -1298,6 +1314,7 @@ async function* queryLoop(
             turnCount,
             continuationNudgeCount: state.continuationNudgeCount,
             transition: { reason: 'max_output_tokens_escalate' },
+            loopDiscipline: state.loopDiscipline,
           }
           state = next
           continue
@@ -1330,6 +1347,7 @@ async function* queryLoop(
               reason: 'max_output_tokens_recovery',
               attempt: maxOutputTokensRecoveryCount + 1,
             },
+            loopDiscipline: state.loopDiscipline,
           }
           state = next
           continue
@@ -1385,6 +1403,7 @@ async function* queryLoop(
           turnCount,
           continuationNudgeCount: state.continuationNudgeCount,
           transition: { reason: 'stop_hook_blocking' },
+          loopDiscipline: state.loopDiscipline,
         }
         state = next
         continue
@@ -1422,6 +1441,7 @@ async function* queryLoop(
             turnCount,
             continuationNudgeCount: state.continuationNudgeCount,
             transition: { reason: 'token_budget_continuation' },
+            loopDiscipline: state.loopDiscipline,
           }
           continue
         }
@@ -1504,6 +1524,7 @@ async function* queryLoop(
               turnCount,
               continuationNudgeCount: state.continuationNudgeCount + 1,
               transition: { reason: 'continuation_nudge' },
+              loopDiscipline: state.loopDiscipline,
             }
             state = next
             continue
@@ -1943,6 +1964,7 @@ async function* queryLoop(
       maxOutputTokensOverride: undefined,
       stopHookActive,
       transition: { reason: 'next_turn' },
+      loopDiscipline: state.loopDiscipline,
     }
     state = next
   } // while (true)
