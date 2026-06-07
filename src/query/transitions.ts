@@ -20,3 +20,4 @@ export type Continue =
   | { reason: 'token_budget_continuation' }
   | { reason: 'continuation_nudge' }
   | { reason: 'next_turn' }
+  | { reason: 'completion_verification_required' }

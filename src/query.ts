@@ -15,6 +15,8 @@ import {
   applySaturationObservation,
   classifyIteration,
   createInitialLoopDisciplineState,
+  evaluateCompletionExit,
+  hadMutationsThisLoop,
   readDisciplineLevel,
   readInitialPhase,
   type LoopDisciplineState,
@@ -1542,7 +1544,43 @@ async function* queryLoop(
         }
       }
 
-      return { reason: 'completed' }
+      // Phase F: completion exit gate. At discipline level >= 2, refuse
+      // to exit with `completed` if the loop performed mutating work but
+      // the verificationLedger has no tool / hook / human source entries.
+      // The model's own "I'm done" claim does not count — only entries
+      // produced by tools the agent didn't invoke do.
+      const completionOutcome = evaluateCompletionExit(
+        state.loopDiscipline,
+        hadMutationsThisLoop(state.loopDiscipline),
+      )
+      if (completionOutcome.allowed) {
+        return { reason: 'completed' }
+      }
+      // Refused — inject a verification-required nudge and continue.
+      const verificationNudge = createUserMessage({
+        content: completionOutcome.nudge,
+        isMeta: true,
+      })
+      const verifyNext: State = {
+        messages: [
+          ...messagesForQuery,
+          ...assistantMessages,
+          verificationNudge,
+        ],
+        toolUseContext,
+        autoCompactTracking: tracking,
+        maxOutputTokensRecoveryCount: 0,
+        hasAttemptedReactiveCompact: false,
+        maxOutputTokensOverride: undefined,
+        pendingToolUseSummary: undefined,
+        stopHookActive: undefined,
+        turnCount,
+        continuationNudgeCount: state.continuationNudgeCount,
+        transition: { reason: 'completion_verification_required' },
+        loopDiscipline: state.loopDiscipline,
+      }
+      state = verifyNext
+      continue
     }
 
     let shouldPreventContinuation = false

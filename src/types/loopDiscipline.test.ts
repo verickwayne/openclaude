@@ -560,3 +560,238 @@ describe('buildPlanHandoffMessage', () => {
     expect(msg).toContain(intent)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase F — verification ledger with typed-source provenance
+// ─────────────────────────────────────────────────────────────────────
+
+import {
+  applyVerificationEntry,
+  countLedgerEntriesBySource,
+  evaluateCompletionExit,
+  hadMutationsThisLoop,
+} from './loopDiscipline.js'
+
+describe('applyVerificationEntry', () => {
+  it('appends an entry with turn + timestamp', () => {
+    const base = createInitialLoopDisciplineState(2)
+    const next = applyVerificationEntry({
+      state: base,
+      entry: {
+        claim: 'tests pass',
+        source: 'tool',
+        toolName: 'Bash',
+        evidence: 'bun test → exit 0',
+      },
+      turnCount: 5,
+      now: 1700000000,
+    })
+    expect(next.verificationLedger).toHaveLength(1)
+    expect(next.verificationLedger[0]).toEqual({
+      claim: 'tests pass',
+      source: 'tool',
+      toolName: 'Bash',
+      evidence: 'bun test → exit 0',
+      turnCount: 5,
+      timestamp: 1700000000,
+    })
+  })
+
+  it('caps the ledger at 200 entries (drops oldest)', () => {
+    let s = createInitialLoopDisciplineState(2)
+    for (let i = 1; i <= 220; i++) {
+      s = applyVerificationEntry({
+        state: s,
+        entry: { claim: `c${i}`, source: 'agent' },
+        turnCount: i,
+        now: i,
+      })
+    }
+    expect(s.verificationLedger).toHaveLength(200)
+    expect(s.verificationLedger[0].claim).toBe('c21')
+    expect(s.verificationLedger[199].claim).toBe('c220')
+  })
+})
+
+describe('countLedgerEntriesBySource', () => {
+  it('returns zeros on empty ledger', () => {
+    const c = countLedgerEntriesBySource(createInitialLoopDisciplineState(2))
+    expect(c).toEqual({ agent: 0, tool: 0, hook: 0, human: 0 })
+  })
+
+  it('classifies mixed entries', () => {
+    let s = createInitialLoopDisciplineState(2)
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'a', source: 'agent' },
+      turnCount: 1,
+      now: 0,
+    })
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'b', source: 'tool' },
+      turnCount: 2,
+      now: 0,
+    })
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'c', source: 'tool' },
+      turnCount: 3,
+      now: 0,
+    })
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'd', source: 'human' },
+      turnCount: 4,
+      now: 0,
+    })
+    expect(countLedgerEntriesBySource(s)).toEqual({
+      agent: 1,
+      tool: 2,
+      hook: 0,
+      human: 1,
+    })
+  })
+})
+
+describe('evaluateCompletionExit', () => {
+  it('is permissive at level 0 (legacy preservation)', () => {
+    const s = createInitialLoopDisciplineState(0)
+    const out = evaluateCompletionExit(s, true)
+    expect(out.allowed).toBe(true)
+    if (out.allowed) expect(out.reason).toBe('completed_legacy')
+  })
+
+  it('allows exit when no mutations happened (pure Q&A)', () => {
+    const s = createInitialLoopDisciplineState(2)
+    const out = evaluateCompletionExit(s, false)
+    expect(out.allowed).toBe(true)
+    if (out.allowed) expect(out.reason).toBe('completed_no_artifacts')
+  })
+
+  it('blocks exit at level 2 when mutations happened but no non-agent entries', () => {
+    let s = createInitialLoopDisciplineState(2)
+    // Agent claimed verification — does NOT count.
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'I verified it', source: 'agent' },
+      turnCount: 1,
+      now: 0,
+    })
+    const out = evaluateCompletionExit(s, true)
+    expect(out.allowed).toBe(false)
+    if (!out.allowed) {
+      expect(out.reason).toBe('requires_verification')
+      expect(out.nudge).toContain('COMPLETION EXIT BLOCKED')
+      expect(out.nudge).toContain('EmitVerification')
+    }
+  })
+
+  it('allows exit at level 2 when ledger has a tool entry', () => {
+    let s = createInitialLoopDisciplineState(2)
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'tests pass', source: 'tool', toolName: 'Bash' },
+      turnCount: 1,
+      now: 0,
+    })
+    const out = evaluateCompletionExit(s, true)
+    expect(out.allowed).toBe(true)
+    if (out.allowed) expect(out.reason).toBe('completed_with_verification')
+  })
+
+  it('allows exit at level 2 when human marked it verified', () => {
+    let s = createInitialLoopDisciplineState(2)
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'this is verification-free', source: 'human' },
+      turnCount: 1,
+      now: 0,
+    })
+    const out = evaluateCompletionExit(s, true)
+    expect(out.allowed).toBe(true)
+  })
+
+  it('is advisory at level 1 (always allows but tags)', () => {
+    const s = createInitialLoopDisciplineState(1)
+    const out = evaluateCompletionExit(s, true)
+    expect(out.allowed).toBe(true)
+  })
+})
+
+describe('hadMutationsThisLoop', () => {
+  it('false on a fresh state', () => {
+    expect(hadMutationsThisLoop(createInitialLoopDisciplineState(2))).toBe(
+      false,
+    )
+  })
+
+  it('true when ledger has entries', () => {
+    const s = applyVerificationEntry({
+      state: createInitialLoopDisciplineState(2),
+      entry: { claim: 'x', source: 'agent' },
+      turnCount: 1,
+      now: 0,
+    })
+    expect(hadMutationsThisLoop(s)).toBe(true)
+  })
+
+  it('true when saturation has incremented', () => {
+    const s = applySaturationObservation({
+      state: createInitialLoopDisciplineState(2),
+      kind: 'mutating-without-verification',
+      turnCount: 1,
+    })
+    expect(hadMutationsThisLoop(s)).toBe(true)
+  })
+
+  it('true when phase history visited build', () => {
+    const s = applyPhaseTransition({
+      state: createInitialLoopDisciplineState(2, 'explore'),
+      to: 'build',
+      reason: 'go',
+      turnCount: 1,
+      now: 0,
+    })
+    expect(hadMutationsThisLoop(s)).toBe(true)
+  })
+})
+
+describe('Phase F integration: applySaturationObservation auto-records ledger on verification', () => {
+  it('writes a source=\'tool\' ledger entry when verification fires', () => {
+    const base = createInitialLoopDisciplineState(2)
+    const next = applySaturationObservation({
+      state: base,
+      kind: 'verification',
+      turnCount: 5,
+      verificationEvidence: 'bun test → 78 pass / 0 fail',
+      now: 1700000000,
+    })
+    expect(next.verificationLedger).toHaveLength(1)
+    expect(next.verificationLedger[0].source).toBe('tool')
+    expect(next.verificationLedger[0].toolName).toBe('Bash')
+    expect(next.verificationLedger[0].evidence).toContain('78 pass')
+  })
+
+  it('verification entry satisfies the completion gate', () => {
+    let s = createInitialLoopDisciplineState(2)
+    // Mutation happens.
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: 1,
+    })
+    // Pre-verification: gate refuses.
+    expect(evaluateCompletionExit(s, true).allowed).toBe(false)
+    // Run tests.
+    s = applySaturationObservation({
+      state: s,
+      kind: 'verification',
+      turnCount: 2,
+      verificationEvidence: 'bun test → 0 fail',
+      now: 0,
+    })
+    // Post-verification: gate allows.
+    expect(evaluateCompletionExit(s, true).allowed).toBe(true)
+  })
+})

@@ -241,6 +241,12 @@ export function applySaturationObservation(args: {
   state: LoopDisciplineState
   kind: IterationKind
   turnCount: number
+  /** Optional context written into the ledger entry on verification turns
+   * (Phase F). Lets the query loop pass through the actual bash command
+   * that ran so the audit trail isn't generic. */
+  verificationEvidence?: string
+  /** Optional timestamp; defaults to 0 if omitted (tests pass numbers). */
+  now?: number
 }): LoopDisciplineState {
   switch (args.kind) {
     case 'external-knowledge':
@@ -249,12 +255,30 @@ export function applySaturationObservation(args: {
         saturationCount: 0,
         saturationProofTurn: args.turnCount,
       }
-    case 'verification':
-      return {
+    case 'verification': {
+      // Phase F: automatically record a source='tool' ledger entry so
+      // the completion gate has evidence without needing the model to
+      // call EmitVerification manually. The actual test runner ran and
+      // its exit code is the proof — that's what the entry attests to.
+      const intermediate = {
         ...args.state,
         saturationCount: 0,
         saturationProofTurn: null,
       }
+      return applyVerificationEntry({
+        state: intermediate,
+        entry: {
+          claim:
+            args.verificationEvidence ??
+            'verification-pattern bash command ran',
+          source: 'tool',
+          toolName: 'Bash',
+          evidence: args.verificationEvidence,
+        },
+        turnCount: args.turnCount,
+        now: args.now ?? 0,
+      })
+    }
     case 'mutating-without-verification':
       return {
         ...args.state,
@@ -525,6 +549,145 @@ export function applyPhaseTransition(args: {
     phaseHistory: [...args.state.phaseHistory, transition],
     phaseEnteredAt: args.turnCount,
   }
+}
+
+/**
+ * Append a VerificationEntry to the ledger. Pure transition. Caller
+ * assigns to state.loopDiscipline.
+ *
+ * Caps the ledger at 200 entries — older entries fall off the front.
+ * Ledger entries are not the source of truth for what was verified
+ * (the artifact itself is), they're an audit trail the loop uses to
+ * gate exit. 200 is plenty for any reasonable task.
+ */
+export function applyVerificationEntry(args: {
+  state: LoopDisciplineState
+  entry: Omit<VerificationEntry, 'turnCount' | 'timestamp'>
+  turnCount: number
+  now: number
+}): LoopDisciplineState {
+  const entry: VerificationEntry = {
+    ...args.entry,
+    turnCount: args.turnCount,
+    timestamp: args.now,
+  }
+  const next = [...args.state.verificationLedger, entry]
+  const trimmed = next.length > 200 ? next.slice(next.length - 200) : next
+  return { ...args.state, verificationLedger: trimmed }
+}
+
+/**
+ * Count ledger entries by source. Used by the completion gate to decide
+ * whether any non-agent evidence exists.
+ *
+ * `source: 'agent'` entries are claims the model made about its own work
+ * — those NEVER count as verification. Only tool / hook / human entries
+ * satisfy the gate. This is the runtime mechanism that closes the
+ * 2026-05-14 ACORD-blank-PDF failure shape: the model could write
+ * `source: 'agent'` ledger entries claiming "rendered output verified"
+ * all day and the loop would still refuse to exit.
+ */
+export function countLedgerEntriesBySource(
+  state: LoopDisciplineState,
+): Record<VerificationEntry['source'], number> {
+  const counts: Record<VerificationEntry['source'], number> = {
+    agent: 0,
+    tool: 0,
+    hook: 0,
+    human: 0,
+  }
+  for (const e of state.verificationLedger) {
+    counts[e.source] += 1
+  }
+  return counts
+}
+
+/**
+ * Result of the completion exit gate.
+ */
+export type CompletionExitOutcome =
+  | { allowed: true; reason: 'completed_with_verification' | 'completed_no_artifacts' | 'completed_legacy' }
+  | { allowed: false; reason: string; nudge: string }
+
+/**
+ * Completion exit gate (Phase F). Called from query.ts at the point
+ * where the loop would otherwise return `reason: 'completed'`. At level
+ * 0 / 1 it's permissive. At level 2 it refuses exit when the loop did
+ * mutating work without any tool / hook / human verification entries —
+ * a model "I'm done" claim by itself is not sufficient evidence.
+ *
+ * Three exit reasons:
+ *   - completed_with_verification — ledger has non-agent entries.
+ *   - completed_no_artifacts — no mutations happened (pure Q&A turn).
+ *   - completed_legacy — discipline disabled.
+ *
+ * One refuse case:
+ *   - requires_verification — mutations happened but no non-agent entry.
+ *
+ * Pessimism (OpenHands Issue #9154 — non-model-controlled fields need
+ * their own liveness check): the gate's input is the ledger AND the
+ * history of saturation observations. If the loop ran mutating
+ * iterations but the verificationLedger has no tool entries at all by
+ * exit time, that's either an honest "no verification yet" state OR a
+ * sign that the writer-hook isn't firing. The gate refuses in either
+ * case — fail closed.
+ */
+export function evaluateCompletionExit(
+  state: LoopDisciplineState,
+  hadMutationsThisLoop: boolean,
+): CompletionExitOutcome {
+  if (state.level === 0) {
+    return { allowed: true, reason: 'completed_legacy' }
+  }
+  if (!hadMutationsThisLoop) {
+    return { allowed: true, reason: 'completed_no_artifacts' }
+  }
+  const counts = countLedgerEntriesBySource(state)
+  const nonAgent = counts.tool + counts.hook + counts.human
+  if (nonAgent > 0) {
+    return { allowed: true, reason: 'completed_with_verification' }
+  }
+  if (state.level === 1) {
+    // Advisory: allow but tag.
+    return { allowed: true, reason: 'completed_with_verification' }
+  }
+  return {
+    allowed: false,
+    reason: 'requires_verification',
+    nudge: [
+      'COMPLETION EXIT BLOCKED: this loop performed mutating work',
+      `(saturationCount peak: ${state.saturationCount}) but the verification`,
+      'ledger contains no tool / hook / human entries — only the agent\'s',
+      'own claims. Before exiting, run a verification step: a test, a',
+      'render of the produced artifact, an extractor that reads the',
+      'artifact via a DIFFERENT path than the one that wrote it, or call',
+      'EmitVerification with concrete evidence. If the task is genuinely',
+      'verification-free (pure read-only research), emit a single',
+      'EmitVerification entry with source=\'human\' explaining why.',
+    ].join(' '),
+  }
+}
+
+/**
+ * Did mutating work happen this loop? Used by evaluateCompletionExit to
+ * decide whether the verification gate fires. Definition: phaseHistory
+ * mentions a non-explore phase OR ledger has any entry OR saturation
+ * counter ever incremented.
+ *
+ * Conservative — if there's any chance work happened, return true. The
+ * gate refuses on uncertainty.
+ */
+export function hadMutationsThisLoop(state: LoopDisciplineState): boolean {
+  if (state.verificationLedger.length > 0) return true
+  if (state.saturationCount > 0) return true
+  // phaseHistory tracks transitions; if anything other than the initial
+  // phase was visited, mutations are possible.
+  for (const t of state.phaseHistory) {
+    if (t.to === 'build' || t.to === 'refine' || t.to === 'verify') {
+      return true
+    }
+  }
+  return false
 }
 
 /**
