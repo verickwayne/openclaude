@@ -37,6 +37,7 @@ import { runAutoFixCheck } from '../autoFix/autoFixRunner.js'
 // Key: queryChainId (or 'default'), Value: number of auto-fix attempts used.
 const autoFixRetryCount = new Map<string, number>()
 import { isMcpTool } from '../mcp/utils.js'
+import { evaluatePhaseGate } from './loopDisciplineHooks.js'
 import type { McpServerType, MessageUpdateLazy } from './toolExecution.js'
 
 export type PostToolUseHooksResult<Output> =
@@ -529,6 +530,33 @@ export async function* runPreToolUseHooks(
   const hookStartTime = Date.now()
   try {
     const appState = toolUseContext.getAppState()
+
+    // Phase gate (Phase B of loop-discipline plan). Consults the current
+    // loop's phase and refuses tools that aren't in the phase allowlist.
+    // Runs before user-defined hooks so a phase-restricted tool gets a
+    // structured deny, not noise from other hook layers that wouldn't
+    // semantically apply (the tool was never going to execute).
+    const disciplineState = toolUseContext.getLoopDiscipline?.()
+    const phaseOutcome = evaluatePhaseGate(
+      disciplineState,
+      tool.name,
+      processedInput,
+    )
+    if (!phaseOutcome.ok) {
+      yield {
+        type: 'hookPermissionResult',
+        hookPermissionResult: {
+          behavior: 'deny',
+          message: phaseOutcome.reason,
+          decisionReason: {
+            type: 'hook',
+            hookName: `LoopDiscipline:PhaseGate:${tool.name}`,
+            reason: phaseOutcome.reason,
+          },
+        },
+      }
+      return
+    }
 
     for await (const result of executePreToolHooks(
       tool.name,

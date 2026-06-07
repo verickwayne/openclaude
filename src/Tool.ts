@@ -45,6 +45,7 @@ import type {
   PermissionMode,
   PermissionResult,
 } from './types/permissions.js'
+import type { LoopDisciplineState } from './types/loopDiscipline.js'
 // Import tool progress types from centralized location to break import cycles
 import type {
   AgentToolProgress,
@@ -245,6 +246,11 @@ export type ToolUseContext = {
   ) => void
   setConversationId?: (id: UUID) => void
   agentId?: AgentId // Only set for subagents; use getSessionId() for session ID. Hooks use this to distinguish subagent calls.
+  /** Loop-discipline accessor. Returns the current loop's phase + verification
+   * ledger + saturation counters. Set by queryLoop; undefined for callers that
+   * predate the discipline system or are running with discipline disabled.
+   * Reads through to the live state binding via closure — always fresh. */
+  getLoopDiscipline?: () => LoopDisciplineState | undefined
   agentType?: string // Subagent type name. For the main thread's --agent type, hooks fall back to getMainThreadAgentType().
   /** When true, canUseTool must always be called even when hooks auto-approve.
    *  Used by speculation for overlay file path rewriting. */

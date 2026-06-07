@@ -310,6 +310,14 @@ async function* queryLoop(
       readInitialPhase(),
     ),
   }
+  // Plumb loop-discipline access through ToolUseContext so hooks called
+  // mid-tool-dispatch can consult phase/saturation/ledger without bouncing
+  // through AppState. Closure-captures `state` by binding, so each call
+  // returns the *current* discipline bag even after `state = next` runs.
+  state.toolUseContext = {
+    ...state.toolUseContext,
+    getLoopDiscipline: () => state.loopDiscipline,
+  }
   const budgetTracker = feature('TOKEN_BUDGET') ? createBudgetTracker() : null
 
   // task_budget.remaining tracking across compaction boundaries. Undefined
