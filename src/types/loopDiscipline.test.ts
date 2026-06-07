@@ -9,6 +9,7 @@ import {
   readDisciplineLevel,
   readInitialPhase,
   TAMPER_DENY_PREFIXES,
+  type LoopDisciplineState,
 } from './loopDiscipline.js'
 
 describe('readDisciplineLevel', () => {
@@ -1126,9 +1127,11 @@ describe('Phase F integration: applySaturationObservation auto-records ledger on
 // ─────────────────────────────────────────────────────────────────────
 
 import {
+  appendDisciplineEventToFile,
   emitDisciplineEventToStderr,
   formatDisciplineEvent,
   isDisciplineDebugEnabled,
+  readDisciplineEventLogPath,
   recordDisciplineEvent,
 } from './loopDiscipline.js'
 
@@ -1260,6 +1263,158 @@ describe('isDisciplineDebugEnabled', () => {
     expect(
       isDisciplineDebugEnabled({ OPENCLAUDE_DEBUG_DISCIPLINE: 'yes' }),
     ).toBe(false)
+  })
+})
+
+describe('readDisciplineEventLogPath', () => {
+  it('returns null when env is unset (no log)', () => {
+    expect(readDisciplineEventLogPath({})).toBeNull()
+  })
+
+  it('returns the path when env points to one', () => {
+    expect(
+      readDisciplineEventLogPath({
+        OPENCLAUDE_DISCIPLINE_EVENT_LOG: '/tmp/foo.jsonl',
+      }),
+    ).toBe('/tmp/foo.jsonl')
+  })
+
+  it('trims whitespace', () => {
+    expect(
+      readDisciplineEventLogPath({
+        OPENCLAUDE_DISCIPLINE_EVENT_LOG: '  /tmp/x.jsonl  ',
+      }),
+    ).toBe('/tmp/x.jsonl')
+  })
+
+  it('returns null on an empty / whitespace-only value', () => {
+    expect(
+      readDisciplineEventLogPath({ OPENCLAUDE_DISCIPLINE_EVENT_LOG: '' }),
+    ).toBeNull()
+    expect(
+      readDisciplineEventLogPath({ OPENCLAUDE_DISCIPLINE_EVENT_LOG: '   ' }),
+    ).toBeNull()
+  })
+})
+
+describe('appendDisciplineEventToFile', () => {
+  it('writes the event as a JSON line with trailing newline', () => {
+    const writes: { path: string; data: string }[] = []
+    const out = appendDisciplineEventToFile(
+      {
+        kind: 'saturation-reset',
+        turnCount: 1,
+        phase: 'build',
+        trigger: 'verification',
+        timestamp: 0,
+      },
+      '/tmp/x.jsonl',
+      {
+        appendFileSync(path, data) {
+          writes.push({ path, data })
+        },
+      },
+    )
+    expect(out.ok).toBe(true)
+    expect(writes).toHaveLength(1)
+    expect(writes[0].path).toBe('/tmp/x.jsonl')
+    expect(writes[0].data.endsWith('\n')).toBe(true)
+    const parsed = JSON.parse(writes[0].data)
+    expect(parsed.kind).toBe('saturation-reset')
+    expect(parsed.trigger).toBe('verification')
+  })
+
+  it('returns {ok: false, error} when the write throws', () => {
+    const out = appendDisciplineEventToFile(
+      {
+        kind: 'saturation-reset',
+        turnCount: 1,
+        phase: 'build',
+        trigger: 'verification',
+        timestamp: 0,
+      },
+      '/nonexistent/dir/x.jsonl',
+      {
+        appendFileSync() {
+          throw new Error('ENOENT: no such file or directory')
+        },
+      },
+    )
+    expect(out.ok).toBe(false)
+    if (!out.ok) {
+      expect(out.error).toContain('ENOENT')
+    }
+  })
+
+  it('produces output that round-trips through JSON.parse cleanly', () => {
+    let captured = ''
+    appendDisciplineEventToFile(
+      {
+        kind: 'phase-transition',
+        turnCount: 9,
+        from: 'plan',
+        to: 'build',
+        reason: 'EmitPhaseTransition by model',
+        timestamp: 1700000000,
+      },
+      '/tmp/y.jsonl',
+      {
+        appendFileSync(_path, data) {
+          captured = data
+        },
+      },
+    )
+    const obj = JSON.parse(captured.trim())
+    expect(obj.kind).toBe('phase-transition')
+    expect(obj.from).toBe('plan')
+    expect(obj.to).toBe('build')
+    expect(obj.turnCount).toBe(9)
+    expect(obj.reason).toBe('EmitPhaseTransition by model')
+  })
+
+  it('preserves all event-kind variants without lossy projection', () => {
+    const samples: Parameters<typeof appendDisciplineEventToFile>[0][] = [
+      {
+        kind: 'gate-blocked',
+        turnCount: 1,
+        phase: 'explore',
+        gate: 'phase-restriction',
+        toolName: 'Edit',
+        reason: 'r',
+        timestamp: 0,
+      },
+      {
+        kind: 'tamper-block',
+        turnCount: 2,
+        phase: 'build',
+        targetPath: '/x/y.ts',
+        reason: 'enforcement',
+        timestamp: 0,
+      },
+      {
+        kind: 'verification-write',
+        turnCount: 3,
+        phase: 'verify',
+        entry: {
+          claim: 'c',
+          source: 'tool',
+          toolName: 'Bash',
+          turnCount: 3,
+          timestamp: 0,
+        },
+        timestamp: 0,
+      },
+    ]
+    for (const ev of samples) {
+      let captured = ''
+      appendDisciplineEventToFile(ev, '/tmp/z.jsonl', {
+        appendFileSync(_p, d) {
+          captured = d
+        },
+      })
+      const parsed = JSON.parse(captured.trim())
+      expect(parsed.kind).toBe(ev.kind)
+    }
   })
 })
 

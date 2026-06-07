@@ -12,6 +12,7 @@ import {
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
 import {
+  appendDisciplineEventToFile,
   applyPhaseTransition,
   applySaturationObservation,
   buildPlanHandoffMessage,
@@ -23,6 +24,7 @@ import {
   evaluateVerificationLiveness,
   hadMutationsThisLoop,
   isDisciplineDebugEnabled,
+  readDisciplineEventLogPath,
   readDisciplineLevel,
   readInitialPhase,
   type LoopDisciplineState,
@@ -2159,12 +2161,21 @@ async function* queryLoop(
     // OPENCLAUDE_DEBUG_DISCIPLINE=1 is set. Compare event arrays by
     // length only since events are append-only via recordDisciplineEvent
     // — a longer next array means new events were appended.
-    if (isDisciplineDebugEnabled()) {
+    const debugStderr = isDisciplineDebugEnabled()
+    const eventLogPath = readDisciplineEventLogPath()
+    if (debugStderr || eventLogPath !== null) {
       const prevEvents = state.loopDiscipline.events
       const nextEvents = nextLoopDiscipline.events
       if (nextEvents.length > prevEvents.length) {
         for (let i = prevEvents.length; i < nextEvents.length; i++) {
-          emitDisciplineEventToStderr(nextEvents[i])
+          const ev = nextEvents[i]
+          if (debugStderr) emitDisciplineEventToStderr(ev)
+          if (eventLogPath !== null) {
+            // Best-effort append. We swallow errors silently after the
+            // first one — logging "log failed" on every iteration would
+            // create the very noise this stream is supposed to clarify.
+            appendDisciplineEventToFile(ev, eventLogPath)
+          }
         }
       }
     }

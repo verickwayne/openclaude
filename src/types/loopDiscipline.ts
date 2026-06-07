@@ -934,6 +934,59 @@ export function emitDisciplineEventToStderr(
 }
 
 /**
+ * Read the path of the JSONL event log from env. When set, the query
+ * loop appends each newly-recorded DisciplineEvent as a JSON line to
+ * that file. Surfaces the event stream as a queryable post-session
+ * artifact (jq, datasette, etc.) — complements the live stderr stream.
+ * Returns null when the env var isn't set, indicating "don't log."
+ */
+export function readDisciplineEventLogPath(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const raw = env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+/**
+ * Append a single event to the JSONL event log. The line shape is the
+ * event object stringified verbatim — no projection, no field rename.
+ * Future log consumers can rely on the field set matching the
+ * DisciplineEvent TypeScript shape exactly.
+ *
+ * Writes are best-effort; any I/O error is swallowed and logged once to
+ * stderr to avoid spamming. Worst case: the operator loses some
+ * observability rows but the loop continues unaffected — same fail-soft
+ * contract as the stderr stream.
+ */
+export function appendDisciplineEventToFile(
+  event: DisciplineEvent,
+  path: string,
+  fileSystem: {
+    appendFileSync: (path: string, data: string) => void
+  } = {
+    // Lazy require to avoid pulling node:fs into bundles where it isn't
+    // available. The default branch in production resolves to fs.
+    appendFileSync(p: string, d: string): void {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('node:fs') as typeof import('node:fs')
+      fs.appendFileSync(p, d)
+    },
+  },
+): { ok: true } | { ok: false; error: string } {
+  try {
+    fileSystem.appendFileSync(path, JSON.stringify(event) + '\n')
+    return { ok: true }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+/**
  * How many turns may pass without a non-agent ledger write before the
  * liveness check fires its warning. Picked at 10 because shorter values
  * produce noise for legitimate read-heavy loops; longer values let
