@@ -14,6 +14,7 @@ import { buildPostCompactMessages } from './services/compact/compact.js'
 import {
   applyPhaseTransition,
   applySaturationObservation,
+  buildPlanHandoffMessage,
   classifyIteration,
   createInitialLoopDisciplineState,
   emitDisciplineEventToStderr,
@@ -534,8 +535,30 @@ async function* queryLoop(
       }
     }
 
+    // Phase E5 — plan handoff. When the loop is in build phase carrying a
+    // pendingPlan that was emitted in the PRECEDING plan phase, prepend
+    // the verbatim plan content to the system prompt. The model sees the
+    // exact intent / files_to_edit / smallest_test it emitted during
+    // planning — no summarization. Mitigates Aider Issue #2258 (the
+    // architect/editor context-loss tax). Fires every build-phase turn
+    // while the plan is in scope; bounded by PendingPlan's intrinsic
+    // size caps (intent 4000 / files 50 / test 2000 chars).
+    let promptWithPlan: readonly string[] = promptWithArc
+    if (
+      state.loopDiscipline.level >= 1 &&
+      state.loopDiscipline.phase === 'build' &&
+      state.loopDiscipline.pendingPlan !== null &&
+      state.loopDiscipline.pendingPlan.emittedAtTurn <
+        state.loopDiscipline.phaseEnteredAt
+    ) {
+      const handoff = buildPlanHandoffMessage(state.loopDiscipline)
+      if (handoff !== null) {
+        promptWithPlan = [...promptWithArc, handoff]
+      }
+    }
+
     const fullSystemPrompt = asSystemPrompt(
-      appendSystemContext(asSystemPrompt(promptWithArc), systemContext),
+      appendSystemContext(asSystemPrompt(promptWithPlan), systemContext),
     )
 
     queryCheckpoint('query_autocompact_start')

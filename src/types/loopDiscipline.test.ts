@@ -562,6 +562,178 @@ describe('buildPlanHandoffMessage', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────
+// Phase E5 — pre-API plan handoff (the conditions that fire injection)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Mirrors the predicate used in query.ts at the system-prompt build site.
+ * Kept in the test suite so the firing conditions are pinned and any
+ * later refactor that breaks the contract surfaces immediately.
+ */
+function shouldInjectPlanHandoff(state: LoopDisciplineState): boolean {
+  return (
+    state.level >= 1 &&
+    state.phase === 'build' &&
+    state.pendingPlan !== null &&
+    state.pendingPlan.emittedAtTurn < state.phaseEnteredAt
+  )
+}
+
+describe('Phase E5 — shouldInjectPlanHandoff predicate', () => {
+  it('returns false at level 0 (legacy preservation)', () => {
+    let s = createInitialLoopDisciplineState(0, 'build')
+    s = applyEmitPlan({
+      state: { ...s, phaseEnteredAt: 5 },
+      plan: { intent: 'x', files_to_edit: ['a'], smallest_test: 't' },
+      turnCount: 3,
+      now: 0,
+    })
+    expect(shouldInjectPlanHandoff(s)).toBe(false)
+  })
+
+  it('returns false in phases other than build', () => {
+    for (const phase of ['explore', 'plan', 'verify', 'refine'] as const) {
+      let s = createInitialLoopDisciplineState(2, phase)
+      s = applyEmitPlan({
+        state: { ...s, phaseEnteredAt: 5 },
+        plan: { intent: 'x', files_to_edit: ['a'], smallest_test: 't' },
+        turnCount: 3,
+        now: 0,
+      })
+      expect(shouldInjectPlanHandoff(s)).toBe(false)
+    }
+  })
+
+  it('returns false when no pendingPlan exists', () => {
+    const s = createInitialLoopDisciplineState(2, 'build')
+    expect(shouldInjectPlanHandoff(s)).toBe(false)
+  })
+
+  it('returns false when the plan was emitted in the current phase (would be stale plan from a re-entry)', () => {
+    // Plan emitted while phase is build means the model emitted a plan
+    // mid-edit. The plan is for a future re-plan, not the current phase
+    // execution. Don't inject.
+    let s = createInitialLoopDisciplineState(2, 'build')
+    s = applyEmitPlan({
+      state: s,
+      plan: { intent: 'x', files_to_edit: ['a'], smallest_test: 't' },
+      turnCount: s.phaseEnteredAt + 1,
+      now: 0,
+    })
+    // pendingPlan.emittedAtTurn (phaseEnteredAt + 1) > phaseEnteredAt → no inject
+    expect(shouldInjectPlanHandoff(s)).toBe(false)
+  })
+
+  it('returns true when build phase has a plan from a preceding phase', () => {
+    // Realistic sequence: model is in plan at turn 1, emits plan at turn 2,
+    // transitions to build at turn 3 (phaseEnteredAt = 3, plan.emittedAtTurn = 2).
+    let s = createInitialLoopDisciplineState(2, 'plan')
+    s = applyEmitPlan({
+      state: s,
+      plan: {
+        intent: 'Refactor auth',
+        files_to_edit: ['src/auth.ts'],
+        smallest_test: 'bun test',
+      },
+      turnCount: 2,
+      now: 0,
+    })
+    s = applyPhaseTransition({
+      state: s,
+      to: 'build',
+      reason: 'plan emitted, ready to edit',
+      turnCount: 3,
+      now: 0,
+    })
+    expect(shouldInjectPlanHandoff(s)).toBe(true)
+  })
+
+  it('keeps returning true on subsequent build turns while plan is in scope', () => {
+    // Same as above but verify the predicate stays true for multiple
+    // build turns — model sees the plan throughout build, not just on
+    // turn 1.
+    let s = createInitialLoopDisciplineState(2, 'plan')
+    s = applyEmitPlan({
+      state: s,
+      plan: { intent: 'x', files_to_edit: ['a'], smallest_test: 't' },
+      turnCount: 2,
+      now: 0,
+    })
+    s = applyPhaseTransition({
+      state: s,
+      to: 'build',
+      reason: 'go',
+      turnCount: 3,
+      now: 0,
+    })
+    expect(shouldInjectPlanHandoff(s)).toBe(true)
+    expect(shouldInjectPlanHandoff(s)).toBe(true)
+    expect(shouldInjectPlanHandoff(s)).toBe(true)
+  })
+
+  it('returns false after a re-transition to plan (plan is no longer scope-fresh)', () => {
+    // Sequence: plan → build (plan injected) → plan again. The original
+    // pendingPlan is now stale relative to the new plan phase.
+    let s = createInitialLoopDisciplineState(2, 'plan')
+    s = applyEmitPlan({
+      state: s,
+      plan: { intent: 'x', files_to_edit: ['a'], smallest_test: 't' },
+      turnCount: 2,
+      now: 0,
+    })
+    s = applyPhaseTransition({
+      state: s,
+      to: 'build',
+      reason: 'go',
+      turnCount: 3,
+      now: 0,
+    })
+    expect(shouldInjectPlanHandoff(s)).toBe(true)
+    // Back to plan — applyPhaseTransitionReset zeros the trip counter
+    // but pendingPlan persists. Now we're in plan phase, not build, so
+    // injection condition is false.
+    s = applyPhaseTransition({
+      state: s,
+      to: 'plan',
+      reason: 'reconsidering',
+      turnCount: 5,
+      now: 0,
+    })
+    expect(shouldInjectPlanHandoff(s)).toBe(false)
+  })
+
+  it('integration: buildPlanHandoffMessage returns the injection content', () => {
+    let s = createInitialLoopDisciplineState(2, 'plan')
+    s = applyEmitPlan({
+      state: s,
+      plan: {
+        intent: 'INTENT MARKER',
+        files_to_edit: ['FILE_MARKER.ts'],
+        smallest_test: 'TEST_MARKER',
+      },
+      turnCount: 2,
+      now: 0,
+    })
+    s = applyPhaseTransition({
+      state: s,
+      to: 'build',
+      reason: 'go',
+      turnCount: 3,
+      now: 0,
+    })
+    expect(shouldInjectPlanHandoff(s)).toBe(true)
+    const handoff = buildPlanHandoffMessage(s)
+    expect(handoff).not.toBeNull()
+    if (handoff) {
+      expect(handoff).toContain('INTENT MARKER')
+      expect(handoff).toContain('FILE_MARKER.ts')
+      expect(handoff).toContain('TEST_MARKER')
+      expect(handoff).toContain('plan-handoff')
+    }
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
 // Phase F — verification ledger with typed-source provenance
 // ─────────────────────────────────────────────────────────────────────
 
