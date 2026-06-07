@@ -172,21 +172,56 @@ export function readDisciplineLevel(
 }
 
 /**
- * Self-tamper guard's directory-prefix deny list. Phase C will consult this
+ * Self-tamper guard's directory-prefix deny list. Phase C consults this
  * after canonicalizing the target path. Storing here so the policy lives
  * next to the rest of the discipline types — a single source of truth that
  * downstream review tooling can inspect.
+ *
+ * The runtime match is a suffix check: a canonicalized path that ENDS WITH
+ * `/<prefix>` blocks. The suffix form intentionally avoids requiring the
+ * harness to know its own install root — wherever OpenClaude's source
+ * tree lives, `src/query.ts` is `src/query.ts`.
+ *
+ * Add Phase C's own surface (loopDisciplineHooks.ts) so the gate that
+ * guards everything else also guards itself.
  */
 export const TAMPER_DENY_PREFIXES: readonly string[] = [
   'src/services/tools/toolHooks.ts',
   'src/services/tools/toolOrchestration.ts',
   'src/services/tools/toolExecution.ts',
+  'src/services/tools/loopDisciplineHooks.ts',
   'src/query/toolFailureLoopGuard.ts',
   'src/query/stopHooks.ts',
   'src/types/loopDiscipline.ts',
   'src/types/hooks.ts',
   'src/query.ts',
 ]
+
+/** Tool names that mutate files — Phase C watches these for tamper. */
+export const TAMPER_GUARDED_TOOL_NAMES = new Set([
+  'Edit',
+  'Write',
+  'MultiEdit',
+  'NotebookEdit',
+])
+
+/**
+ * Read tamper-guard state from env. Returns false ONLY when the operator
+ * explicitly sets OPENCLAUDE_TAMPER_GUARD=off at process launch — the env
+ * read happens once per loop start so an in-loop tool call can't toggle
+ * the gate.
+ *
+ * Default is "on" whenever discipline >= 1, matching the LoopDisciplineState
+ * factory at createInitialLoopDisciplineState. Returning false at level 0
+ * (legacy/off mode) preserves the no-behavior-change contract.
+ */
+export function readTamperGuardEnabled(
+  level: DisciplineLevel,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (level === 0) return false
+  return env.OPENCLAUDE_TAMPER_GUARD !== 'off'
+}
 
 /**
  * Forward-compatibility note. Pattern #6 (multi-call consensus on

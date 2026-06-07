@@ -12,16 +12,23 @@
 // detail that matters: the model gets a structured rejection it can route
 // around (via EmitPhaseTransition once that lands in Phase E), not a fatal.
 
+import * as path from 'node:path'
 import {
   type DisciplineLevel,
   type LoopDisciplineState,
   type Phase,
   PHASE_TOOL_ALLOWLIST,
+  TAMPER_DENY_PREFIXES,
+  TAMPER_GUARDED_TOOL_NAMES,
 } from '../../types/loopDiscipline.js'
 
 export type GateOutcome =
   | { ok: true }
-  | { ok: false; reason: string; gate: 'phase-restriction' }
+  | {
+      ok: false
+      reason: string
+      gate: 'phase-restriction' | 'self-tamper'
+    }
 
 /**
  * Phase gate. Checks whether `toolName` is allowed in the current phase.
@@ -135,6 +142,88 @@ function readBashCommand(
 }
 
 /**
+ * Self-tamper guard. Blocks Edit/Write/MultiEdit/NotebookEdit on paths
+ * that resolve into OpenClaude's own enforcement code. The gate runs
+ * AFTER evaluatePhaseGate so a phase-mismatch deny isn't masked by a
+ * tamper-block when both apply.
+ *
+ * Match strategy: normalize the input path with path.resolve() (handles
+ * `../` traversal and absolute-vs-relative), then check if the resulting
+ * path ENDS WITH `/<deny-prefix>`. The suffix form avoids needing to
+ * know OpenClaude's install root at runtime.
+ *
+ * Bypass: only via OPENCLAUDE_TAMPER_GUARD=off set at process launch —
+ * caller passes the result of readTamperGuardEnabled() into `enabled`.
+ * In-loop tool calls cannot toggle this because the env read happens
+ * once at queryLoop entry, not per-tool.
+ */
+export function evaluateSelfTamperGuard(
+  state: LoopDisciplineState | undefined,
+  toolName: string,
+  toolInput: Record<string, unknown> | undefined,
+  enabled: boolean,
+): GateOutcome {
+  if (!enabled) return { ok: true }
+  if (!state) return { ok: true }
+  if (state.level === 0) return { ok: true }
+  if (!TAMPER_GUARDED_TOOL_NAMES.has(toolName)) return { ok: true }
+
+  const target = readEditTargetPath(toolInput)
+  if (!target) return { ok: true }
+
+  const normalized = path.resolve(target)
+
+  for (const prefix of TAMPER_DENY_PREFIXES) {
+    // Suffix match with a leading slash so `src/query.ts` doesn't match
+    // `extras/src/query.ts.bak` accidentally. Tail boundary is the path
+    // separator; we accept either no further chars (file is the exact
+    // target) or a trailing dot (e.g., .ts vs .tsx case) — but since the
+    // prefix already includes the extension, an exact-match endsWith is
+    // sufficient.
+    if (
+      normalized.endsWith('/' + prefix) ||
+      normalized.endsWith(path.sep + prefix.replace(/\//g, path.sep))
+    ) {
+      if (state.level === 1) return { ok: true }
+      return {
+        ok: false,
+        gate: 'self-tamper',
+        reason: formatTamperDenyReason({
+          target: normalized,
+          prefix,
+          toolName,
+        }),
+      }
+    }
+  }
+
+  return { ok: true }
+}
+
+function readEditTargetPath(
+  input: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!input) return undefined
+  for (const key of ['file_path', 'notebook_path', 'path']) {
+    const raw = input[key]
+    if (typeof raw === 'string' && raw.length > 0) return raw
+  }
+  return undefined
+}
+
+function formatTamperDenyReason(args: {
+  target: string
+  prefix: string
+  toolName: string
+}): string {
+  return [
+    `Tool '${args.toolName}' attempted to modify '${args.target}'.`,
+    `That path is loop-discipline enforcement code (matched suffix '${args.prefix}') and cannot be edited from inside the loop.`,
+    `If you need to change this file, exit the loop and edit it directly. To bypass for one process, set OPENCLAUDE_TAMPER_GUARD=off in the parent shell before launching — it cannot be toggled mid-loop.`,
+  ].join(' ')
+}
+
+/**
  * Helper for tests: assert the evaluator's contract holds for the given
  * (level, phase, tool) combo. Exported so loopDisciplineHooks.test.ts can
  * reuse the same fixtures the runtime uses.
@@ -160,5 +249,32 @@ export function _phaseGateTestProbe(args: {
     },
     args.toolName,
     args.toolInput,
+  )
+}
+
+/** Test probe for the tamper guard. */
+export function _tamperGuardTestProbe(args: {
+  level: DisciplineLevel
+  phase?: Phase
+  toolName: string
+  toolInput?: Record<string, unknown>
+  enabled?: boolean
+}): GateOutcome {
+  return evaluateSelfTamperGuard(
+    {
+      level: args.level,
+      phase: args.phase ?? 'build',
+      phaseHistory: [],
+      phaseEnteredAt: 1,
+      saturationCount: 0,
+      saturationProofTurn: null,
+      verificationLedger: [],
+      tamperGuardEnabled: args.enabled ?? args.level >= 1,
+      consensusRecords: [],
+      events: [],
+    },
+    args.toolName,
+    args.toolInput,
+    args.enabled ?? args.level >= 1,
   )
 }

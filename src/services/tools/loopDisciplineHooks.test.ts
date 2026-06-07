@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'bun:test'
 import {
   _phaseGateTestProbe,
+  _tamperGuardTestProbe,
   evaluatePhaseGate,
+  evaluateSelfTamperGuard,
 } from './loopDisciplineHooks.js'
-import { createInitialLoopDisciplineState } from '../../types/loopDiscipline.js'
+import {
+  createInitialLoopDisciplineState,
+  readTamperGuardEnabled,
+} from '../../types/loopDiscipline.js'
 
 describe('evaluatePhaseGate — level 0 (observe-only)', () => {
   it('lets every tool through regardless of phase', () => {
@@ -158,5 +163,183 @@ describe('evaluatePhaseGate — integration with the real state factory', () => 
 
     const allowed = evaluatePhaseGate(state, 'Read', { file_path: '/tmp/x' })
     expect(allowed.ok).toBe(true)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase C: self-tamper guard
+// ─────────────────────────────────────────────────────────────────────
+
+describe('readTamperGuardEnabled', () => {
+  it('returns false at level 0 regardless of env (legacy preservation)', () => {
+    expect(readTamperGuardEnabled(0, {})).toBe(false)
+    expect(
+      readTamperGuardEnabled(0, { OPENCLAUDE_TAMPER_GUARD: 'on' }),
+    ).toBe(false)
+  })
+
+  it('returns true at level 1+ when env is unset', () => {
+    expect(readTamperGuardEnabled(1, {})).toBe(true)
+    expect(readTamperGuardEnabled(2, {})).toBe(true)
+  })
+
+  it('returns false when explicitly disabled at launch', () => {
+    expect(
+      readTamperGuardEnabled(2, { OPENCLAUDE_TAMPER_GUARD: 'off' }),
+    ).toBe(false)
+  })
+
+  it('treats any other value as on (fail safe to enforcing)', () => {
+    expect(
+      readTamperGuardEnabled(2, { OPENCLAUDE_TAMPER_GUARD: 'yes' }),
+    ).toBe(true)
+    expect(
+      readTamperGuardEnabled(2, { OPENCLAUDE_TAMPER_GUARD: '0' }),
+    ).toBe(true)
+  })
+})
+
+describe('evaluateSelfTamperGuard — disabled cases', () => {
+  it('lets every Edit through at level 0', () => {
+    const out = _tamperGuardTestProbe({
+      level: 0,
+      toolName: 'Edit',
+      toolInput: { file_path: '/some/openclaude/src/query.ts' },
+    })
+    expect(out.ok).toBe(true)
+  })
+
+  it('lets every Edit through when enabled=false (env bypass)', () => {
+    const out = _tamperGuardTestProbe({
+      level: 2,
+      enabled: false,
+      toolName: 'Edit',
+      toolInput: { file_path: '/some/openclaude/src/query.ts' },
+    })
+    expect(out.ok).toBe(true)
+  })
+
+  it('lets non-mutating tools through unconditionally', () => {
+    for (const tool of ['Read', 'Grep', 'Glob', 'Bash', 'WebSearch']) {
+      const out = _tamperGuardTestProbe({
+        level: 2,
+        toolName: tool,
+        toolInput: { file_path: '/x/src/query.ts' },
+      })
+      expect(out.ok).toBe(true)
+    }
+  })
+})
+
+describe('evaluateSelfTamperGuard — protected paths', () => {
+  it('blocks Edit on a query.ts path', () => {
+    const out = _tamperGuardTestProbe({
+      level: 2,
+      toolName: 'Edit',
+      toolInput: {
+        file_path: '/Users/x/Projects/openclaude/src/query.ts',
+      },
+    })
+    expect(out.ok).toBe(false)
+    if (!out.ok) {
+      expect(out.gate).toBe('self-tamper')
+      expect(out.reason).toContain('src/query.ts')
+      expect(out.reason).toContain('OPENCLAUDE_TAMPER_GUARD=off')
+    }
+  })
+
+  it('blocks Write on toolHooks.ts (which contains the gate itself)', () => {
+    const out = _tamperGuardTestProbe({
+      level: 2,
+      toolName: 'Write',
+      toolInput: {
+        file_path: '/foo/openclaude/src/services/tools/toolHooks.ts',
+      },
+    })
+    expect(out.ok).toBe(false)
+  })
+
+  it('blocks MultiEdit on loopDiscipline.ts', () => {
+    const out = _tamperGuardTestProbe({
+      level: 2,
+      toolName: 'MultiEdit',
+      toolInput: { file_path: '/x/openclaude/src/types/loopDiscipline.ts' },
+    })
+    expect(out.ok).toBe(false)
+  })
+
+  it('blocks loopDisciplineHooks.ts itself (gate guards its own host file)', () => {
+    const out = _tamperGuardTestProbe({
+      level: 2,
+      toolName: 'Edit',
+      toolInput: {
+        file_path: '/x/src/services/tools/loopDisciplineHooks.ts',
+      },
+    })
+    expect(out.ok).toBe(false)
+  })
+
+  it('defeats ../ traversal via path.resolve canonicalization', () => {
+    const out = _tamperGuardTestProbe({
+      level: 2,
+      toolName: 'Edit',
+      toolInput: {
+        file_path: '/x/openclaude/src/foo/../services/../query.ts',
+      },
+    })
+    // Canonicalizes to /x/openclaude/src/query.ts → blocked
+    expect(out.ok).toBe(false)
+  })
+
+  it('does not block similar-looking but distinct paths', () => {
+    const out = _tamperGuardTestProbe({
+      level: 2,
+      toolName: 'Edit',
+      toolInput: { file_path: '/x/extras/src/query.ts.bak' },
+    })
+    expect(out.ok).toBe(true)
+  })
+
+  it('does not block legit edits to user-code under src/', () => {
+    const out = _tamperGuardTestProbe({
+      level: 2,
+      toolName: 'Edit',
+      toolInput: {
+        file_path: '/x/openclaude/src/components/Header.tsx',
+      },
+    })
+    expect(out.ok).toBe(true)
+  })
+})
+
+describe('evaluateSelfTamperGuard — level 1 advisory mode', () => {
+  it('does not enforce — gate is consulted but never blocks', () => {
+    const out = _tamperGuardTestProbe({
+      level: 1,
+      toolName: 'Edit',
+      toolInput: { file_path: '/x/openclaude/src/query.ts' },
+    })
+    expect(out.ok).toBe(true)
+  })
+})
+
+describe('evaluateSelfTamperGuard — input edge cases', () => {
+  it('lets undefined-input tools through', () => {
+    const out = evaluateSelfTamperGuard(
+      createInitialLoopDisciplineState(2),
+      'Edit',
+      undefined,
+      true,
+    )
+    expect(out.ok).toBe(true)
+  })
+
+  it('handles notebook_path key', () => {
+    const out = _tamperGuardTestProbe({
+      level: 2,
+      toolName: 'NotebookEdit',
+      toolInput: { notebook_path: '/x/openclaude/src/query.ts' },
+    })
+    expect(out.ok).toBe(false)
   })
 })

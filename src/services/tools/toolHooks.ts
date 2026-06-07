@@ -37,7 +37,11 @@ import { runAutoFixCheck } from '../autoFix/autoFixRunner.js'
 // Key: queryChainId (or 'default'), Value: number of auto-fix attempts used.
 const autoFixRetryCount = new Map<string, number>()
 import { isMcpTool } from '../mcp/utils.js'
-import { evaluatePhaseGate } from './loopDisciplineHooks.js'
+import {
+  evaluatePhaseGate,
+  evaluateSelfTamperGuard,
+} from './loopDisciplineHooks.js'
+import { readTamperGuardEnabled } from '../../types/loopDiscipline.js'
 import type { McpServerType, MessageUpdateLazy } from './toolExecution.js'
 
 export type PostToolUseHooksResult<Output> =
@@ -552,6 +556,36 @@ export async function* runPreToolUseHooks(
             type: 'hook',
             hookName: `LoopDiscipline:PhaseGate:${tool.name}`,
             reason: phaseOutcome.reason,
+          },
+        },
+      }
+      return
+    }
+
+    // Self-tamper guard (Phase C). Runs after phaseGate so a phase deny
+    // takes priority. Blocks Edit/Write/MultiEdit/NotebookEdit on paths
+    // that resolve into OpenClaude's enforcement code. Bypass: env var
+    // OPENCLAUDE_TAMPER_GUARD=off set at process launch — read once at
+    // queryLoop init, cached in disciplineState.tamperGuardEnabled.
+    const tamperEnabled =
+      disciplineState?.tamperGuardEnabled ??
+      readTamperGuardEnabled(disciplineState?.level ?? 0)
+    const tamperOutcome = evaluateSelfTamperGuard(
+      disciplineState,
+      tool.name,
+      processedInput,
+      tamperEnabled,
+    )
+    if (!tamperOutcome.ok) {
+      yield {
+        type: 'hookPermissionResult',
+        hookPermissionResult: {
+          behavior: 'deny',
+          message: tamperOutcome.reason,
+          decisionReason: {
+            type: 'hook',
+            hookName: `LoopDiscipline:TamperGuard:${tool.name}`,
+            reason: tamperOutcome.reason,
           },
         },
       }
