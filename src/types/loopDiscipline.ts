@@ -248,13 +248,22 @@ export function applySaturationObservation(args: {
   /** Optional timestamp; defaults to 0 if omitted (tests pass numbers). */
   now?: number
 }): LoopDisciplineState {
+  const now = args.now ?? 0
   switch (args.kind) {
-    case 'external-knowledge':
-      return {
+    case 'external-knowledge': {
+      const next = {
         ...args.state,
         saturationCount: 0,
         saturationProofTurn: args.turnCount,
       }
+      return recordDisciplineEvent(next, {
+        kind: 'saturation-reset',
+        turnCount: args.turnCount,
+        phase: next.phase,
+        trigger: 'external-knowledge',
+        timestamp: now,
+      })
+    }
     case 'verification': {
       // Phase F: automatically record a source='tool' ledger entry so
       // the completion gate has evidence without needing the model to
@@ -265,8 +274,15 @@ export function applySaturationObservation(args: {
         saturationCount: 0,
         saturationProofTurn: null,
       }
+      const withReset = recordDisciplineEvent(intermediate, {
+        kind: 'saturation-reset',
+        turnCount: args.turnCount,
+        phase: intermediate.phase,
+        trigger: 'verification',
+        timestamp: now,
+      })
       return applyVerificationEntry({
-        state: intermediate,
+        state: withReset,
         entry: {
           claim:
             args.verificationEvidence ??
@@ -276,14 +292,28 @@ export function applySaturationObservation(args: {
           evidence: args.verificationEvidence,
         },
         turnCount: args.turnCount,
-        now: args.now ?? 0,
+        now,
       })
     }
-    case 'mutating-without-verification':
-      return {
-        ...args.state,
-        saturationCount: args.state.saturationCount + 1,
+    case 'mutating-without-verification': {
+      const nextCount = args.state.saturationCount + 1
+      const next = { ...args.state, saturationCount: nextCount }
+      // Emit saturation-trip event when crossing the threshold so the
+      // observability stream shows exactly when the redirect arms.
+      if (
+        args.state.saturationCount < SATURATION_THRESHOLD &&
+        nextCount >= SATURATION_THRESHOLD
+      ) {
+        return recordDisciplineEvent(next, {
+          kind: 'saturation-trip',
+          turnCount: args.turnCount,
+          phase: next.phase,
+          consecutiveNoProgress: nextCount,
+          timestamp: now,
+        })
       }
+      return next
+    }
     case 'inert':
       return args.state
   }
@@ -543,12 +573,20 @@ export function applyPhaseTransition(args: {
     turnCount: args.turnCount,
     timestamp: args.now,
   }
-  return {
+  const next = {
     ...applyPhaseTransitionReset(args.state),
     phase: args.to,
     phaseHistory: [...args.state.phaseHistory, transition],
     phaseEnteredAt: args.turnCount,
   }
+  return recordDisciplineEvent(next, {
+    kind: 'phase-transition',
+    turnCount: args.turnCount,
+    from: args.state.phase,
+    to: args.to,
+    reason: args.reason,
+    timestamp: args.now,
+  })
 }
 
 /**
@@ -573,7 +611,14 @@ export function applyVerificationEntry(args: {
   }
   const next = [...args.state.verificationLedger, entry]
   const trimmed = next.length > 200 ? next.slice(next.length - 200) : next
-  return { ...args.state, verificationLedger: trimmed }
+  const withLedger = { ...args.state, verificationLedger: trimmed }
+  return recordDisciplineEvent(withLedger, {
+    kind: 'verification-write',
+    turnCount: args.turnCount,
+    phase: withLedger.phase,
+    entry,
+    timestamp: args.now,
+  })
 }
 
 /**
@@ -722,12 +767,78 @@ export function buildPlanHandoffMessage(
 
 /**
  * Read the current per-turn observability stream. Diagnostic helper —
- * tests and the (Phase G) --debug-discipline CLI flag consume this.
+ * tests and the --debug-discipline CLI flag consume this.
  */
 export function getDisciplineEvents(
   s: LoopDisciplineState,
 ): readonly DisciplineEvent[] {
   return s.events
+}
+
+/**
+ * Append an event to the per-loop observability stream. Caps at 1000
+ * events — older events fall off. The cap is generous because events
+ * are small (mostly bools, ints, short strings) and the stream is
+ * inspected by humans during debugging, not stored forever.
+ */
+export function recordDisciplineEvent(
+  state: LoopDisciplineState,
+  event: DisciplineEvent,
+): LoopDisciplineState {
+  const next = [...state.events, event]
+  const trimmed = next.length > 1000 ? next.slice(next.length - 1000) : next
+  return { ...state, events: trimmed }
+}
+
+/**
+ * Format a DisciplineEvent for stderr streaming. Single-line, prefixed
+ * with `discipline:` so log aggregation can grep it easily.
+ *
+ * Format chosen to match the conventions in
+ * ~/.claude/scripts/ralph-mode-enforcer.sh log output — turn:phase →
+ * event-kind details. Keeps mental model consistent between the bolt-on
+ * ralph harness and the native OpenClaude discipline.
+ */
+export function formatDisciplineEvent(e: DisciplineEvent): string {
+  switch (e.kind) {
+    case 'phase-transition':
+      return `discipline: t${e.turnCount} phase-transition ${e.from}→${e.to} (${e.reason})`
+    case 'gate-blocked':
+      return `discipline: t${e.turnCount} ${e.phase} gate-blocked tool=${e.toolName} gate=${e.gate} reason="${e.reason}"`
+    case 'saturation-trip':
+      return `discipline: t${e.turnCount} ${e.phase} saturation-trip count=${e.consecutiveNoProgress}`
+    case 'saturation-reset':
+      return `discipline: t${e.turnCount} ${e.phase} saturation-reset trigger=${e.trigger}`
+    case 'verification-write':
+      return `discipline: t${e.turnCount} ${e.phase} verification-write source=${e.entry.source} tool=${e.entry.toolName ?? 'none'} claim="${e.entry.claim.slice(0, 80)}"`
+    case 'tamper-block':
+      return `discipline: t${e.turnCount} ${e.phase} tamper-block path=${e.targetPath} reason="${e.reason}"`
+  }
+}
+
+/**
+ * Read the --debug-discipline flag state from env. The CLI plumbing
+ * sets OPENCLAUDE_DEBUG_DISCIPLINE=1 when the flag is present. Env-var
+ * fallback so the discipline observability can be enabled outside the
+ * full CLI flag pipeline (e.g. SDK consumers).
+ */
+export function isDisciplineDebugEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return env.OPENCLAUDE_DEBUG_DISCIPLINE === '1'
+}
+
+/**
+ * Write a single event to stderr in --debug-discipline format. The
+ * decision to actually emit lives at the caller — this helper just
+ * does formatting + write. Caller checks isDisciplineDebugEnabled or
+ * the equivalent CLI flag state.
+ */
+export function emitDisciplineEventToStderr(
+  event: DisciplineEvent,
+  stderr: { write: (s: string) => unknown } = process.stderr,
+): void {
+  stderr.write(formatDisciplineEvent(event) + '\n')
 }
 
 /**

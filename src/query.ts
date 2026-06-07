@@ -15,8 +15,10 @@ import {
   applySaturationObservation,
   classifyIteration,
   createInitialLoopDisciplineState,
+  emitDisciplineEventToStderr,
   evaluateCompletionExit,
   hadMutationsThisLoop,
+  isDisciplineDebugEnabled,
   readDisciplineLevel,
   readInitialPhase,
   type LoopDisciplineState,
@@ -2021,6 +2023,20 @@ async function* queryLoop(
                 .filter(c => c.length > 0),
             }),
           })
+
+    // Phase G — stream newly recorded events to stderr when
+    // OPENCLAUDE_DEBUG_DISCIPLINE=1 is set. Compare event arrays by
+    // length only since events are append-only via recordDisciplineEvent
+    // — a longer next array means new events were appended.
+    if (isDisciplineDebugEnabled()) {
+      const prevEvents = state.loopDiscipline.events
+      const nextEvents = nextLoopDiscipline.events
+      if (nextEvents.length > prevEvents.length) {
+        for (let i = prevEvents.length; i < nextEvents.length; i++) {
+          emitDisciplineEventToStderr(nextEvents[i])
+        }
+      }
+    }
 
     const next: State = {
       messages: [...messagesForQuery, ...assistantMessages, ...toolResults],

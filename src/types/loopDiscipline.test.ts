@@ -795,3 +795,239 @@ describe('Phase F integration: applySaturationObservation auto-records ledger on
     expect(evaluateCompletionExit(s, true).allowed).toBe(true)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase G — observability (DisciplineEvent emission + stderr)
+// ─────────────────────────────────────────────────────────────────────
+
+import {
+  emitDisciplineEventToStderr,
+  formatDisciplineEvent,
+  isDisciplineDebugEnabled,
+  recordDisciplineEvent,
+} from './loopDiscipline.js'
+
+describe('recordDisciplineEvent', () => {
+  it('appends an event to the stream', () => {
+    const base = createInitialLoopDisciplineState(2)
+    const next = recordDisciplineEvent(base, {
+      kind: 'phase-transition',
+      turnCount: 1,
+      from: 'build',
+      to: 'plan',
+      reason: 'test',
+      timestamp: 0,
+    })
+    expect(next.events).toHaveLength(1)
+    expect(next.events[0].kind).toBe('phase-transition')
+  })
+
+  it('caps the stream at 1000 events (drops oldest)', () => {
+    let s = createInitialLoopDisciplineState(2)
+    for (let i = 1; i <= 1100; i++) {
+      s = recordDisciplineEvent(s, {
+        kind: 'saturation-reset',
+        turnCount: i,
+        phase: 'build',
+        trigger: 'verification',
+        timestamp: i,
+      })
+    }
+    expect(s.events).toHaveLength(1000)
+    expect((s.events[0] as { turnCount: number }).turnCount).toBe(101)
+    expect((s.events[999] as { turnCount: number }).turnCount).toBe(1100)
+  })
+})
+
+describe('formatDisciplineEvent', () => {
+  it('formats phase-transition with from→to', () => {
+    expect(
+      formatDisciplineEvent({
+        kind: 'phase-transition',
+        turnCount: 7,
+        from: 'plan',
+        to: 'build',
+        reason: 'EmitPhaseTransition',
+        timestamp: 0,
+      }),
+    ).toBe('discipline: t7 phase-transition plan→build (EmitPhaseTransition)')
+  })
+
+  it('formats gate-blocked with tool + gate + reason', () => {
+    const line = formatDisciplineEvent({
+      kind: 'gate-blocked',
+      turnCount: 3,
+      phase: 'explore',
+      gate: 'phase-restriction',
+      toolName: 'Edit',
+      reason: "Tool 'Edit' is not available in phase 'explore'.",
+      timestamp: 0,
+    })
+    expect(line).toContain('t3')
+    expect(line).toContain('explore')
+    expect(line).toContain('phase-restriction')
+    expect(line).toContain('Edit')
+  })
+
+  it('formats saturation-trip with consecutive count', () => {
+    expect(
+      formatDisciplineEvent({
+        kind: 'saturation-trip',
+        turnCount: 9,
+        phase: 'build',
+        consecutiveNoProgress: 3,
+        timestamp: 0,
+      }),
+    ).toContain('count=3')
+  })
+
+  it('formats verification-write with source + tool + truncated claim', () => {
+    const line = formatDisciplineEvent({
+      kind: 'verification-write',
+      turnCount: 5,
+      phase: 'build',
+      entry: {
+        claim: 'x'.repeat(200),
+        source: 'tool',
+        toolName: 'Bash',
+        evidence: 'bun test → 0 fail',
+        turnCount: 5,
+        timestamp: 0,
+      },
+      timestamp: 0,
+    })
+    expect(line).toContain('source=tool')
+    expect(line).toContain('tool=Bash')
+    // Claim should be truncated to ≤ 80 chars after the claim=" prefix.
+    const claimSegment = line.split('claim="')[1] ?? ''
+    expect(claimSegment.length).toBeLessThan(85)
+  })
+
+  it('formats tamper-block with path', () => {
+    expect(
+      formatDisciplineEvent({
+        kind: 'tamper-block',
+        turnCount: 4,
+        phase: 'build',
+        targetPath: '/x/openclaude/src/query.ts',
+        reason: 'enforcement code',
+        timestamp: 0,
+      }),
+    ).toContain('path=/x/openclaude/src/query.ts')
+  })
+})
+
+describe('isDisciplineDebugEnabled', () => {
+  it('returns false when env is unset', () => {
+    expect(isDisciplineDebugEnabled({})).toBe(false)
+  })
+
+  it('returns true when OPENCLAUDE_DEBUG_DISCIPLINE=1', () => {
+    expect(
+      isDisciplineDebugEnabled({ OPENCLAUDE_DEBUG_DISCIPLINE: '1' }),
+    ).toBe(true)
+  })
+
+  it('returns false for any other value (only "1" enables)', () => {
+    expect(
+      isDisciplineDebugEnabled({ OPENCLAUDE_DEBUG_DISCIPLINE: 'true' }),
+    ).toBe(false)
+    expect(
+      isDisciplineDebugEnabled({ OPENCLAUDE_DEBUG_DISCIPLINE: 'yes' }),
+    ).toBe(false)
+  })
+})
+
+describe('emitDisciplineEventToStderr', () => {
+  it('writes a single newline-terminated line', () => {
+    const writes: string[] = []
+    emitDisciplineEventToStderr(
+      {
+        kind: 'saturation-trip',
+        turnCount: 1,
+        phase: 'build',
+        consecutiveNoProgress: 3,
+        timestamp: 0,
+      },
+      { write: (s: string) => writes.push(s) },
+    )
+    expect(writes).toHaveLength(1)
+    expect(writes[0].endsWith('\n')).toBe(true)
+    expect(writes[0]).toContain('saturation-trip')
+  })
+})
+
+describe('Phase G integration: apply* functions emit events', () => {
+  it('applyPhaseTransition records a phase-transition event', () => {
+    const before = createInitialLoopDisciplineState(2, 'build')
+    const after = applyPhaseTransition({
+      state: before,
+      to: 'plan',
+      reason: 'r',
+      turnCount: 1,
+      now: 0,
+    })
+    const transitions = after.events.filter(e => e.kind === 'phase-transition')
+    expect(transitions).toHaveLength(1)
+  })
+
+  it('applyVerificationEntry records a verification-write event', () => {
+    const before = createInitialLoopDisciplineState(2)
+    const after = applyVerificationEntry({
+      state: before,
+      entry: { claim: 'x', source: 'tool' },
+      turnCount: 1,
+      now: 0,
+    })
+    const writes = after.events.filter(e => e.kind === 'verification-write')
+    expect(writes).toHaveLength(1)
+  })
+
+  it('applySaturationObservation emits saturation-trip ONLY on threshold crossing', () => {
+    let s = createInitialLoopDisciplineState(2)
+    // First two mutations — no trip yet.
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: 1,
+    })
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: 2,
+    })
+    expect(s.events.filter(e => e.kind === 'saturation-trip')).toHaveLength(0)
+
+    // Third mutation crosses threshold.
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: 3,
+    })
+    expect(s.events.filter(e => e.kind === 'saturation-trip')).toHaveLength(1)
+
+    // Fourth mutation does NOT emit another trip (already armed).
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: 4,
+    })
+    expect(s.events.filter(e => e.kind === 'saturation-trip')).toHaveLength(1)
+  })
+
+  it('applySaturationObservation emits saturation-reset on verification or external-knowledge', () => {
+    let s = createInitialLoopDisciplineState(2)
+    s = applySaturationObservation({
+      state: s,
+      kind: 'verification',
+      turnCount: 1,
+    })
+    s = applySaturationObservation({
+      state: s,
+      kind: 'external-knowledge',
+      turnCount: 2,
+    })
+    const resets = s.events.filter(e => e.kind === 'saturation-reset')
+    expect(resets).toHaveLength(2)
+  })
+})
