@@ -323,6 +323,9 @@ async function* queryLoop(
   state.toolUseContext = {
     ...state.toolUseContext,
     getLoopDiscipline: () => state.loopDiscipline,
+    setLoopDiscipline: (update) => {
+      state.loopDiscipline = update(state.loopDiscipline)
+    },
   }
   const budgetTracker = feature('TOKEN_BUDGET') ? createBudgetTracker() : null
 

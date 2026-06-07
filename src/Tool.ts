@@ -251,6 +251,14 @@ export type ToolUseContext = {
    * predate the discipline system or are running with discipline disabled.
    * Reads through to the live state binding via closure — always fresh. */
   getLoopDiscipline?: () => LoopDisciplineState | undefined
+  /** Loop-discipline mutator. Used by EmitPlan / EmitPhaseTransition /
+   * EmitVerification tools (Phase E2 / F2) to record state changes that
+   * the gates and ledger then consume. The mutator must use the pure
+   * `apply*` helpers from src/types/loopDiscipline.ts — direct field
+   * writes bypass event recording and counter-reset invariants. */
+  setLoopDiscipline?: (
+    update: (prev: LoopDisciplineState) => LoopDisciplineState,
+  ) => void
   agentType?: string // Subagent type name. For the main thread's --agent type, hooks fall back to getMainThreadAgentType().
   /** When true, canUseTool must always be called even when hooks auto-approve.
    *  Used by speculation for overlay file path rewriting. */
