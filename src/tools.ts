@@ -46,6 +46,9 @@ import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool.js'
 import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool.js'
 import { TodoWriteTool } from './tools/TodoWriteTool/TodoWriteTool.js'
 import { ExitPlanModeV2Tool } from './tools/ExitPlanModeTool/ExitPlanModeV2Tool.js'
+import { EmitPlanTool } from './tools/LoopDisciplineTools/EmitPlanTool.js'
+import { EmitPhaseTransitionTool } from './tools/LoopDisciplineTools/EmitPhaseTransitionTool.js'
+import { readDisciplineLevel } from './types/loopDiscipline.js'
 import { TestingPermissionTool } from './tools/testing/TestingPermissionTool.js'
 import { GrepTool } from './tools/GrepTool/GrepTool.js'
 // Lazy require to break circular dependency: tools.ts -> TeamCreateTool/TeamDeleteTool -> ... -> tools.ts
@@ -209,6 +212,15 @@ export function getAllBaseTools(): Tools {
     ...(CtxInspectTool ? [CtxInspectTool] : []),
     ...(TerminalCaptureTool ? [TerminalCaptureTool] : []),
     LSPTool,
+    // Phase E3 — register the loop-discipline tools when
+    // OPENCLAUDE_IN_LOOP_DISCIPLINE >= 1. At level 0 (default) the
+    // tools are absent from the surface so legacy installs see zero
+    // behavior change; at level 1+ the model can call EmitPlan and
+    // EmitPhaseTransition to interact with the phase/plan machinery
+    // shipped in Phases A-G.
+    ...(readDisciplineLevel() >= 1
+      ? [EmitPlanTool, EmitPhaseTransitionTool]
+      : []),
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),
     // Use filter(Boolean) to handle case where getter might return null/undefined
     ...(getSendMessageTool() ? [getSendMessageTool()] : []),
