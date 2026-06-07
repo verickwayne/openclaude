@@ -404,6 +404,71 @@ describe('evaluateSaturationRedirect — below threshold', () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────
+// Phase G2 — event emission contract (the gate evaluators themselves
+// only return outcomes; toolHooks.ts records events on block. These
+// tests verify that the event shapes are well-formed for the runtime
+// to emit.)
+// ─────────────────────────────────────────────────────────────────────
+
+import { recordDisciplineEvent } from '../../types/loopDiscipline.js'
+
+describe('Phase G2 — gate-blocked event shape', () => {
+  it('builds a well-formed phase-restriction gate-blocked event', () => {
+    const base = createInitialLoopDisciplineState(2, 'explore')
+    const next = recordDisciplineEvent(base, {
+      kind: 'gate-blocked',
+      turnCount: 5,
+      phase: 'explore',
+      gate: 'phase-restriction',
+      toolName: 'Edit',
+      reason: 'denied',
+      timestamp: 0,
+    })
+    expect(next.events).toHaveLength(1)
+    const e = next.events[0]
+    expect(e.kind).toBe('gate-blocked')
+    if (e.kind === 'gate-blocked') {
+      expect(e.gate).toBe('phase-restriction')
+      expect(e.toolName).toBe('Edit')
+    }
+  })
+
+  it('builds a well-formed saturation-redirect gate-blocked event', () => {
+    const base = createInitialLoopDisciplineState(2)
+    const next = recordDisciplineEvent(base, {
+      kind: 'gate-blocked',
+      turnCount: 7,
+      phase: 'build',
+      gate: 'saturation-redirect',
+      toolName: 'Write',
+      reason: 'SATURATION REDIRECT: ...',
+      timestamp: 0,
+    })
+    const e = next.events[0]
+    if (e.kind === 'gate-blocked') {
+      expect(e.gate).toBe('saturation-redirect')
+    }
+  })
+
+  it('builds a well-formed tamper-block event', () => {
+    const base = createInitialLoopDisciplineState(2)
+    const next = recordDisciplineEvent(base, {
+      kind: 'tamper-block',
+      turnCount: 3,
+      phase: 'build',
+      targetPath: '/x/openclaude/src/query.ts',
+      reason: 'enforcement code',
+      timestamp: 0,
+    })
+    const e = next.events[0]
+    expect(e.kind).toBe('tamper-block')
+    if (e.kind === 'tamper-block') {
+      expect(e.targetPath).toBe('/x/openclaude/src/query.ts')
+    }
+  })
+})
+
 describe('evaluateSaturationRedirect — tripped', () => {
   it('blocks Edit at level 2 when count == threshold', () => {
     const s = stateForSaturation({

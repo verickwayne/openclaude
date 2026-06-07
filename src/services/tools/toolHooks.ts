@@ -42,7 +42,10 @@ import {
   evaluateSaturationRedirect,
   evaluateSelfTamperGuard,
 } from './loopDisciplineHooks.js'
-import { readTamperGuardEnabled } from '../../types/loopDiscipline.js'
+import {
+  readTamperGuardEnabled,
+  recordDisciplineEvent,
+} from '../../types/loopDiscipline.js'
 import type { McpServerType, MessageUpdateLazy } from './toolExecution.js'
 
 export type PostToolUseHooksResult<Output> =
@@ -548,6 +551,21 @@ export async function* runPreToolUseHooks(
       processedInput,
     )
     if (!phaseOutcome.ok) {
+      // Phase G2 — emit gate-blocked event so the observability stream
+      // captures the attempt + denial. The discipline mutator may be
+      // unavailable in legacy callers; in that case we skip the event
+      // emission but still yield the deny.
+      toolUseContext.setLoopDiscipline?.(prev =>
+        recordDisciplineEvent(prev, {
+          kind: 'gate-blocked',
+          turnCount: prev.phaseEnteredAt + 1,
+          phase: prev.phase,
+          gate: 'phase-restriction',
+          toolName: tool.name,
+          reason: phaseOutcome.reason,
+          timestamp: Date.now(),
+        }),
+      )
       yield {
         type: 'hookPermissionResult',
         hookPermissionResult: {
@@ -578,6 +596,22 @@ export async function* runPreToolUseHooks(
       tamperEnabled,
     )
     if (!tamperOutcome.ok) {
+      // Phase G2 — emit tamper-block event for the observability stream.
+      const targetPathForEvent =
+        typeof (processedInput as { file_path?: unknown }).file_path ===
+        'string'
+          ? ((processedInput as { file_path: string }).file_path)
+          : '(unknown)'
+      toolUseContext.setLoopDiscipline?.(prev =>
+        recordDisciplineEvent(prev, {
+          kind: 'tamper-block',
+          turnCount: prev.phaseEnteredAt + 1,
+          phase: prev.phase,
+          targetPath: targetPathForEvent,
+          reason: tamperOutcome.reason,
+          timestamp: Date.now(),
+        }),
+      )
       yield {
         type: 'hookPermissionResult',
         hookPermissionResult: {
@@ -604,6 +638,18 @@ export async function* runPreToolUseHooks(
       processedInput,
     )
     if (!saturationOutcome.ok) {
+      // Phase G2 — emit gate-blocked event for the saturation redirect.
+      toolUseContext.setLoopDiscipline?.(prev =>
+        recordDisciplineEvent(prev, {
+          kind: 'gate-blocked',
+          turnCount: prev.phaseEnteredAt + 1,
+          phase: prev.phase,
+          gate: 'saturation-redirect',
+          toolName: tool.name,
+          reason: saturationOutcome.reason,
+          timestamp: Date.now(),
+        }),
+      )
       yield {
         type: 'hookPermissionResult',
         hookPermissionResult: {
