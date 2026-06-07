@@ -49,6 +49,7 @@ import { ExitPlanModeV2Tool } from './tools/ExitPlanModeTool/ExitPlanModeV2Tool.
 import { EmitPlanTool } from './tools/LoopDisciplineTools/EmitPlanTool.js'
 import { EmitPhaseTransitionTool } from './tools/LoopDisciplineTools/EmitPhaseTransitionTool.js'
 import { EmitVerificationTool } from './tools/LoopDisciplineTools/EmitVerificationTool.js'
+import { GetLoopDisciplineStatusTool } from './tools/LoopDisciplineTools/GetLoopDisciplineStatusTool.js'
 import { readDisciplineLevel } from './types/loopDiscipline.js'
 import { TestingPermissionTool } from './tools/testing/TestingPermissionTool.js'
 import { GrepTool } from './tools/GrepTool/GrepTool.js'
@@ -220,7 +221,12 @@ export function getAllBaseTools(): Tools {
     // EmitPhaseTransition to interact with the phase/plan machinery
     // shipped in Phases A-G.
     ...(readDisciplineLevel() >= 1
-      ? [EmitPlanTool, EmitPhaseTransitionTool, EmitVerificationTool]
+      ? [
+          EmitPlanTool,
+          EmitPhaseTransitionTool,
+          EmitVerificationTool,
+          GetLoopDisciplineStatusTool,
+        ]
       : []),
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),
     // Use filter(Boolean) to handle case where getter might return null/undefined

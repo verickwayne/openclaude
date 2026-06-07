@@ -8,3 +8,4 @@
 export const EMIT_PLAN_TOOL_NAME = 'EmitPlan'
 export const EMIT_PHASE_TRANSITION_TOOL_NAME = 'EmitPhaseTransition'
 export const EMIT_VERIFICATION_TOOL_NAME = 'EmitVerification'
+export const GET_LOOP_DISCIPLINE_STATUS_TOOL_NAME = 'GetLoopDisciplineStatus'
