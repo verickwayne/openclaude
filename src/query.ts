@@ -22,8 +22,10 @@ import {
   evaluateCompletionExit,
   evaluateForcedPlan,
   evaluateVerificationLiveness,
+  formatDisciplineExitSummary,
   hadMutationsThisLoop,
   isDisciplineDebugEnabled,
+  isDisciplineStatusAtExitEnabled,
   readDisciplineEventLogPath,
   readDisciplineLevel,
   readInitialPhase,
@@ -1662,6 +1664,15 @@ async function* queryLoop(
         hadMutationsThisLoop(state.loopDiscipline),
       )
       if (completionOutcome.allowed) {
+        // Phase F2.b — end-of-session status summary on clean exit.
+        // Other exit paths (errors, aborts, max-turns) are debugging
+        // territory where a summary adds little; the JSONL log + the
+        // ad-hoc inspection that operators do for failures cover those.
+        if (isDisciplineStatusAtExitEnabled()) {
+          process.stderr.write(
+            formatDisciplineExitSummary(state.loopDiscipline) + '\n',
+          )
+        }
         return { reason: 'completed' }
       }
       // Refused — inject a verification-required nudge and continue.

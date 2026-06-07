@@ -947,6 +947,79 @@ export function emitDisciplineEventToStderr(
 }
 
 /**
+ * Read whether to emit a human-readable end-of-session status summary
+ * to stderr at loop exit. Bridges the live stderr stream (during) and
+ * the JSONL log (post-session) — operators who want immediate post-run
+ * feedback without grep/jq enable this.
+ */
+export function isDisciplineStatusAtExitEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return env.OPENCLAUDE_DISCIPLINE_STATUS_AT_EXIT === '1'
+}
+
+/**
+ * Render the end-of-session summary for the supplied state. Returns a
+ * multi-line human-readable string. Caller writes to stderr.
+ *
+ * Format pinned by tests so future refactors don't silently drift the
+ * output (operators may grep for specific lines in scripts).
+ */
+export function formatDisciplineExitSummary(
+  state: LoopDisciplineState,
+): string {
+  const sources = countLedgerEntriesBySource(state)
+  const kindCounts = new Map<string, number>()
+  for (const e of state.events) {
+    kindCounts.set(e.kind, (kindCounts.get(e.kind) ?? 0) + 1)
+  }
+
+  const lines: string[] = []
+  lines.push('discipline: ─── end-of-session summary ───')
+  lines.push(`discipline:   level=${state.level} final-phase=${state.phase}`)
+  lines.push(
+    `discipline:   ledger: agent=${sources.agent} tool=${sources.tool} hook=${sources.hook} human=${sources.human}`,
+  )
+  lines.push(
+    `discipline:   saturation: peak-count=${state.saturationCount} trips-this-task=${state.saturationTripsThisTask}`,
+  )
+
+  // Event kind counts. Sorted for stable output.
+  const kindEntries = Array.from(kindCounts.entries()).sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  )
+  if (kindEntries.length > 0) {
+    lines.push('discipline:   events:')
+    for (const [kind, count] of kindEntries) {
+      lines.push(`discipline:     ${kind}: ${count}`)
+    }
+  } else {
+    lines.push('discipline:   events: (none)')
+  }
+
+  // Phase transition timeline — useful for understanding the loop's
+  // arc at a glance.
+  if (state.phaseHistory.length > 0) {
+    lines.push('discipline:   phase timeline:')
+    for (const t of state.phaseHistory) {
+      lines.push(
+        `discipline:     t${t.turnCount} ${t.from}→${t.to} (${t.reason})`,
+      )
+    }
+  }
+
+  // Tail with a hint pointing to the JSONL log if it was enabled.
+  const logPath = readDisciplineEventLogPath()
+  if (logPath !== null) {
+    lines.push(
+      `discipline:   full event stream: ${logPath} (try \`jq -c '.' ${logPath}\`)`,
+    )
+  }
+  lines.push('discipline: ───')
+  return lines.join('\n')
+}
+
+/**
  * Read the path of the JSONL event log from env. When set, the query
  * loop appends each newly-recorded DisciplineEvent as a JSON line to
  * that file. Surfaces the event stream as a queryable post-session

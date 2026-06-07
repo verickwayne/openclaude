@@ -1159,7 +1159,9 @@ import {
   appendDisciplineEventToFile,
   emitDisciplineEventToStderr,
   formatDisciplineEvent,
+  formatDisciplineExitSummary,
   isDisciplineDebugEnabled,
+  isDisciplineStatusAtExitEnabled,
   readDisciplineEventLogPath,
   recordDisciplineEvent,
 } from './loopDiscipline.js'
@@ -1323,6 +1325,145 @@ describe('readDisciplineEventLogPath', () => {
     expect(
       readDisciplineEventLogPath({ OPENCLAUDE_DISCIPLINE_EVENT_LOG: '   ' }),
     ).toBeNull()
+  })
+})
+
+describe('isDisciplineStatusAtExitEnabled', () => {
+  it('returns false when env is unset', () => {
+    expect(isDisciplineStatusAtExitEnabled({})).toBe(false)
+  })
+
+  it('returns true when env is "1"', () => {
+    expect(
+      isDisciplineStatusAtExitEnabled({
+        OPENCLAUDE_DISCIPLINE_STATUS_AT_EXIT: '1',
+      }),
+    ).toBe(true)
+  })
+
+  it('only "1" enables (other values are ignored)', () => {
+    expect(
+      isDisciplineStatusAtExitEnabled({
+        OPENCLAUDE_DISCIPLINE_STATUS_AT_EXIT: 'true',
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('formatDisciplineExitSummary', () => {
+  it('produces a discipline-prefixed multi-line summary on a fresh state', () => {
+    const s = createInitialLoopDisciplineState(2, 'build')
+    const out = formatDisciplineExitSummary(s)
+    expect(out).toContain('discipline: ─── end-of-session summary ───')
+    expect(out).toContain('level=2 final-phase=build')
+    expect(out).toContain('agent=0 tool=0 hook=0 human=0')
+    expect(out).toContain('peak-count=0 trips-this-task=0')
+    expect(out).toContain('events: (none)')
+  })
+
+  it('aggregates event counts by kind in sorted order', () => {
+    let s = createInitialLoopDisciplineState(2, 'build')
+    s = recordDisciplineEvent(s, {
+      kind: 'saturation-trip',
+      turnCount: 1,
+      phase: 'build',
+      consecutiveNoProgress: 3,
+      timestamp: 0,
+    })
+    s = recordDisciplineEvent(s, {
+      kind: 'phase-transition',
+      turnCount: 2,
+      from: 'build',
+      to: 'plan',
+      reason: 'r',
+      timestamp: 0,
+    })
+    s = recordDisciplineEvent(s, {
+      kind: 'saturation-trip',
+      turnCount: 3,
+      phase: 'plan',
+      consecutiveNoProgress: 3,
+      timestamp: 0,
+    })
+    const out = formatDisciplineExitSummary(s)
+    expect(out).toContain('phase-transition: 1')
+    expect(out).toContain('saturation-trip: 2')
+    // Sorted order: phase-transition (p) before saturation-trip (s).
+    const phaseIdx = out.indexOf('phase-transition: 1')
+    const satIdx = out.indexOf('saturation-trip: 2')
+    expect(phaseIdx).toBeLessThan(satIdx)
+  })
+
+  it('renders the phase timeline when transitions exist', () => {
+    let s = createInitialLoopDisciplineState(2, 'build')
+    s = applyPhaseTransition({
+      state: s,
+      to: 'plan',
+      reason: 'reconsidering',
+      turnCount: 5,
+      now: 0,
+    })
+    const out = formatDisciplineExitSummary(s)
+    expect(out).toContain('phase timeline')
+    expect(out).toContain('t5 build→plan (reconsidering)')
+  })
+
+  it('reports ledger source counts', () => {
+    let s = createInitialLoopDisciplineState(2, 'build')
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'a', source: 'tool', toolName: 'Bash' },
+      turnCount: 1,
+      now: 0,
+    })
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'b', source: 'agent' },
+      turnCount: 2,
+      now: 0,
+    })
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'c', source: 'agent' },
+      turnCount: 3,
+      now: 0,
+    })
+    const out = formatDisciplineExitSummary(s)
+    expect(out).toContain('agent=2 tool=1 hook=0 human=0')
+  })
+
+  it('mentions the JSONL log path when one is set', () => {
+    const prev = process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
+    process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG = '/tmp/test-disc.jsonl'
+    try {
+      const out = formatDisciplineExitSummary(
+        createInitialLoopDisciplineState(2, 'build'),
+      )
+      expect(out).toContain('/tmp/test-disc.jsonl')
+      expect(out).toContain('jq')
+    } finally {
+      if (prev === undefined) {
+        delete process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
+      } else {
+        process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG = prev
+      }
+    }
+  })
+
+  it('omits the JSONL hint when no log path is set', () => {
+    const prev = process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
+    delete process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
+    try {
+      const out = formatDisciplineExitSummary(
+        createInitialLoopDisciplineState(2, 'build'),
+      )
+      expect(out).not.toContain('jq')
+      expect(out).not.toContain('full event stream')
+    } finally {
+      if (prev !== undefined) {
+        process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG = prev
+      }
+    }
   })
 })
 
