@@ -27,6 +27,13 @@ import {
   readInitialPhase,
   type LoopDisciplineState,
 } from './types/loopDiscipline.js'
+import {
+  buildMnemoHandoffMessage,
+  isMnemoAutoRecallEnabled,
+  performAutoRecall,
+  type MnemoContext,
+} from './services/mnemo/autoRecall.js'
+import { createMnemoRecallFn } from './services/mnemo/mcpBridge.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const reactiveCompact = feature('REACTIVE_COMPACT')
   ? (require('./services/compact/reactiveCompact.js') as typeof import('./services/compact/reactiveCompact.js'))
@@ -193,6 +200,35 @@ const MAX_CONTINUATION_NUDGES = 3
  *
  * Mirrors reactiveCompact.isWithheldPromptTooLong.
  */
+/**
+ * Extract the most recent user-prompt text from a Message[]. Used by
+ * the Mnemo auto-recall to seed a recall query from the user's latest
+ * intent. Walks backwards so resumed sessions use the latest prompt,
+ * not the original one. Returns empty string when no user message has
+ * usable text content.
+ */
+function extractFirstUserPromptText(messages: readonly Message[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.type !== 'user') continue
+    const content = (m as { message?: { content?: unknown } }).message?.content
+    if (typeof content === 'string') return content.trim()
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (
+          typeof block === 'object' &&
+          block !== null &&
+          (block as { type?: unknown }).type === 'text' &&
+          typeof (block as { text?: unknown }).text === 'string'
+        ) {
+          return ((block as { text: string }).text).trim()
+        }
+      }
+    }
+  }
+  return ''
+}
+
 function isWithheldMaxOutputTokens(
   msg: Message | StreamEvent | undefined,
 ): msg is AssistantMessage {
@@ -330,6 +366,33 @@ async function* queryLoop(
     setLoopDiscipline: (update) => {
       state.loopDiscipline = update(state.loopDiscipline)
     },
+  }
+
+  // Workstream 3 v2 — Mnemo auto-recall at queryLoop entry. Closes the
+  // 2026-05-14 diagnosis ("knowledge that fires automatically at decision
+  // points") at runtime. When OPENCLAUDE_MNEMO_AUTO_RECALL=1, query the
+  // Mnemo MCP server for memories relevant to the user's first prompt
+  // and stash the result for injection into the system prompt on every
+  // iteration of this loop. Best-effort — any failure (no Mnemo server
+  // reachable, transport hiccup, malformed payload) silently degrades
+  // to "no auto-recall content this session," matching pre-feature
+  // behavior.
+  let mnemoAutoRecallContext: MnemoContext | null = null
+  if (isMnemoAutoRecallEnabled()) {
+    const firstUserPrompt = extractFirstUserPromptText(state.messages)
+    if (firstUserPrompt.length > 0) {
+      const recallFn = createMnemoRecallFn(
+        state.toolUseContext.options.mcpClients ?? [],
+        state.toolUseContext.abortController.signal,
+      )
+      if (recallFn) {
+        mnemoAutoRecallContext = await performAutoRecall({
+          firstUserPrompt,
+          recall: recallFn,
+          now: Date.now(),
+        })
+      }
+    }
   }
   const budgetTracker = feature('TOKEN_BUDGET') ? createBudgetTracker() : null
 
@@ -558,8 +621,20 @@ async function* queryLoop(
       }
     }
 
+    // Workstream 3 v2 — Mnemo auto-recall injection. Appended after the
+    // plan handoff so phase-specific guidance comes first; auto-recall
+    // is broader background context. Same pattern as Phase E5: append
+    // to the prompt array, no message-side effects.
+    let promptWithMnemo: readonly string[] = promptWithPlan
+    if (mnemoAutoRecallContext !== null) {
+      const recallHandoff = buildMnemoHandoffMessage(mnemoAutoRecallContext)
+      if (recallHandoff.length > 0) {
+        promptWithMnemo = [...promptWithPlan, recallHandoff]
+      }
+    }
+
     const fullSystemPrompt = asSystemPrompt(
-      appendSystemContext(asSystemPrompt(promptWithPlan), systemContext),
+      appendSystemContext(asSystemPrompt(promptWithMnemo), systemContext),
     )
 
     queryCheckpoint('query_autocompact_start')
