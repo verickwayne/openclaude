@@ -361,6 +361,25 @@ export type ConsensusRecord = {
   timestamp: number
 }
 
+/**
+ * The plan artifact emitted by EmitPlan (Phase E). Stored on
+ * LoopDisciplineState so the gate logic can verify a recent plan exists
+ * before allowing plan → build transitions, and so the message-builder
+ * can prepend the plan verbatim into the next-turn build-phase context.
+ *
+ * Fields chosen to mirror the schema in ralph-builder.md's
+ * plan-then-edit protocol (T8) — the same intent / files / smallest-test
+ * triad that Aider's architect+editor split uses but with an explicit
+ * verbatim handoff (mitigating Aider Issue #2258 context loss).
+ */
+export type PendingPlan = {
+  intent: string
+  files_to_edit: string[]
+  smallest_test: string
+  emittedAtTurn: number
+  emittedAtTimestamp: number
+}
+
 /** Per-loop loop-discipline bag held on State. */
 export type LoopDisciplineState = {
   level: DisciplineLevel
@@ -378,6 +397,10 @@ export type LoopDisciplineState = {
    * AppState for the reactive TUI; until then they live here and are
    * available via getDisciplineEvents() for diagnostic dumps. */
   events: DisciplineEvent[]
+  /** Most recent plan emitted by EmitPlan. The plan→build phase gate
+   * (Phase E) only allows the transition if pendingPlan was emitted in
+   * the current plan-phase window. */
+  pendingPlan: PendingPlan | null
 }
 
 /** Initial-state factory used by query.ts. */
@@ -396,7 +419,142 @@ export function createInitialLoopDisciplineState(
     tamperGuardEnabled: level >= 1,
     consensusRecords: [],
     events: [],
+    pendingPlan: null,
   }
+}
+
+/**
+ * Record a plan emitted by EmitPlan. Pure transition — caller assigns to
+ * state.loopDiscipline. Trims long strings to keep the payload bounded.
+ */
+export function applyEmitPlan(args: {
+  state: LoopDisciplineState
+  plan: Omit<PendingPlan, 'emittedAtTurn' | 'emittedAtTimestamp'>
+  turnCount: number
+  now: number
+}): LoopDisciplineState {
+  return {
+    ...args.state,
+    pendingPlan: {
+      intent: args.plan.intent.slice(0, 4_000),
+      files_to_edit: args.plan.files_to_edit.slice(0, 50),
+      smallest_test: args.plan.smallest_test.slice(0, 2_000),
+      emittedAtTurn: args.turnCount,
+      emittedAtTimestamp: args.now,
+    },
+  }
+}
+
+/**
+ * Result of evaluating a phase transition request.
+ */
+export type PhaseTransitionOutcome =
+  | { allowed: true }
+  | { allowed: false; reason: string }
+
+/**
+ * Phase transition gate. Called by EmitPhaseTransition (lands in a
+ * follow-up) to decide whether the requested transition is structurally
+ * valid.
+ *
+ * Rules (Phase E):
+ *   - plan → build: requires `pendingPlan` to be non-null AND emitted in
+ *     the current plan-phase window (emittedAtTurn >= phaseEnteredAt).
+ *     This is the structural enforcement of plan-then-edit. Without a
+ *     plan in scope, the model can't escape plan phase, which forces it
+ *     to think before editing.
+ *   - any → plan: always allowed (model can re-plan).
+ *   - any → verify: always allowed.
+ *   - verify → build: always allowed.
+ *   - refine: always allowed in both directions.
+ *   - explore: always allowed.
+ *
+ * At level 0 the gate is permissive (legacy preservation).
+ */
+export function evaluatePhaseTransition(
+  state: LoopDisciplineState,
+  to: Phase,
+): PhaseTransitionOutcome {
+  if (state.level === 0) return { allowed: true }
+  if (state.phase === to) return { allowed: true }
+
+  if (state.phase === 'plan' && to === 'build') {
+    if (state.pendingPlan === null) {
+      return {
+        allowed: false,
+        reason:
+          'plan → build transition requires a plan. Call EmitPlan with { intent, files_to_edit, smallest_test } first.',
+      }
+    }
+    if (state.pendingPlan.emittedAtTurn < state.phaseEnteredAt) {
+      return {
+        allowed: false,
+        reason:
+          'plan → build transition requires a fresh plan emitted in the current plan phase. Call EmitPlan again.',
+      }
+    }
+  }
+  return { allowed: true }
+}
+
+/**
+ * Apply a phase transition. Records the change in history, resets
+ * saturation (per Phase D / OpenHands #6795), and updates phaseEnteredAt.
+ * Pure — caller assigns to state.loopDiscipline.
+ *
+ * NB: callers should evaluatePhaseTransition first and refuse on disallowed.
+ * This helper does not re-check the gate — it's the apply, not the decide.
+ */
+export function applyPhaseTransition(args: {
+  state: LoopDisciplineState
+  to: Phase
+  reason: string
+  turnCount: number
+  now: number
+}): LoopDisciplineState {
+  const transition: PhaseTransition = {
+    from: args.state.phase,
+    to: args.to,
+    reason: args.reason,
+    turnCount: args.turnCount,
+    timestamp: args.now,
+  }
+  return {
+    ...applyPhaseTransitionReset(args.state),
+    phase: args.to,
+    phaseHistory: [...args.state.phaseHistory, transition],
+    phaseEnteredAt: args.turnCount,
+  }
+}
+
+/**
+ * Build the verbatim plan handoff for the next-turn build-phase context.
+ * The plan payload is reproduced exactly as emitted — NOT summarized —
+ * to mitigate Aider Issue #2258 (architect/editor context-loss tax). If
+ * pendingPlan is null this returns null and callers should skip the
+ * injection.
+ */
+export function buildPlanHandoffMessage(
+  state: LoopDisciplineState,
+): string | null {
+  if (state.pendingPlan === null) return null
+  const p = state.pendingPlan
+  return [
+    '<plan-handoff>',
+    `Plan emitted at turn ${p.emittedAtTurn}, you are now in build phase.`,
+    '',
+    'Intent:',
+    p.intent,
+    '',
+    'Files to edit (in order):',
+    ...p.files_to_edit.map(f => `  - ${f}`),
+    '',
+    'Smallest test that proves the change works:',
+    p.smallest_test,
+    '',
+    'Build the plan above. Edit the listed files. After edits, run the smallest test. Do not expand scope beyond this plan — if you discover the plan was wrong, transition back to plan phase and emit a new one.',
+    '</plan-handoff>',
+  ].join('\n')
 }
 
 /**

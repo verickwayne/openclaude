@@ -334,3 +334,229 @@ describe('SATURATION_PROOF_TOOL_NAMES', () => {
     expect(SATURATION_PROOF_TOOL_NAMES.has('Read')).toBe(false)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase E — plan-then-edit native phases
+// ─────────────────────────────────────────────────────────────────────
+
+import {
+  applyEmitPlan,
+  applyPhaseTransition,
+  buildPlanHandoffMessage,
+  evaluatePhaseTransition,
+} from './loopDiscipline.js'
+
+describe('applyEmitPlan', () => {
+  it('records the plan on disciplineState with turn + timestamp', () => {
+    const base = createInitialLoopDisciplineState(2, 'plan')
+    const next = applyEmitPlan({
+      state: base,
+      plan: {
+        intent: 'Refactor parser to support unicode',
+        files_to_edit: ['src/parser.ts', 'src/lexer.ts'],
+        smallest_test: 'bun test src/parser.test.ts',
+      },
+      turnCount: 7,
+      now: 1700000000,
+    })
+    expect(next.pendingPlan).not.toBeNull()
+    if (next.pendingPlan) {
+      expect(next.pendingPlan.intent).toBe('Refactor parser to support unicode')
+      expect(next.pendingPlan.files_to_edit).toEqual([
+        'src/parser.ts',
+        'src/lexer.ts',
+      ])
+      expect(next.pendingPlan.emittedAtTurn).toBe(7)
+      expect(next.pendingPlan.emittedAtTimestamp).toBe(1700000000)
+    }
+  })
+
+  it('trims oversized intent / files / test inputs', () => {
+    const base = createInitialLoopDisciplineState(2)
+    const huge = 'x'.repeat(10_000)
+    const lots = Array.from({ length: 200 }, (_, i) => `f${i}.ts`)
+    const next = applyEmitPlan({
+      state: base,
+      plan: {
+        intent: huge,
+        files_to_edit: lots,
+        smallest_test: huge,
+      },
+      turnCount: 1,
+      now: 0,
+    })
+    expect(next.pendingPlan?.intent.length).toBe(4_000)
+    expect(next.pendingPlan?.files_to_edit.length).toBe(50)
+    expect(next.pendingPlan?.smallest_test.length).toBe(2_000)
+  })
+})
+
+describe('evaluatePhaseTransition — plan → build gate', () => {
+  it('allows plan → build when pendingPlan is fresh', () => {
+    const s = applyEmitPlan({
+      state: createInitialLoopDisciplineState(2, 'plan'),
+      plan: {
+        intent: 'do thing',
+        files_to_edit: ['a.ts'],
+        smallest_test: 'bun test',
+      },
+      turnCount: 3,
+      now: 0,
+    })
+    const out = evaluatePhaseTransition(s, 'build')
+    expect(out.allowed).toBe(true)
+  })
+
+  it('blocks plan → build when no plan was emitted', () => {
+    const s = createInitialLoopDisciplineState(2, 'plan')
+    const out = evaluatePhaseTransition(s, 'build')
+    expect(out.allowed).toBe(false)
+    if (!out.allowed) {
+      expect(out.reason).toContain('EmitPlan')
+    }
+  })
+
+  it('blocks plan → build when the plan is stale (emitted before phase entry)', () => {
+    // Plan emitted at turn 2, then re-entered plan phase at turn 7 — plan is stale.
+    const planned = applyEmitPlan({
+      state: createInitialLoopDisciplineState(2, 'plan'),
+      plan: {
+        intent: 'old',
+        files_to_edit: ['a.ts'],
+        smallest_test: 't',
+      },
+      turnCount: 2,
+      now: 0,
+    })
+    const reentered = { ...planned, phaseEnteredAt: 7 }
+    const out = evaluatePhaseTransition(reentered, 'build')
+    expect(out.allowed).toBe(false)
+    if (!out.allowed) {
+      expect(out.reason).toContain('fresh plan')
+    }
+  })
+
+  it('allows any → plan freely (model can always re-plan)', () => {
+    const s = createInitialLoopDisciplineState(2, 'build')
+    expect(evaluatePhaseTransition(s, 'plan').allowed).toBe(true)
+  })
+
+  it('allows any → verify freely', () => {
+    const s = createInitialLoopDisciplineState(2, 'build')
+    expect(evaluatePhaseTransition(s, 'verify').allowed).toBe(true)
+  })
+
+  it('is permissive at level 0 (legacy preservation)', () => {
+    const s = createInitialLoopDisciplineState(0, 'plan')
+    expect(evaluatePhaseTransition(s, 'build').allowed).toBe(true)
+  })
+
+  it('is a no-op for self-transitions', () => {
+    const s = createInitialLoopDisciplineState(2, 'build')
+    expect(evaluatePhaseTransition(s, 'build').allowed).toBe(true)
+  })
+})
+
+describe('applyPhaseTransition', () => {
+  it('records the transition in history', () => {
+    const before = createInitialLoopDisciplineState(2, 'build')
+    const after = applyPhaseTransition({
+      state: before,
+      to: 'plan',
+      reason: 'forced by saturation',
+      turnCount: 9,
+      now: 1700000000,
+    })
+    expect(after.phase).toBe('plan')
+    expect(after.phaseHistory).toHaveLength(1)
+    expect(after.phaseHistory[0]).toEqual({
+      from: 'build',
+      to: 'plan',
+      reason: 'forced by saturation',
+      turnCount: 9,
+      timestamp: 1700000000,
+    })
+    expect(after.phaseEnteredAt).toBe(9)
+  })
+
+  it('resets saturation counters on transition (idempotency)', () => {
+    const tripped = {
+      ...createInitialLoopDisciplineState(2, 'build'),
+      saturationCount: 7,
+      saturationProofTurn: 5,
+    }
+    const after = applyPhaseTransition({
+      state: tripped,
+      to: 'plan',
+      reason: 'redirect',
+      turnCount: 9,
+      now: 0,
+    })
+    expect(after.saturationCount).toBe(0)
+    expect(after.saturationProofTurn).toBeNull()
+  })
+
+  it('appends transitions chronologically', () => {
+    let s = createInitialLoopDisciplineState(2, 'build')
+    s = applyPhaseTransition({
+      state: s,
+      to: 'plan',
+      reason: 'r1',
+      turnCount: 1,
+      now: 1,
+    })
+    s = applyPhaseTransition({
+      state: s,
+      to: 'build',
+      reason: 'r2',
+      turnCount: 2,
+      now: 2,
+    })
+    expect(s.phaseHistory.map(t => t.to)).toEqual(['plan', 'build'])
+  })
+})
+
+describe('buildPlanHandoffMessage', () => {
+  it('returns null when no plan exists', () => {
+    const s = createInitialLoopDisciplineState(2)
+    expect(buildPlanHandoffMessage(s)).toBeNull()
+  })
+
+  it('reproduces the plan VERBATIM (Aider #2258 mitigation)', () => {
+    const s = applyEmitPlan({
+      state: createInitialLoopDisciplineState(2, 'plan'),
+      plan: {
+        intent: 'EXACT INTENT STRING',
+        files_to_edit: ['src/a.ts', 'src/b.ts'],
+        smallest_test: 'pytest tests/test_foo.py::test_bar',
+      },
+      turnCount: 3,
+      now: 0,
+    })
+    const msg = buildPlanHandoffMessage(s)
+    expect(msg).not.toBeNull()
+    if (msg) {
+      expect(msg).toContain('EXACT INTENT STRING')
+      expect(msg).toContain('src/a.ts')
+      expect(msg).toContain('src/b.ts')
+      expect(msg).toContain('pytest tests/test_foo.py::test_bar')
+      expect(msg).toContain('plan-handoff')
+    }
+  })
+
+  it('does not summarize or otherwise transform the plan content', () => {
+    const intent = 'A very specific instruction with details that matter for correctness — including exact column names and table prefixes.'
+    const s = applyEmitPlan({
+      state: createInitialLoopDisciplineState(2, 'plan'),
+      plan: {
+        intent,
+        files_to_edit: ['x.ts'],
+        smallest_test: 'bun test',
+      },
+      turnCount: 1,
+      now: 0,
+    })
+    const msg = buildPlanHandoffMessage(s)
+    expect(msg).toContain(intent)
+  })
+})
