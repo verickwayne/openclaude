@@ -912,6 +912,75 @@ export function emitDisciplineEventToStderr(
 }
 
 /**
+ * How many turns may pass without a non-agent ledger write before the
+ * liveness check fires its warning. Picked at 10 because shorter values
+ * produce noise for legitimate read-heavy loops; longer values let
+ * silent-failure modes (the OpenHands Issue #9154 shape) accumulate
+ * before surfacing.
+ */
+export const VERIFICATION_LIVENESS_WINDOW = 10
+
+/**
+ * Liveness check (Phase F2 — OpenHands Issue #9154 mitigation).
+ *
+ * At level >= 2, if mutating work has been happening in this loop but no
+ * non-agent ledger write has occurred in the last
+ * VERIFICATION_LIVENESS_WINDOW turns, return a warning string. The
+ * scenario: the auto-ledger writer (Phase F's applySaturationObservation
+ * verification branch) or any future hook-based ledger writer is silently
+ * not firing, so the completion gate looks "armed" but isn't actually
+ * receiving evidence.
+ *
+ * Returns null when no warning should fire. Returns the warning string
+ * (already prefixed with the discipline: token) when it should. Caller
+ * writes to stderr; this helper has no side effects.
+ */
+export function evaluateVerificationLiveness(args: {
+  state: LoopDisciplineState
+  turnCount: number
+}): string | null {
+  if (args.state.level < 2) return null
+  if (!hadMutationsThisLoop(args.state)) return null
+
+  // Find the most recent non-agent ledger entry.
+  let lastNonAgentTurn: number | null = null
+  for (let i = args.state.verificationLedger.length - 1; i >= 0; i--) {
+    const e = args.state.verificationLedger[i]
+    if (e.source !== 'agent') {
+      lastNonAgentTurn = e.turnCount
+      break
+    }
+  }
+
+  if (lastNonAgentTurn === null) {
+    // Never received non-agent evidence. The window starts from when
+    // discipline armed (phaseEnteredAt of the initial phase, ~ turn 1).
+    if (args.turnCount - args.state.phaseEnteredAt >= VERIFICATION_LIVENESS_WINDOW) {
+      return [
+        'discipline: WARN verification-liveness — level=2 has run',
+        `${args.turnCount - args.state.phaseEnteredAt} turns with mutations`,
+        'but ZERO non-agent ledger writes. If the auto-ledger writer is',
+        'wired but not firing, the completion gate will refuse exit. Likely',
+        'causes: classifyIteration returns inert for your verification',
+        'pattern (extend VERIFICATION_BASH_PATTERN), or no Bash test',
+        'commands have run.',
+      ].join(' ')
+    }
+    return null
+  }
+
+  if (args.turnCount - lastNonAgentTurn >= VERIFICATION_LIVENESS_WINDOW) {
+    return [
+      `discipline: WARN verification-liveness — ${args.turnCount - lastNonAgentTurn}`,
+      'turns since the last non-agent ledger write. The completion gate',
+      'will refuse exit if the auto-ledger writer is silently failing.',
+    ].join(' ')
+  }
+
+  return null
+}
+
+/**
  * Read the initial phase from the environment. Defaults to
  * DEFAULT_INITIAL_PHASE ('build') to preserve legacy behavior. Accepted
  * values are the literal phase names; anything else falls back silently

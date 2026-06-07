@@ -20,6 +20,7 @@ import {
   emitDisciplineEventToStderr,
   evaluateCompletionExit,
   evaluateForcedPlan,
+  evaluateVerificationLiveness,
   hadMutationsThisLoop,
   isDisciplineDebugEnabled,
   readDisciplineLevel,
@@ -2065,6 +2066,18 @@ async function* queryLoop(
         turnCount: nextTurnCount,
         now: Date.now(),
       })
+    }
+
+    // Phase F2 — liveness check. If level=2 and the auto-ledger writer
+    // hasn't fired for the configured window despite mutations, write
+    // a warning to stderr so the operator notices a silently-failing
+    // verification path (OpenHands Issue #9154 mitigation).
+    const livenessWarning = evaluateVerificationLiveness({
+      state: nextLoopDiscipline,
+      turnCount: nextTurnCount,
+    })
+    if (livenessWarning !== null) {
+      process.stderr.write(livenessWarning + '\n')
     }
 
     // Phase G — stream newly recorded events to stderr when

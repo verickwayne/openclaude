@@ -48,6 +48,7 @@ import { TodoWriteTool } from './tools/TodoWriteTool/TodoWriteTool.js'
 import { ExitPlanModeV2Tool } from './tools/ExitPlanModeTool/ExitPlanModeV2Tool.js'
 import { EmitPlanTool } from './tools/LoopDisciplineTools/EmitPlanTool.js'
 import { EmitPhaseTransitionTool } from './tools/LoopDisciplineTools/EmitPhaseTransitionTool.js'
+import { EmitVerificationTool } from './tools/LoopDisciplineTools/EmitVerificationTool.js'
 import { readDisciplineLevel } from './types/loopDiscipline.js'
 import { TestingPermissionTool } from './tools/testing/TestingPermissionTool.js'
 import { GrepTool } from './tools/GrepTool/GrepTool.js'
@@ -219,7 +220,7 @@ export function getAllBaseTools(): Tools {
     // EmitPhaseTransition to interact with the phase/plan machinery
     // shipped in Phases A-G.
     ...(readDisciplineLevel() >= 1
-      ? [EmitPlanTool, EmitPhaseTransitionTool]
+      ? [EmitPlanTool, EmitPhaseTransitionTool, EmitVerificationTool]
       : []),
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),
     // Use filter(Boolean) to handle case where getter might return null/undefined

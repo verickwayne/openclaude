@@ -579,6 +579,147 @@ function shouldInjectPlanHandoff(state: LoopDisciplineState): boolean {
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Phase F2 — verification-liveness check (OpenHands #9154 mitigation)
+// ─────────────────────────────────────────────────────────────────────
+
+import {
+  evaluateVerificationLiveness,
+  VERIFICATION_LIVENESS_WINDOW,
+} from './loopDiscipline.js'
+
+describe('evaluateVerificationLiveness', () => {
+  it('returns null at level 0 (legacy preservation)', () => {
+    const s = createInitialLoopDisciplineState(0)
+    expect(
+      evaluateVerificationLiveness({ state: s, turnCount: 100 }),
+    ).toBeNull()
+  })
+
+  it('returns null at level 1 (advisory only)', () => {
+    const s = {
+      ...createInitialLoopDisciplineState(1),
+      saturationCount: 5,
+    }
+    expect(
+      evaluateVerificationLiveness({ state: s, turnCount: 100 }),
+    ).toBeNull()
+  })
+
+  it('returns null when no mutations have happened', () => {
+    const s = createInitialLoopDisciplineState(2)
+    expect(
+      evaluateVerificationLiveness({ state: s, turnCount: 100 }),
+    ).toBeNull()
+  })
+
+  it('warns at level 2 when mutations happened and ZERO non-agent ledger writes exist after the window', () => {
+    const s = {
+      ...createInitialLoopDisciplineState(2),
+      saturationCount: 1, // signals mutations
+      phaseEnteredAt: 1,
+    }
+    const warn = evaluateVerificationLiveness({
+      state: s,
+      turnCount: 1 + VERIFICATION_LIVENESS_WINDOW,
+    })
+    expect(warn).not.toBeNull()
+    if (warn) {
+      expect(warn).toContain('discipline: WARN')
+      expect(warn).toContain('verification-liveness')
+      expect(warn).toContain('ZERO non-agent')
+    }
+  })
+
+  it('does NOT warn at level 2 if the window has not yet elapsed', () => {
+    const s = {
+      ...createInitialLoopDisciplineState(2),
+      saturationCount: 1,
+      phaseEnteredAt: 1,
+    }
+    expect(
+      evaluateVerificationLiveness({
+        state: s,
+        turnCount: 1 + VERIFICATION_LIVENESS_WINDOW - 1,
+      }),
+    ).toBeNull()
+  })
+
+  it('does NOT warn when agent ledger entries exist but recent enough non-agent writes also exist', () => {
+    let s = createInitialLoopDisciplineState(2)
+    // Mutation.
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: 1,
+    })
+    // Non-agent write at turn 5.
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'test passed', source: 'tool' },
+      turnCount: 5,
+      now: 0,
+    })
+    // Check at turn 9 — within the window.
+    expect(
+      evaluateVerificationLiveness({ state: s, turnCount: 9 }),
+    ).toBeNull()
+  })
+
+  it('warns again if the gap between non-agent writes exceeds the window', () => {
+    let s = createInitialLoopDisciplineState(2)
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: 1,
+    })
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'test passed', source: 'tool' },
+      turnCount: 5,
+      now: 0,
+    })
+    // Check at turn 5 + window + 1 — outside the window.
+    const warn = evaluateVerificationLiveness({
+      state: s,
+      turnCount: 5 + VERIFICATION_LIVENESS_WINDOW + 1,
+    })
+    expect(warn).not.toBeNull()
+    if (warn) {
+      expect(warn).toContain('turns since the last non-agent')
+    }
+  })
+
+  it('ignores agent entries when computing the gap', () => {
+    let s = createInitialLoopDisciplineState(2)
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: 1,
+    })
+    // Non-agent write at turn 5.
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'real test', source: 'tool' },
+      turnCount: 5,
+      now: 0,
+    })
+    // Stack 20 agent entries between turn 6 and turn 25.
+    for (let i = 6; i <= 25; i++) {
+      s = applyVerificationEntry({
+        state: s,
+        entry: { claim: `agent claim ${i}`, source: 'agent' },
+        turnCount: i,
+        now: 0,
+      })
+    }
+    // Check at turn 25 — agent claims accumulated but the gap from turn 5
+    // to turn 25 is 20 > window. Warning must fire.
+    const warn = evaluateVerificationLiveness({ state: s, turnCount: 25 })
+    expect(warn).not.toBeNull()
+  })
+})
+
 describe('Phase E5 — shouldInjectPlanHandoff predicate', () => {
   it('returns false at level 0 (legacy preservation)', () => {
     let s = createInitialLoopDisciplineState(0, 'build')
