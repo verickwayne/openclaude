@@ -15,7 +15,14 @@ import {
 import { lazySchema } from '../../utils/lazySchema.js'
 import { EMIT_PHASE_TRANSITION_TOOL_NAME } from './constants.js'
 
-const PHASE_VALUES = ['explore', 'plan', 'build', 'verify', 'refine'] as const
+const PHASE_VALUES = [
+  'explore',
+  'research',
+  'plan',
+  'build',
+  'verify',
+  'refine',
+] as const
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
@@ -48,14 +55,17 @@ type OutputSchema = ReturnType<typeof outputSchema>
 const DESCRIPTION =
   'Transition the loop to a different phase. The destination decides which tools are available, so use this to move out of plan once you have a plan, or into verify after you finish editing.'
 
-const PROMPT = `Use EmitPhaseTransition to move between the five loop phases:
-- explore: read/grep/web only — no editing.
+const PROMPT = `Use EmitPhaseTransition to move between the six loop phases:
+- explore: read/grep/web + read-only bash. For mapping the codebase.
+- research: WebSearch / WebFetch + read/grep (no bash). For external knowledge gathering — recent papers, library docs, competitor implementations, whatever your in-context knowledge can't reach.
 - plan: read/grep/web + EmitPlan. Required entry point if the gate forces you here.
 - build: full tool surface. Default for most work.
 - verify: read + bash test runners. Use after edits to prove they work.
 - refine: edit + read + test. Polish pass.
 
-The plan→build transition is gated: it only succeeds when EmitPlan has been called in the current plan-phase window. Other transitions always succeed.`
+The plan→build transition is gated: it only succeeds when EmitPlan has been called in the current plan-phase window. Other transitions always succeed.
+
+Move into research phase explicitly when the saturation redirect fires — it gives that work a phase home rather than a one-off WebSearch interrupting whatever phase you were in.`
 
 export const EmitPhaseTransitionTool = buildTool({
   name: EMIT_PHASE_TRANSITION_TOOL_NAME,
@@ -164,6 +174,8 @@ function buildNextActionHint(to: Phase): string {
   switch (to) {
     case 'explore':
       return 'You are in explore phase. Read/grep/web only — no editing. Use this to map unfamiliar code before planning.'
+    case 'research':
+      return 'You are in research phase. WebSearch / WebFetch + read-only access. No edits, no bash. Bring back what the current context can\'t supply, then transition out (typically into plan).'
     case 'plan':
       return 'You are in plan phase. Call EmitPlan with intent + files_to_edit + smallest_test before transitioning to build.'
     case 'build':

@@ -6,8 +6,20 @@
 // can be observed, but no gates enforce until OPENCLAUDE_IN_LOOP_DISCIPLINE
 // is set to 1 (advisory) or 2 (enforced) and the per-pattern hooks land.
 
-/** Lifecycle phase for the agent loop. */
-export type Phase = 'explore' | 'plan' | 'build' | 'verify' | 'refine'
+/**
+ * Lifecycle phase for the agent loop.
+ *
+ * - explore: read the codebase, no edits. For "what does this codebase do" work.
+ * - research: external knowledge gathering via WebSearch / WebFetch. No code
+ *   reads, no edits — biased toward learning from outside the repo.
+ * - plan: prepare a plan via EmitPlan; no edits. plan → build is gated on
+ *   the plan having been emitted in the current plan-phase window.
+ * - build: full tool surface. Default phase for new sessions.
+ * - verify: read + bash tests + EmitVerification. Produces non-agent
+ *   ledger entries that satisfy the completion exit gate.
+ * - refine: edit + read + test. Polish pass without new feature work.
+ */
+export type Phase = 'explore' | 'research' | 'plan' | 'build' | 'verify' | 'refine'
 
 /** One row in the audit log of phase changes. */
 export type PhaseTransition = {
@@ -62,6 +74,16 @@ export const PHASE_TOOL_ALLOWLIST: Record<Phase, ToolPolicy> = {
       /^\s*npm\s+(install|publish)/,
       /^\s*bun\s+(install|add|remove|publish)/,
     ],
+  },
+  research: {
+    // No Bash, no edits. Focus is external knowledge gathering — the
+    // model is in this phase precisely because in-repo information was
+    // insufficient. Read+Grep are allowed so the model can ground web
+    // findings against current code, but bash is off the table.
+    // EmitPhaseTransition is implicitly allowed (handled by the tool
+    // dispatcher, not the per-phase allowlist — every phase needs the
+    // transition tool to be reachable).
+    allow: ['WebSearch', 'WebFetch', 'Read', 'Grep', 'Glob'],
   },
   plan: {
     allow: ['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch', 'Bash', 'EmitPlan'],
@@ -992,6 +1014,7 @@ export function readInitialPhase(
   const raw = env.OPENCLAUDE_INITIAL_PHASE
   if (
     raw === 'explore' ||
+    raw === 'research' ||
     raw === 'plan' ||
     raw === 'build' ||
     raw === 'verify' ||

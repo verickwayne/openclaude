@@ -168,7 +168,7 @@ describe('EmitPhaseTransitionTool — call()', () => {
   })
 
   it('produces a useful next_action hint for each destination', async () => {
-    for (const phase of ['explore', 'plan', 'build', 'verify', 'refine'] as const) {
+    for (const phase of ['explore', 'research', 'plan', 'build', 'verify', 'refine'] as const) {
       // For plan→build we'd need a plan first, so start in build for all dests.
       const ctx = makeContext(createInitialLoopDisciplineState(2, 'build'))
       const out = await EmitPhaseTransitionTool.call(

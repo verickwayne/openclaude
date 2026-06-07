@@ -37,7 +37,7 @@ describe('readInitialPhase', () => {
   })
 
   it('honors each valid phase', () => {
-    for (const p of ['explore', 'plan', 'build', 'verify', 'refine'] as const) {
+    for (const p of ['explore', 'research', 'plan', 'build', 'verify', 'refine'] as const) {
       expect(readInitialPhase({ OPENCLAUDE_INITIAL_PHASE: p })).toBe(p)
     }
   })
@@ -74,11 +74,23 @@ describe('createInitialLoopDisciplineState', () => {
 })
 
 describe('PHASE_TOOL_ALLOWLIST', () => {
-  it('covers every phase', () => {
-    const phases = ['explore', 'plan', 'build', 'verify', 'refine'] as const
+  it('covers every phase (six total — explore/research/plan/build/verify/refine)', () => {
+    const phases = ['explore', 'research', 'plan', 'build', 'verify', 'refine'] as const
     for (const p of phases) {
       expect(PHASE_TOOL_ALLOWLIST[p]).toBeDefined()
     }
+  })
+
+  it('research phase restricts to web + read-only access', () => {
+    const allow = PHASE_TOOL_ALLOWLIST.research.allow
+    expect(allow).not.toBe('*')
+    expect(allow as string[]).toContain('WebSearch')
+    expect(allow as string[]).toContain('WebFetch')
+    expect(allow as string[]).toContain('Read')
+    expect(allow as string[]).toContain('Grep')
+    expect(allow as string[]).not.toContain('Edit')
+    expect(allow as string[]).not.toContain('Write')
+    expect(allow as string[]).not.toContain('Bash')
   })
 
   it('keeps build unrestricted (legacy behavior)', () => {

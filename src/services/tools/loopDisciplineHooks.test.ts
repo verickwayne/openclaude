@@ -28,7 +28,7 @@ function stateForSaturation(args: {
 
 describe('evaluatePhaseGate — level 0 (observe-only)', () => {
   it('lets every tool through regardless of phase', () => {
-    for (const phase of ['explore', 'plan', 'build', 'verify', 'refine'] as const) {
+    for (const phase of ['explore', 'research', 'plan', 'build', 'verify', 'refine'] as const) {
       const out = _phaseGateTestProbe({
         level: 0,
         phase,
