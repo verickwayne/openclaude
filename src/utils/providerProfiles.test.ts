@@ -1192,6 +1192,53 @@ describe('getProviderPresetDefaults', () => {
 })
 
 describe('setActiveProviderProfile', () => {
+  test('activateFirstPartyProviderProfile disables saved profile fallback and clears managed provider env', async () => {
+    const {
+      activateFirstPartyProviderProfile,
+      FIRST_PARTY_PROVIDER_PROFILE_ID,
+      getActiveProviderProfile,
+      getAPIProvider,
+    } = await importFreshProviderProfileModules()
+    const openaiProfile = buildProfile({
+      id: 'openai_prof',
+      name: 'OpenAI Provider',
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+    })
+
+    mockConfigState = {
+      ...createMockConfigState(),
+      providerProfiles: [openaiProfile],
+      activeProviderProfileId: 'openai_prof',
+      openaiAdditionalModelOptionsCache: [
+        {
+          value: 'gpt-4o',
+          label: 'gpt-4o',
+          description: 'cached',
+        },
+      ],
+    }
+    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.OPENAI_MODEL = 'gpt-4o'
+    process.env.OPENAI_BASE_URL = 'https://api.openai.com/v1'
+    process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED = '1'
+    process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID = 'openai_prof'
+
+    activateFirstPartyProviderProfile()
+
+    expect(mockConfigState.activeProviderProfileId).toBe(
+      FIRST_PARTY_PROVIDER_PROFILE_ID,
+    )
+    expect(mockConfigState.openaiAdditionalModelOptionsCache).toEqual([])
+    expect(getActiveProviderProfile()).toBeUndefined()
+    expect(process.env.CLAUDE_CODE_USE_OPENAI).toBeUndefined()
+    expect(process.env.OPENAI_MODEL).toBeUndefined()
+    expect(process.env.OPENAI_BASE_URL).toBeUndefined()
+    expect(process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED).toBeUndefined()
+    expect(getAPIProvider()).toBe('firstParty')
+  })
+
   test('sets OPENAI_MODEL env var when switching to an openai-type provider', async () => {
     const configDir = mkdtempSync(join(tmpdir(), 'openclaude-provider-config-'))
     process.env.CLAUDE_CONFIG_DIR = configDir

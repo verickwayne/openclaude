@@ -102,14 +102,15 @@ async function waitForCondition(
 }
 
 // Provider list is sorted from generated preset metadata by description, with
-// Gitlawb Opengateway pinned first, Codex OAuth injected after DeepSeek, and
-// Custom always pinned last. Keep the target-by-label indirection here so
+// Gitlawb Opengateway pinned first, Claude Max OAuth injected after it,
+// Codex OAuth injected after DeepSeek, and Custom always pinned last. Keep the target-by-label indirection here so
 // these tests survive future list edits without hardcoding raw key counts.
 //
 // Order matches ProviderManager.renderPresetSelection() when
-// canUseCodexOAuth === true (default in mocked tests).
+// canUseClaudeMaxOAuth/canUseCodexOAuth/canUseXaiOAuth are true (default in mocked tests).
 const PRESET_ORDER = [
   'Gitlawb Opengateway',
+  'Claude Max OAuth',
   'Anthropic',
   'Alibaba Coding Plan (China)',
   'Alibaba Coding Plan',
@@ -170,9 +171,11 @@ function mockProviderProfilesModule(options?: {
   setActiveProviderProfile?: (...args: unknown[]) => unknown
 }): void {
   mock.module('../utils/providerProfiles.js', () => ({
+    activateFirstPartyProviderProfile: () => {},
     addProviderProfile: options?.addProviderProfile ?? (() => null),
     applyActiveProviderProfileFromConfig: () => {},
     deleteProviderProfile: () => ({ removed: false, activeProfileId: null }),
+    FIRST_PARTY_PROVIDER_PROFILE_ID: '__openclaude_first_party__',
     getActiveProviderProfile: options?.getActiveProviderProfile ?? (() => null),
     getProviderPresetDefaults: (preset: string) => {
       if (preset === 'ollama') {

@@ -5,7 +5,7 @@ import { Box, Text } from '../ink.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
 import { useKeybinding } from '../keybindings/useKeybinding.js'
 import { useSetAppState } from '../state/AppState.js'
-import type { ProviderProfile } from '../utils/config.js'
+import { getGlobalConfig, type ProviderProfile } from '../utils/config.js'
 import {
   clearCodexCredentials,
   readCodexCredentialsAsync,
@@ -46,8 +46,10 @@ import { openAIShimSupportsApiFormatForModel } from '../integrations/runtimeMeta
 import { probeRouteReadiness } from '../integrations/discoveryService.js'
 import {
   addProviderProfile,
+  activateFirstPartyProviderProfile,
   applyActiveProviderProfileFromConfig,
   deleteProviderProfile,
+  FIRST_PARTY_PROVIDER_PROFILE_ID,
   getActiveProviderProfile,
   getProviderPresetDefaults,
   getProviderProfiles,
@@ -74,10 +76,13 @@ import {
 import { clearStartupProviderOverrides } from '../utils/providerStartupOverrides.js'
 import { redactUrlForDisplay } from '../utils/urlRedaction.js'
 import { updateSettingsForSource } from '../utils/settings/settings.js'
+import { isClaudeAISubscriber } from '../utils/auth.js'
+import { getDefaultMainLoopModelSetting } from '../utils/model/model.js'
 import {
   type OptionWithDescription,
   Select,
 } from './CustomSelect/index.js'
+import { ConsoleOAuthFlow } from './ConsoleOAuthFlow.js'
 import { Pane } from './design-system/Pane.js'
 import TextInput from './TextInput.js'
 import { useCodexOAuthFlow } from './useCodexOAuthFlow.js'
@@ -101,6 +106,7 @@ type Screen =
   | 'select-preset'
   | 'select-ollama-model'
   | 'select-atomic-chat-model'
+  | 'claude-max-oauth'
   | 'codex-oauth'
   | 'xai-oauth'
   | 'form'
@@ -751,14 +757,23 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     // Skip deferred initialization in test environment (mocks are synchronous)
     if (process.env.NODE_ENV === 'test') {
       setProfiles(getProviderProfiles())
-      setActiveProfileId(getActiveProviderProfile()?.id)
+      const activeId = getGlobalConfig().activeProviderProfileId
+      setActiveProfileId(
+        activeId === FIRST_PARTY_PROVIDER_PROFILE_ID
+          ? FIRST_PARTY_PROVIDER_PROFILE_ID
+          : getActiveProviderProfile()?.id,
+      )
       setIsInitializing(false)
       return
     }
 
     queueMicrotask(() => {
       const profilesData = getProviderProfiles()
-      const activeId = getActiveProviderProfile()?.id
+      const configuredActiveId = getGlobalConfig().activeProviderProfileId
+      const activeId =
+        configuredActiveId === FIRST_PARTY_PROVIDER_PROFILE_ID
+          ? FIRST_PARTY_PROVIDER_PROFILE_ID
+          : getActiveProviderProfile()?.id
       setProfiles(profilesData)
       setActiveProfileId(activeId)
       setIsInitializing(false)
@@ -798,6 +813,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
   // array reference, causing Select to re-render and feel sluggish.
   const hasProfiles = profiles.length > 0
   const hasSelectableProviders = hasProfiles || githubProviderAvailable
+  const isFirstPartyActive = activeProfileId === FIRST_PARTY_PROVIDER_PROFILE_ID
   const menuOptions = React.useMemo(
     () => [
       {
@@ -842,6 +858,12 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
           ]
         : []),
       {
+        value: 'activate-claude-max-oauth',
+        label: 'Use Claude Max OAuth',
+        description: 'Switch to Claude.ai subscription auth for this session',
+        disabled: isFirstPartyActive,
+      },
+      {
         value: 'done',
         label: 'Done',
         description: 'Return to chat',
@@ -852,6 +874,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       hasProfiles,
       hasStoredCodexOAuthCredentials,
       hasStoredXaiOAuthCredentials,
+      isFirstPartyActive,
     ],
   )
 
@@ -1067,7 +1090,12 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     queueMicrotask(() => {
       const nextProfiles = getProviderProfiles()
       setProfiles(nextProfiles)
-      setActiveProfileId(getActiveProviderProfile()?.id)
+      const activeId = getGlobalConfig().activeProviderProfileId
+      setActiveProfileId(
+        activeId === FIRST_PARTY_PROVIDER_PROFILE_ID
+          ? FIRST_PARTY_PROVIDER_PROFILE_ID
+          : getActiveProviderProfile()?.id,
+      )
       refreshGithubProviderState()
       refreshCodexOAuthCredentialState()
       isRefreshingRef.current = false
@@ -1076,6 +1104,33 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
 
   function clearStartupProviderOverrideFromUserSettings(): string | null {
     return clearStartupProviderOverrides()
+  }
+
+  function activateClaudeMaxOAuthProvider(): void {
+    activateFirstPartyProviderProfile()
+    const settingsOverrideError = clearStartupProviderOverrideFromUserSettings()
+    const nextModel = getDefaultMainLoopModelSetting()
+
+    setAppState(prev => ({
+      ...prev,
+      authVersion: prev.authVersion + 1,
+      mainLoopModel: nextModel,
+      mainLoopModelForSession: null,
+    }))
+
+    refreshProfiles()
+    const message = settingsOverrideError
+      ? `Claude Max OAuth active. Warning: could not clear startup provider override (${settingsOverrideError}).`
+      : 'Claude Max OAuth active.'
+    setStatusMessage(message)
+    setErrorMessage(undefined)
+    onDone({
+      action: 'activated',
+      activeProfileId: FIRST_PARTY_PROVIDER_PROFILE_ID,
+      activeProviderName: 'Claude Max OAuth',
+      activeProviderModel: nextModel ?? undefined,
+      message,
+    })
   }
 
   function buildCodexOAuthActivationMessage(options: {
@@ -1812,7 +1867,18 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     isActive: screen === 'xai-oauth',
   })
 
+  function handleBackFromClaudeMaxOAuth(): void {
+    setErrorMessage(undefined)
+    setScreen('select-preset')
+  }
+
+  useKeybinding('confirm:no', handleBackFromClaudeMaxOAuth, {
+    context: 'Settings',
+    isActive: screen === 'claude-max-oauth',
+  })
+
   function renderPresetSelection(): React.ReactNode {
+    const canUseClaudeMaxOAuth = !isBareMode()
     const canUseCodexOAuth = !isBareMode()
     const canUseXaiOAuth = !isBareMode()
     const options: OptionWithDescription<string>[] = ORDERED_PROVIDER_PRESETS.map(preset => {
@@ -1824,10 +1890,24 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       }
     })
 
+    if (canUseClaudeMaxOAuth) {
+      options.splice(1, 0, {
+        value: 'claude-max-oauth',
+        label: (
+          <Text>
+            <Text>Claude Max OAuth </Text>
+            <Text color="success" bold>★ Recommended</Text>
+          </Text>
+        ),
+        description:
+          'Use your Claude Pro, Max, Team, or Enterprise subscription',
+      })
+    }
+
     if (canUseCodexOAuth) {
       // Insert after DeepSeek so Codex OAuth keeps its established position
       // in the picker even with Gitlawb Opengateway pinned at the top.
-      options.splice(7, 0, {
+      options.splice(canUseClaudeMaxOAuth ? 8 : 7, 0, {
         value: 'codex-oauth',
         label: (
           <Text>
@@ -1843,7 +1923,14 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     if (canUseXaiOAuth) {
       // Place xAI OAuth directly under Codex OAuth so both browser-sign-in
       // options group together visually.
-      options.splice(canUseCodexOAuth ? 8 : 7, 0, {
+      const xaiOAuthInsertIndex = canUseCodexOAuth
+        ? canUseClaudeMaxOAuth
+          ? 9
+          : 8
+        : canUseClaudeMaxOAuth
+          ? 8
+          : 7
+      options.splice(xaiOAuthInsertIndex, 0, {
         value: 'xai-oauth',
         label: 'xAI OAuth (Grok)',
         description:
@@ -1876,6 +1963,14 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             }
             if (value === 'codex-oauth') {
               setScreen('codex-oauth')
+              return
+            }
+            if (value === 'claude-max-oauth') {
+              if (isClaudeAISubscriber()) {
+                activateClaudeMaxOAuthProvider()
+                return
+              }
+              setScreen('claude-max-oauth')
               return
             }
             if (value === 'xai-oauth') {
@@ -2169,6 +2264,13 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
                   setScreen('select-delete')
                 }
                 break
+              case 'activate-claude-max-oauth':
+                if (isClaudeAISubscriber()) {
+                  activateClaudeMaxOAuthProvider()
+                } else {
+                  setScreen('claude-max-oauth')
+                }
+                break
               case 'logout-codex-oauth': {
                 const cleared = clearCodexCredentials()
                 if (!cleared.success) {
@@ -2339,6 +2441,24 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       break
     case 'select-atomic-chat-model':
       content = renderAtomicChatSelection()
+      break
+    case 'claude-max-oauth':
+      content = (
+        <ConsoleOAuthFlow
+          forceLoginMethod="claudeai"
+          onDone={result => {
+            if (!result || result.type !== 'oauth') {
+              setScreen('select-preset')
+              return
+            }
+
+            activateClaudeMaxOAuthProvider()
+            if (mode !== 'first-run') {
+              returnToMenu()
+            }
+          }}
+        />
+      )
       break
     case 'xai-oauth':
       content = (
