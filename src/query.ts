@@ -12,6 +12,8 @@ import {
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
 import {
+  applySaturationObservation,
+  classifyIteration,
   createInitialLoopDisciplineState,
   readDisciplineLevel,
   readInitialPhase,
@@ -1960,6 +1962,28 @@ async function* queryLoop(
 
     queryCheckpoint('query_recursive_call')
 
+    // Phase D — observe this iteration's tool usage and feed the saturation
+    // tracker. At discipline level 0 the observation is a no-op; at level
+    // 1+ it drives the next iteration's saturationCount and may trigger
+    // the redirect gate via runPreToolUseHooks on the following turn.
+    const nextLoopDiscipline =
+      state.loopDiscipline.level === 0
+        ? state.loopDiscipline
+        : applySaturationObservation({
+            state: state.loopDiscipline,
+            turnCount: nextTurnCount,
+            kind: classifyIteration({
+              toolNamesUsed: toolUseBlocks.map(b => b.name),
+              bashCommandsUsed: toolUseBlocks
+                .filter(b => b.name === 'Bash')
+                .map(b => {
+                  const cmd = (b.input as { command?: unknown })?.command
+                  return typeof cmd === 'string' ? cmd : ''
+                })
+                .filter(c => c.length > 0),
+            }),
+          })
+
     const next: State = {
       messages: [...messagesForQuery, ...assistantMessages, ...toolResults],
       toolUseContext: toolUseContextWithQueryTracking,
@@ -1972,7 +1996,7 @@ async function* queryLoop(
       maxOutputTokensOverride: undefined,
       stopHookActive,
       transition: { reason: 'next_turn' },
-      loopDiscipline: state.loopDiscipline,
+      loopDiscipline: nextLoopDiscipline,
     }
     state = next
   } // while (true)

@@ -39,6 +39,7 @@ const autoFixRetryCount = new Map<string, number>()
 import { isMcpTool } from '../mcp/utils.js'
 import {
   evaluatePhaseGate,
+  evaluateSaturationRedirect,
   evaluateSelfTamperGuard,
 } from './loopDisciplineHooks.js'
 import { readTamperGuardEnabled } from '../../types/loopDiscipline.js'
@@ -586,6 +587,32 @@ export async function* runPreToolUseHooks(
             type: 'hook',
             hookName: `LoopDiscipline:TamperGuard:${tool.name}`,
             reason: tamperOutcome.reason,
+          },
+        },
+      }
+      return
+    }
+
+    // Saturation redirect (Phase D — the publishable contribution). If
+    // saturationCount has crossed threshold and no WebSearch/WebFetch
+    // proof has fired since, block mutating tools and force the model
+    // out of the local optimum. Counter is incremented in query.ts
+    // after each iteration via applySaturationObservation.
+    const saturationOutcome = evaluateSaturationRedirect(
+      disciplineState,
+      tool.name,
+      processedInput,
+    )
+    if (!saturationOutcome.ok) {
+      yield {
+        type: 'hookPermissionResult',
+        hookPermissionResult: {
+          behavior: 'deny',
+          message: saturationOutcome.reason,
+          decisionReason: {
+            type: 'hook',
+            hookName: `LoopDiscipline:SaturationRedirect:${tool.name}`,
+            reason: saturationOutcome.reason,
           },
         },
       }

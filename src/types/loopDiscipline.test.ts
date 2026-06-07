@@ -135,3 +135,202 @@ describe('getDisciplineEvents', () => {
     expect(getDisciplineEvents(s)).toEqual([])
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase D — saturation tracking helpers
+// ─────────────────────────────────────────────────────────────────────
+
+import {
+  applyPhaseTransitionReset,
+  applySaturationObservation,
+  classifyIteration,
+  SATURATION_PROOF_TOOL_NAMES,
+  SATURATION_THRESHOLD,
+  VERIFICATION_BASH_PATTERN,
+} from './loopDiscipline.js'
+
+describe('classifyIteration', () => {
+  it('classifies a Edit-only turn as mutating-without-verification', () => {
+    expect(
+      classifyIteration({
+        toolNamesUsed: ['Edit', 'Edit'],
+        bashCommandsUsed: [],
+      }),
+    ).toBe('mutating-without-verification')
+  })
+
+  it('classifies a test run as verification (overrides any concurrent mutation)', () => {
+    expect(
+      classifyIteration({
+        toolNamesUsed: ['Edit'],
+        bashCommandsUsed: ['bun test'],
+      }),
+    ).toBe('verification')
+  })
+
+  it('classifies a typecheck run as verification', () => {
+    for (const cmd of ['npm run typecheck', 'tsc --noEmit', 'bun run typecheck']) {
+      expect(
+        classifyIteration({ toolNamesUsed: [], bashCommandsUsed: [cmd] }),
+      ).toBe('verification')
+    }
+  })
+
+  it('classifies WebSearch as external-knowledge (highest priority)', () => {
+    expect(
+      classifyIteration({
+        toolNamesUsed: ['WebSearch', 'Edit'],
+        bashCommandsUsed: ['bun test'],
+      }),
+    ).toBe('external-knowledge')
+  })
+
+  it('classifies WebFetch as external-knowledge', () => {
+    expect(
+      classifyIteration({
+        toolNamesUsed: ['WebFetch'],
+        bashCommandsUsed: [],
+      }),
+    ).toBe('external-knowledge')
+  })
+
+  it('classifies mutating bash commands', () => {
+    expect(
+      classifyIteration({
+        toolNamesUsed: ['Bash'],
+        bashCommandsUsed: ['git commit -m fix'],
+      }),
+    ).toBe('mutating-without-verification')
+  })
+
+  it('classifies a Read-only turn as inert', () => {
+    expect(
+      classifyIteration({
+        toolNamesUsed: ['Read', 'Grep'],
+        bashCommandsUsed: ['ls -la', 'git status'],
+      }),
+    ).toBe('inert')
+  })
+
+  it('classifies an empty turn as inert', () => {
+    expect(
+      classifyIteration({ toolNamesUsed: [], bashCommandsUsed: [] }),
+    ).toBe('inert')
+  })
+})
+
+describe('applySaturationObservation', () => {
+  const base = createInitialLoopDisciplineState(2)
+
+  it('increments on mutating-without-verification', () => {
+    const next = applySaturationObservation({
+      state: base,
+      kind: 'mutating-without-verification',
+      turnCount: 5,
+    })
+    expect(next.saturationCount).toBe(1)
+    expect(next.saturationProofTurn).toBeNull()
+  })
+
+  it('keeps incrementing across consecutive mutating iterations', () => {
+    let s = base
+    for (let i = 1; i <= SATURATION_THRESHOLD; i++) {
+      s = applySaturationObservation({
+        state: s,
+        kind: 'mutating-without-verification',
+        turnCount: i,
+      })
+      expect(s.saturationCount).toBe(i)
+    }
+  })
+
+  it('verification resets the counter', () => {
+    const tripped = { ...base, saturationCount: 5 }
+    const next = applySaturationObservation({
+      state: tripped,
+      kind: 'verification',
+      turnCount: 9,
+    })
+    expect(next.saturationCount).toBe(0)
+    expect(next.saturationProofTurn).toBeNull()
+  })
+
+  it('external-knowledge resets count AND records the proof turn', () => {
+    const tripped = { ...base, saturationCount: 5 }
+    const next = applySaturationObservation({
+      state: tripped,
+      kind: 'external-knowledge',
+      turnCount: 9,
+    })
+    expect(next.saturationCount).toBe(0)
+    expect(next.saturationProofTurn).toBe(9)
+  })
+
+  it('inert does not change state (idempotency for read-only turns)', () => {
+    const tripped = { ...base, saturationCount: 2 }
+    const next = applySaturationObservation({
+      state: tripped,
+      kind: 'inert',
+      turnCount: 9,
+    })
+    expect(next).toBe(tripped)
+  })
+})
+
+describe('applyPhaseTransitionReset', () => {
+  it('clears the saturation counter (OpenHands #6795 lesson)', () => {
+    const tripped = {
+      ...createInitialLoopDisciplineState(2),
+      saturationCount: 5,
+      saturationProofTurn: 7,
+    }
+    const next = applyPhaseTransitionReset(tripped)
+    expect(next.saturationCount).toBe(0)
+    expect(next.saturationProofTurn).toBeNull()
+  })
+
+  it('does not change other fields', () => {
+    const tripped = {
+      ...createInitialLoopDisciplineState(2),
+      phase: 'plan' as const,
+      saturationCount: 5,
+    }
+    const next = applyPhaseTransitionReset(tripped)
+    expect(next.phase).toBe('plan')
+    expect(next.level).toBe(tripped.level)
+  })
+})
+
+describe('VERIFICATION_BASH_PATTERN', () => {
+  it('matches common test runners', () => {
+    for (const cmd of [
+      'bun test',
+      'npm test',
+      'npm run test',
+      'pnpm test',
+      'yarn test',
+      'jest',
+      'vitest',
+      'pytest',
+      'cargo test',
+      'go test ./...',
+    ]) {
+      expect(VERIFICATION_BASH_PATTERN.test(cmd)).toBe(true)
+    }
+  })
+
+  it('does not match generic bash commands', () => {
+    for (const cmd of ['ls', 'cat README.md', 'git status', 'pwd']) {
+      expect(VERIFICATION_BASH_PATTERN.test(cmd)).toBe(false)
+    }
+  })
+})
+
+describe('SATURATION_PROOF_TOOL_NAMES', () => {
+  it('covers the two web-fetch tools and only those', () => {
+    expect(SATURATION_PROOF_TOOL_NAMES.has('WebSearch')).toBe(true)
+    expect(SATURATION_PROOF_TOOL_NAMES.has('WebFetch')).toBe(true)
+    expect(SATURATION_PROOF_TOOL_NAMES.size).toBe(2)
+    expect(SATURATION_PROOF_TOOL_NAMES.has('Read')).toBe(false)
+  })
+})

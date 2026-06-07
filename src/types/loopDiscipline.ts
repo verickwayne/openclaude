@@ -158,6 +158,129 @@ export const MUTATING_BASH_PATTERN =
   /^\s*(rm|mv|cp|git\s+commit|git\s+push|git\s+reset|npm\s+install|bun\s+install)/
 
 /**
+ * Tools that count as "going outside the model's current context" — when
+ * one of these fires after a saturation trip, it satisfies the proof
+ * requirement and clears the redirect block. Pulled from the names the
+ * Tool dispatcher uses; if names diverge, add aliases here rather than
+ * patching every consumer.
+ */
+export const SATURATION_PROOF_TOOL_NAMES = new Set([
+  'WebSearch',
+  'WebFetch',
+])
+
+/**
+ * Tools that count as "verification" — when one of these runs, saturation
+ * counter resets even if no mutating tool fired since. The runner of a
+ * test is making observable progress (learning whether the work works),
+ * which is the opposite of saturation.
+ *
+ * v1: Bash is treated as verification if the command matches a test
+ * runner pattern. Future versions may grow EmitVerification etc.
+ */
+export const VERIFICATION_BASH_PATTERN =
+  /^\s*(bun\s+test|npm\s+(test|run\s+test)|pnpm\s+test|yarn\s+test|jest|vitest|pytest|cargo\s+test|go\s+test|tsc\s+--noEmit|bun\s+run\s+typecheck|npm\s+run\s+typecheck)/
+
+/**
+ * How many consecutive saturation-positive iterations before the
+ * redirect gate fires. Three matches both the toolFailureLoopGuard
+ * default threshold and ralph-mode-enforcer.sh's saturation check —
+ * keeps the operator's mental model consistent across the harness.
+ */
+export const SATURATION_THRESHOLD = 3
+
+/**
+ * Per-iteration classification for the saturation tracker. The query
+ * loop calls classifyIteration() after tool execution and feeds the
+ * result to applySaturationObservation() — keeping the policy here
+ * (in the types module) rather than in the loop body itself.
+ */
+export type IterationKind =
+  | 'mutating-without-verification' // Edit/Write/etc. ran, no test
+  | 'verification' // a test/typecheck ran
+  | 'external-knowledge' // WebSearch/WebFetch ran
+  | 'inert' // none of the above
+
+/**
+ * Classify a single iteration based on the tools that fired. Used by
+ * applySaturationObservation in the loop after tool execution to decide
+ * whether to increment, reset, or leave the saturation counter alone.
+ */
+export function classifyIteration(args: {
+  toolNamesUsed: readonly string[]
+  bashCommandsUsed: readonly string[]
+}): IterationKind {
+  for (const name of args.toolNamesUsed) {
+    if (SATURATION_PROOF_TOOL_NAMES.has(name)) return 'external-knowledge'
+  }
+  for (const cmd of args.bashCommandsUsed) {
+    if (VERIFICATION_BASH_PATTERN.test(cmd)) return 'verification'
+  }
+  for (const name of args.toolNamesUsed) {
+    if (MUTATING_TOOL_NAMES.has(name)) return 'mutating-without-verification'
+  }
+  for (const cmd of args.bashCommandsUsed) {
+    if (MUTATING_BASH_PATTERN.test(cmd)) return 'mutating-without-verification'
+  }
+  return 'inert'
+}
+
+/**
+ * Apply one iteration's classification to the saturation tracker. Returns
+ * the next discipline state — pure, no mutation. The query loop assigns
+ * the return to state.loopDiscipline.
+ *
+ * Rules (lessons from OpenHands condenser PR #6795 — explicit reset):
+ *  - 'external-knowledge' → saturationCount = 0, saturationProofTurn = turn
+ *    (the proof is fresh; future redirects don't fire until a new trip)
+ *  - 'verification' → saturationCount = 0 (observable progress)
+ *  - 'mutating-without-verification' → saturationCount += 1
+ *  - 'inert' → no change
+ */
+export function applySaturationObservation(args: {
+  state: LoopDisciplineState
+  kind: IterationKind
+  turnCount: number
+}): LoopDisciplineState {
+  switch (args.kind) {
+    case 'external-knowledge':
+      return {
+        ...args.state,
+        saturationCount: 0,
+        saturationProofTurn: args.turnCount,
+      }
+    case 'verification':
+      return {
+        ...args.state,
+        saturationCount: 0,
+        saturationProofTurn: null,
+      }
+    case 'mutating-without-verification':
+      return {
+        ...args.state,
+        saturationCount: args.state.saturationCount + 1,
+      }
+    case 'inert':
+      return args.state
+  }
+}
+
+/**
+ * Apply a phase transition's reset side effect. Called by Phase E's
+ * transition handler. Saturation is always specific to the current
+ * phase's work; transitioning out of a phase resets it.
+ */
+export function applyPhaseTransitionReset(
+  state: LoopDisciplineState,
+): LoopDisciplineState {
+  return {
+    ...state,
+    saturationCount: 0,
+    saturationProofTurn: null,
+  }
+}
+
+/**
  * Read the enforcement level from the environment. Defaults to 0 (observe
  * only) so existing OpenClaude installs are unaffected until the operator
  * explicitly opts in.

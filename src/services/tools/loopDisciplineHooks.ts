@@ -17,7 +17,11 @@ import {
   type DisciplineLevel,
   type LoopDisciplineState,
   type Phase,
+  MUTATING_BASH_PATTERN,
+  MUTATING_TOOL_NAMES,
   PHASE_TOOL_ALLOWLIST,
+  SATURATION_PROOF_TOOL_NAMES,
+  SATURATION_THRESHOLD,
   TAMPER_DENY_PREFIXES,
   TAMPER_GUARDED_TOOL_NAMES,
 } from '../../types/loopDiscipline.js'
@@ -27,7 +31,7 @@ export type GateOutcome =
   | {
       ok: false
       reason: string
-      gate: 'phase-restriction' | 'self-tamper'
+      gate: 'phase-restriction' | 'self-tamper' | 'saturation-redirect'
     }
 
 /**
@@ -220,6 +224,82 @@ function formatTamperDenyReason(args: {
     `Tool '${args.toolName}' attempted to modify '${args.target}'.`,
     `That path is loop-discipline enforcement code (matched suffix '${args.prefix}') and cannot be edited from inside the loop.`,
     `If you need to change this file, exit the loop and edit it directly. To bypass for one process, set OPENCLAUDE_TAMPER_GUARD=off in the parent shell before launching — it cannot be toggled mid-loop.`,
+  ].join(' ')
+}
+
+/**
+ * Saturation redirect. The novel contribution of Phase D. When the loop
+ * has produced SATURATION_THRESHOLD consecutive iterations of mutating
+ * work without verification or external-knowledge calls, the next
+ * mutating tool is blocked until WebSearch or WebFetch fires.
+ *
+ * This is what differentiates the OpenClaude loop from every other
+ * shipping open-source harness as of 2026-06-06: failure-loop guards
+ * either stop the loop (OpenHands StuckDetector, Aider --auto-test) or
+ * pause for user input. None auto-redirect to a specific NEXT action.
+ *
+ * Pessimism (OpenHands condenser PR #6795): the counter MUST reset on
+ * observable progress. applySaturationObservation handles that —
+ * verification or external-knowledge classifications zero the counter.
+ *
+ * Mutating Bash commands (rm/git commit/etc) also block when saturated —
+ * the redirect is about ANY further mutation, not just AcroForm-style
+ * tool mutation.
+ */
+export function evaluateSaturationRedirect(
+  state: LoopDisciplineState | undefined,
+  toolName: string,
+  toolInput: Record<string, unknown> | undefined,
+): GateOutcome {
+  if (!state) return { ok: true }
+  if (state.level === 0) return { ok: true }
+
+  // Always let the proof-tool through — that's the path out of the trip.
+  if (SATURATION_PROOF_TOOL_NAMES.has(toolName)) return { ok: true }
+
+  // Not in a trip — let everything through.
+  if (state.saturationCount < SATURATION_THRESHOLD) return { ok: true }
+
+  // Already satisfied the proof requirement this turn.
+  if (state.saturationProofTurn !== null) return { ok: true }
+
+  // Block mutating tools / mutating bash commands only — read-only ops
+  // are fine because they're how the model gathers information.
+  const isMutating =
+    MUTATING_TOOL_NAMES.has(toolName) ||
+    (toolName === 'Bash' && isMutatingBash(toolInput))
+  if (!isMutating) return { ok: true }
+
+  if (state.level === 1) return { ok: true }
+
+  return {
+    ok: false,
+    gate: 'saturation-redirect',
+    reason: formatSaturationDenyReason({
+      toolName,
+      saturationCount: state.saturationCount,
+    }),
+  }
+}
+
+function isMutatingBash(
+  input: Record<string, unknown> | undefined,
+): boolean {
+  const cmd = readBashCommand(input)
+  if (!cmd) return false
+  return MUTATING_BASH_PATTERN.test(cmd)
+}
+
+function formatSaturationDenyReason(args: {
+  toolName: string
+  saturationCount: number
+}): string {
+  return [
+    `SATURATION REDIRECT: ${args.saturationCount} consecutive iterations of mutating work without verification or external-knowledge calls.`,
+    `Tool '${args.toolName}' is blocked.`,
+    `Your next tool call MUST be WebSearch or WebFetch. After that returns, the block lifts.`,
+    `Topics to search: novel approaches in this problem's domain, recent papers, competitor implementations, adjacent-field solutions to the same shape of problem.`,
+    `Continuing to mutate without going outside the current context will not produce a different result.`,
   ].join(' ')
 }
 

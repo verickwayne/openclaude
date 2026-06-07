@@ -3,12 +3,28 @@ import {
   _phaseGateTestProbe,
   _tamperGuardTestProbe,
   evaluatePhaseGate,
+  evaluateSaturationRedirect,
   evaluateSelfTamperGuard,
 } from './loopDisciplineHooks.js'
 import {
   createInitialLoopDisciplineState,
   readTamperGuardEnabled,
+  SATURATION_THRESHOLD,
+  type DisciplineLevel,
+  type LoopDisciplineState,
 } from '../../types/loopDiscipline.js'
+
+function stateForSaturation(args: {
+  level: DisciplineLevel
+  saturationCount: number
+  saturationProofTurn?: number | null
+}): LoopDisciplineState {
+  return {
+    ...createInitialLoopDisciplineState(args.level),
+    saturationCount: args.saturationCount,
+    saturationProofTurn: args.saturationProofTurn ?? null,
+  }
+}
 
 describe('evaluatePhaseGate — level 0 (observe-only)', () => {
   it('lets every tool through regardless of phase', () => {
@@ -341,5 +357,124 @@ describe('evaluateSelfTamperGuard — input edge cases', () => {
       toolInput: { notebook_path: '/x/openclaude/src/query.ts' },
     })
     expect(out.ok).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase D — saturation redirect gate
+// ─────────────────────────────────────────────────────────────────────
+
+describe('evaluateSaturationRedirect — disabled cases', () => {
+  it('lets everything through at level 0 even when over threshold', () => {
+    const s = stateForSaturation({
+      level: 0,
+      saturationCount: SATURATION_THRESHOLD + 5,
+    })
+    expect(
+      evaluateSaturationRedirect(s, 'Edit', { file_path: '/x' }).ok,
+    ).toBe(true)
+  })
+
+  it('lets everything through when state is undefined (legacy callers)', () => {
+    expect(
+      evaluateSaturationRedirect(undefined, 'Edit', { file_path: '/x' }).ok,
+    ).toBe(true)
+  })
+
+  it('does not block at level 1 even when tripped (advisory mode)', () => {
+    const s = stateForSaturation({
+      level: 1,
+      saturationCount: SATURATION_THRESHOLD + 1,
+    })
+    expect(
+      evaluateSaturationRedirect(s, 'Edit', { file_path: '/x' }).ok,
+    ).toBe(true)
+  })
+})
+
+describe('evaluateSaturationRedirect — below threshold', () => {
+  it('lets mutating tools through when count < threshold', () => {
+    const s = stateForSaturation({
+      level: 2,
+      saturationCount: SATURATION_THRESHOLD - 1,
+    })
+    expect(
+      evaluateSaturationRedirect(s, 'Edit', { file_path: '/x' }).ok,
+    ).toBe(true)
+  })
+})
+
+describe('evaluateSaturationRedirect — tripped', () => {
+  it('blocks Edit at level 2 when count == threshold', () => {
+    const s = stateForSaturation({
+      level: 2,
+      saturationCount: SATURATION_THRESHOLD,
+    })
+    const out = evaluateSaturationRedirect(s, 'Edit', { file_path: '/x' })
+    expect(out.ok).toBe(false)
+    if (!out.ok) {
+      expect(out.gate).toBe('saturation-redirect')
+      expect(out.reason).toContain('SATURATION REDIRECT')
+      expect(out.reason).toContain('WebSearch or WebFetch')
+    }
+  })
+
+  it('blocks Write at level 2 when over threshold', () => {
+    const s = stateForSaturation({
+      level: 2,
+      saturationCount: SATURATION_THRESHOLD + 2,
+    })
+    expect(evaluateSaturationRedirect(s, 'Write', undefined).ok).toBe(false)
+  })
+
+  it('blocks mutating bash even when Bash is allowed at the phase level', () => {
+    const s = stateForSaturation({
+      level: 2,
+      saturationCount: SATURATION_THRESHOLD,
+    })
+    const out = evaluateSaturationRedirect(s, 'Bash', {
+      command: 'git commit -m fix',
+    })
+    expect(out.ok).toBe(false)
+  })
+
+  it('does NOT block read-only Bash when tripped', () => {
+    const s = stateForSaturation({
+      level: 2,
+      saturationCount: SATURATION_THRESHOLD,
+    })
+    const out = evaluateSaturationRedirect(s, 'Bash', { command: 'ls -la' })
+    expect(out.ok).toBe(true)
+  })
+
+  it('does NOT block Read/Grep/Glob when tripped (they gather information)', () => {
+    const s = stateForSaturation({
+      level: 2,
+      saturationCount: SATURATION_THRESHOLD,
+    })
+    for (const tool of ['Read', 'Grep', 'Glob']) {
+      expect(
+        evaluateSaturationRedirect(s, tool, { file_path: '/x' }).ok,
+      ).toBe(true)
+    }
+  })
+
+  it('ALWAYS lets the proof tools through (WebSearch/WebFetch)', () => {
+    const s = stateForSaturation({
+      level: 2,
+      saturationCount: SATURATION_THRESHOLD + 10,
+    })
+    expect(evaluateSaturationRedirect(s, 'WebSearch', undefined).ok).toBe(true)
+    expect(evaluateSaturationRedirect(s, 'WebFetch', undefined).ok).toBe(true)
+  })
+
+  it('clears the block once proofTurn is set (post-WebSearch state)', () => {
+    const s = stateForSaturation({
+      level: 2,
+      saturationCount: SATURATION_THRESHOLD,
+      saturationProofTurn: 7,
+    })
+    const out = evaluateSaturationRedirect(s, 'Edit', { file_path: '/x' })
+    expect(out.ok).toBe(true)
   })
 })
