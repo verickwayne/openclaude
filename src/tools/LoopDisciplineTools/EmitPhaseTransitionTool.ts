@@ -90,6 +90,13 @@ export const EmitPhaseTransitionTool = buildTool({
   renderToolUseMessage() {
     return null
   },
+  mapToolResultToToolResultBlockParam(content, toolUseID) {
+    return {
+      tool_use_id: toolUseID,
+      type: 'tool_result',
+      content: JSON.stringify(content),
+    }
+  },
   async call(input, context, _canUseTool, _parentMessage, _onProgress) {
     const setter = context.setLoopDiscipline
     const getter = context.getLoopDiscipline

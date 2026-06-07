@@ -54,6 +54,7 @@ describe('EmitPlanTool — call()', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.plan_recorded).toBe(true)
     expect(out.data.intent_chars).toBe('Refactor parser'.length)
@@ -73,6 +74,7 @@ describe('EmitPlanTool — call()', () => {
       {} as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.plan_recorded).toBe(false)
     expect(out.data.next_action).toContain('No-op')
@@ -95,6 +97,7 @@ describe('EmitPhaseTransitionTool — call()', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.transitioned).toBe(true)
     expect(out.data.from).toBe('build')
@@ -110,6 +113,7 @@ describe('EmitPhaseTransitionTool — call()', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.transitioned).toBe(false)
     expect(out.data.blocked_reason).toContain('EmitPlan')
@@ -128,6 +132,7 @@ describe('EmitPhaseTransitionTool — call()', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     const out = await EmitPhaseTransitionTool.call(
       { to: 'build', reason: 'plan emitted' },
@@ -135,6 +140,7 @@ describe('EmitPhaseTransitionTool — call()', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.transitioned).toBe(true)
     expect(out.data.to).toBe('build')
@@ -153,6 +159,7 @@ describe('EmitPhaseTransitionTool — call()', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.transitioned).toBe(true)
     expect(ctx._holder.current.saturationCount).toBe(0)
@@ -170,6 +177,7 @@ describe('EmitPhaseTransitionTool — call()', () => {
         ctx as any,
         stubCanUse,
         stubMsg,
+        undefined,
       )
       expect(out.data.next_action).toContain(phase)
     }
@@ -182,6 +190,7 @@ describe('EmitPhaseTransitionTool — call()', () => {
       {} as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.transitioned).toBe(false)
   })
@@ -198,6 +207,7 @@ describe('EmitPhaseTransition + EmitPlan end-to-end', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.transitioned).toBe(true)
     expect(ctx._holder.current.phase).toBe('plan')
@@ -213,6 +223,7 @@ describe('EmitPhaseTransition + EmitPlan end-to-end', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(planOut.data.plan_recorded).toBe(true)
 
@@ -223,6 +234,7 @@ describe('EmitPhaseTransition + EmitPlan end-to-end', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.transitioned).toBe(true)
     expect(ctx._holder.current.phase).toBe('build')

@@ -45,6 +45,7 @@ describe('EmitVerificationTool — call() basic behavior', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.recorded).toBe(true)
     expect(out.data.ledger_size).toBe(1)
@@ -62,6 +63,7 @@ describe('EmitVerificationTool — call() basic behavior', () => {
       {} as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(out.data.recorded).toBe(false)
   })
@@ -87,6 +89,7 @@ describe('EmitVerificationTool — gate invariant', () => {
         ctx as any,
         stubCanUse,
         stubMsg,
+        undefined,
       )
     }
     expect(ctx._holder.current.verificationLedger).toHaveLength(100)
@@ -110,6 +113,7 @@ describe('EmitVerificationTool — input bounds', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(ctx._holder.current.verificationLedger[0].claim.length).toBe(2_000)
   })
@@ -123,6 +127,7 @@ describe('EmitVerificationTool — input bounds', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     expect(ctx._holder.current.verificationLedger[0].evidence?.length).toBe(
       1_000,
@@ -137,6 +142,7 @@ describe('EmitVerificationTool — input bounds', () => {
       ctx as any,
       stubCanUse,
       stubMsg,
+      undefined,
     )
     const entry = ctx._holder.current.verificationLedger[0]
     expect(entry.evidence).toBeUndefined()
