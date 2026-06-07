@@ -297,13 +297,22 @@ export function applySaturationObservation(args: {
     }
     case 'mutating-without-verification': {
       const nextCount = args.state.saturationCount + 1
-      const next = { ...args.state, saturationCount: nextCount }
-      // Emit saturation-trip event when crossing the threshold so the
-      // observability stream shows exactly when the redirect arms.
-      if (
+      const justCrossedThreshold =
         args.state.saturationCount < SATURATION_THRESHOLD &&
         nextCount >= SATURATION_THRESHOLD
-      ) {
+      const next = {
+        ...args.state,
+        saturationCount: nextCount,
+        // Phase E4: every time saturation arms in the current task,
+        // bump the trips counter. query.ts reads this to decide
+        // whether to force a plan-phase transition.
+        saturationTripsThisTask: justCrossedThreshold
+          ? args.state.saturationTripsThisTask + 1
+          : args.state.saturationTripsThisTask,
+      }
+      // Emit saturation-trip event when crossing the threshold so the
+      // observability stream shows exactly when the redirect arms.
+      if (justCrossedThreshold) {
         return recordDisciplineEvent(next, {
           kind: 'saturation-trip',
           turnCount: args.turnCount,
@@ -331,6 +340,7 @@ export function applyPhaseTransitionReset(
     ...state,
     saturationCount: 0,
     saturationProofTurn: null,
+    saturationTripsThisTask: 0,
   }
 }
 
@@ -455,6 +465,16 @@ export type LoopDisciplineState = {
    * (Phase E) only allows the transition if pendingPlan was emitted in
    * the current plan-phase window. */
   pendingPlan: PendingPlan | null
+  /** How many times saturation has tripped since the last phase
+   * transition. When this reaches 2 at level >= 2, query.ts forces
+   * phase=plan to make the model re-think the approach. Pattern from
+   * docs/plans/20260606224012_in-loop-discipline.md Phase E
+   * "escalation: when toolFailureLoopGuard trips or saturation redirect
+   * fires for the second time in a single task, the loop forces
+   * transition to plan phase." Phase D handles the first trip via the
+   * WebSearch redirect; this counter is the escalation lever for the
+   * second. */
+  saturationTripsThisTask: number
 }
 
 /** Initial-state factory used by query.ts. */
@@ -474,6 +494,7 @@ export function createInitialLoopDisciplineState(
     consensusRecords: [],
     events: [],
     pendingPlan: null,
+    saturationTripsThisTask: 0,
   }
 }
 
@@ -710,6 +731,55 @@ export function evaluateCompletionExit(
       'verification-free (pure read-only research), emit a single',
       'EmitVerification entry with source=\'human\' explaining why.',
     ].join(' '),
+  }
+}
+
+/**
+ * How many trips before forcing phase=plan. Two means: the model went
+ * into saturation, did a WebSearch redirect (resetting count via Phase D
+ * external-knowledge path), then saturated AGAIN before producing
+ * verifiable progress. At that point WebSearch alone isn't helping;
+ * stop, plan, restart.
+ */
+export const FORCED_PLAN_TRIPS_THRESHOLD = 2
+
+/**
+ * Decide whether the query loop should force a plan-phase transition
+ * after this iteration's observation. Phase E4: the structural lever
+ * that makes Phase E's plan-then-edit actually fire — without this,
+ * plan→build only happens when the model voluntarily transitions.
+ *
+ * Returns `{force: true, reason}` only when:
+ *   - level >= 2 (advisory + observe modes skip)
+ *   - saturationTripsThisTask >= FORCED_PLAN_TRIPS_THRESHOLD
+ *   - current phase isn't already 'plan' (no re-forcing)
+ *   - we're not already executing a pendingPlan (model is mid-execution
+ *     of a plan it just emitted — let it finish)
+ */
+export type ForcedPlanOutcome =
+  | { force: false }
+  | { force: true; reason: string }
+
+export function evaluateForcedPlan(
+  state: LoopDisciplineState,
+): ForcedPlanOutcome {
+  if (state.level < 2) return { force: false }
+  if (state.phase === 'plan') return { force: false }
+  if (state.saturationTripsThisTask < FORCED_PLAN_TRIPS_THRESHOLD) {
+    return { force: false }
+  }
+  // If we have a fresh pendingPlan from this phase, the model is
+  // executing a plan — don't yank it back. The completion gate or
+  // saturation redirect will handle any failure to make progress.
+  if (
+    state.pendingPlan !== null &&
+    state.pendingPlan.emittedAtTurn >= state.phaseEnteredAt
+  ) {
+    return { force: false }
+  }
+  return {
+    force: true,
+    reason: `${state.saturationTripsThisTask} saturation trips in current task — forcing phase=plan so the model re-thinks the approach.`,
   }
 }
 

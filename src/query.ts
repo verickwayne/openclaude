@@ -12,11 +12,13 @@ import {
 } from './services/compact/autoCompact.js'
 import { buildPostCompactMessages } from './services/compact/compact.js'
 import {
+  applyPhaseTransition,
   applySaturationObservation,
   classifyIteration,
   createInitialLoopDisciplineState,
   emitDisciplineEventToStderr,
   evaluateCompletionExit,
+  evaluateForcedPlan,
   hadMutationsThisLoop,
   isDisciplineDebugEnabled,
   readDisciplineLevel,
@@ -2009,7 +2011,7 @@ async function* queryLoop(
     // tracker. At discipline level 0 the observation is a no-op; at level
     // 1+ it drives the next iteration's saturationCount and may trigger
     // the redirect gate via runPreToolUseHooks on the following turn.
-    const nextLoopDiscipline =
+    let nextLoopDiscipline =
       state.loopDiscipline.level === 0
         ? state.loopDiscipline
         : applySaturationObservation({
@@ -2026,6 +2028,21 @@ async function* queryLoop(
                 .filter(c => c.length > 0),
             }),
           })
+
+    // Phase E4 — when saturation has armed twice in this task, force a
+    // plan-phase transition so the model re-thinks the approach before
+    // editing further. This is what makes the plan-then-edit pattern
+    // structurally enforced rather than voluntary.
+    const forcedPlan = evaluateForcedPlan(nextLoopDiscipline)
+    if (forcedPlan.force) {
+      nextLoopDiscipline = applyPhaseTransition({
+        state: nextLoopDiscipline,
+        to: 'plan',
+        reason: forcedPlan.reason,
+        turnCount: nextTurnCount,
+        now: Date.now(),
+      })
+    }
 
     // Phase G — stream newly recorded events to stderr when
     // OPENCLAUDE_DEBUG_DISCIPLINE=1 is set. Compare event arrays by

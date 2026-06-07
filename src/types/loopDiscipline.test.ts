@@ -957,6 +957,176 @@ describe('emitDisciplineEventToStderr', () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────
+// Phase E4 — forced-plan-phase escalation
+// ─────────────────────────────────────────────────────────────────────
+
+import {
+  evaluateForcedPlan,
+  FORCED_PLAN_TRIPS_THRESHOLD,
+  SATURATION_THRESHOLD as SAT,
+} from './loopDiscipline.js'
+
+describe('Phase E4 — saturationTripsThisTask counter', () => {
+  it('starts at 0 on fresh state', () => {
+    expect(createInitialLoopDisciplineState(2).saturationTripsThisTask).toBe(0)
+  })
+
+  it('increments only on threshold crossing (not every mutation)', () => {
+    let s = createInitialLoopDisciplineState(2)
+    for (let i = 0; i < SAT - 1; i++) {
+      s = applySaturationObservation({
+        state: s,
+        kind: 'mutating-without-verification',
+        turnCount: i + 1,
+      })
+    }
+    expect(s.saturationTripsThisTask).toBe(0)
+    // Crossing the threshold.
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: SAT,
+    })
+    expect(s.saturationTripsThisTask).toBe(1)
+    // Above threshold — no double-count from a single armed window.
+    s = applySaturationObservation({
+      state: s,
+      kind: 'mutating-without-verification',
+      turnCount: SAT + 1,
+    })
+    expect(s.saturationTripsThisTask).toBe(1)
+  })
+
+  it('counts each fresh trip after a reset', () => {
+    let s = createInitialLoopDisciplineState(2)
+    // First arming.
+    for (let i = 0; i < SAT; i++) {
+      s = applySaturationObservation({
+        state: s,
+        kind: 'mutating-without-verification',
+        turnCount: i + 1,
+      })
+    }
+    expect(s.saturationTripsThisTask).toBe(1)
+    // WebSearch resets count (Phase D), trips counter persists.
+    s = applySaturationObservation({
+      state: s,
+      kind: 'external-knowledge',
+      turnCount: SAT + 1,
+    })
+    expect(s.saturationTripsThisTask).toBe(1)
+    expect(s.saturationCount).toBe(0)
+    // Second arming.
+    for (let i = 0; i < SAT; i++) {
+      s = applySaturationObservation({
+        state: s,
+        kind: 'mutating-without-verification',
+        turnCount: SAT + 2 + i,
+      })
+    }
+    expect(s.saturationTripsThisTask).toBe(2)
+  })
+
+  it('resets to 0 on phase transition (applyPhaseTransitionReset path)', () => {
+    let s = {
+      ...createInitialLoopDisciplineState(2, 'build'),
+      saturationTripsThisTask: 2,
+    }
+    s = applyPhaseTransition({
+      state: s,
+      to: 'plan',
+      reason: 'redirect',
+      turnCount: 5,
+      now: 0,
+    })
+    expect(s.saturationTripsThisTask).toBe(0)
+  })
+})
+
+describe('evaluateForcedPlan', () => {
+  it('does not force at level 0 or 1 (legacy + advisory)', () => {
+    for (const level of [0, 1] as const) {
+      const s = {
+        ...createInitialLoopDisciplineState(level, 'build'),
+        saturationTripsThisTask: 5,
+      }
+      expect(evaluateForcedPlan(s).force).toBe(false)
+    }
+  })
+
+  it('does not force when trips count is below threshold', () => {
+    const s = {
+      ...createInitialLoopDisciplineState(2, 'build'),
+      saturationTripsThisTask: FORCED_PLAN_TRIPS_THRESHOLD - 1,
+    }
+    expect(evaluateForcedPlan(s).force).toBe(false)
+  })
+
+  it('forces phase=plan when trips count >= threshold', () => {
+    const s = {
+      ...createInitialLoopDisciplineState(2, 'build'),
+      saturationTripsThisTask: FORCED_PLAN_TRIPS_THRESHOLD,
+    }
+    const out = evaluateForcedPlan(s)
+    expect(out.force).toBe(true)
+    if (out.force) expect(out.reason).toContain('saturation trips')
+  })
+
+  it('does not re-force when already in plan phase', () => {
+    const s = {
+      ...createInitialLoopDisciplineState(2, 'plan'),
+      saturationTripsThisTask: 5,
+    }
+    expect(evaluateForcedPlan(s).force).toBe(false)
+  })
+
+  it('does not force when a fresh pendingPlan is being executed', () => {
+    // Model emitted a plan, transitioned to build, and is now mid-execution.
+    // Saturation may have armed but we should let the plan finish before
+    // re-forcing — the completion gate or another saturation cycle will
+    // handle persistent failure.
+    let s = createInitialLoopDisciplineState(2, 'build')
+    s = applyEmitPlan({
+      state: s,
+      plan: {
+        intent: 'x',
+        files_to_edit: ['a'],
+        smallest_test: 't',
+      },
+      turnCount: s.phaseEnteredAt + 1,
+      now: 0,
+    })
+    // Mark trips count high.
+    s = { ...s, saturationTripsThisTask: 5 }
+    expect(evaluateForcedPlan(s).force).toBe(false)
+  })
+
+  it('DOES force when pendingPlan is stale (emitted before current phase)', () => {
+    let s = createInitialLoopDisciplineState(2, 'plan')
+    s = applyEmitPlan({
+      state: s,
+      plan: { intent: 'x', files_to_edit: ['a'], smallest_test: 't' },
+      turnCount: 2,
+      now: 0,
+    })
+    // Transition into build (plan now consumed for execution).
+    s = applyPhaseTransition({
+      state: s,
+      to: 'build',
+      reason: 'go',
+      turnCount: 3,
+      now: 0,
+    })
+    // The transition reset saturationTripsThisTask. Simulate two more trips.
+    s = { ...s, saturationTripsThisTask: 2 }
+    // Now the pendingPlan was emitted at turn 2 but phaseEnteredAt=3 (build),
+    // so pendingPlan.emittedAtTurn (2) < phaseEnteredAt (3) → stale, so the
+    // forcer reactivates.
+    expect(evaluateForcedPlan(s).force).toBe(true)
+  })
+})
+
 describe('Phase G integration: apply* functions emit events', () => {
   it('applyPhaseTransition records a phase-transition event', () => {
     const before = createInitialLoopDisciplineState(2, 'build')
