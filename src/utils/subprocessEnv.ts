@@ -1,3 +1,4 @@
+import { getSessionId } from '../bootstrap/state.js'
 import { isEnvTruthy } from './envUtils.js'
 
 /**
@@ -76,6 +77,30 @@ export function registerUpstreamProxyEnvFn(
   _getUpstreamProxyEnv = fn
 }
 
+/**
+ * Inject the harness's current session id so subprocesses (MCP stdio
+ * servers in particular) can correlate their state to the Claude Code
+ * conversation. The Mnemo MCP launcher reads CLAUDE_SESSION_ID and
+ * threads it into MNEMO_SESSION_ID so recalls within one conversation
+ * share a session_id rather than collapsing into a random per-spawn
+ * default. Safe no-op when the harness hasn't booted state yet
+ * (getSessionId throws → leave the env untouched).
+ */
+function injectSessionId(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (env.CLAUDE_SESSION_ID) return env
+  try {
+    const sid = getSessionId()
+    if (sid) {
+      env.CLAUDE_SESSION_ID = String(sid)
+    }
+  } catch {
+    // STATE hasn't been initialized yet (early spawn during boot, or
+    // test contexts that import this module before bootstrap). Silent
+    // — subprocesses will fall back to their own defaults.
+  }
+  return env
+}
+
 export function subprocessEnv(): NodeJS.ProcessEnv {
   // CCR upstreamproxy: inject HTTPS_PROXY + CA bundle vars so curl/gh/python
   // in agent subprocesses route through the local relay. Returns {} when the
@@ -84,9 +109,11 @@ export function subprocessEnv(): NodeJS.ProcessEnv {
   const proxyEnv = _getUpstreamProxyEnv?.() ?? {}
 
   if (!isEnvTruthy(process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB)) {
-    return Object.keys(proxyEnv).length > 0
-      ? { ...process.env, ...proxyEnv }
-      : process.env
+    const base =
+      Object.keys(proxyEnv).length > 0
+        ? { ...process.env, ...proxyEnv }
+        : { ...process.env }
+    return injectSessionId(base)
   }
   const env = { ...process.env, ...proxyEnv }
   for (const k of GHA_SUBPROCESS_SCRUB) {
@@ -95,5 +122,5 @@ export function subprocessEnv(): NodeJS.ProcessEnv {
     // secrets like INPUT_ANTHROPIC_API_KEY. No-op for vars that aren't action inputs.
     delete env[`INPUT_${k}`]
   }
-  return env
+  return injectSessionId(env)
 }
