@@ -739,19 +739,32 @@ export function evaluateCompletionExit(
     // Advisory: allow but tag.
     return { allowed: true, reason: 'completed_with_verification' }
   }
+  const agentClaimCount = counts.agent
+  // Surface what claims exist in the ledger so the model can reason
+  // about what's missing rather than re-stating its existing
+  // self-assertions. The body intentionally does NOT suggest
+  // EmitVerification as a gate-unlock — that tool writes
+  // source='agent' regardless of input, so it can't satisfy the gate.
+  // It's audit-only.
+  const claimSummary =
+    agentClaimCount > 0
+      ? ` You have ${agentClaimCount} agent-source claim${agentClaimCount === 1 ? '' : 's'} in the ledger, but agent claims do not satisfy this gate — they are records of what you believe, not evidence that something is true.`
+      : ''
+
   return {
     allowed: false,
     reason: 'requires_verification',
     nudge: [
       'COMPLETION EXIT BLOCKED: this loop performed mutating work',
       `(saturationCount peak: ${state.saturationCount}) but the verification`,
-      'ledger contains no tool / hook / human entries — only the agent\'s',
-      'own claims. Before exiting, run a verification step: a test, a',
-      'render of the produced artifact, an extractor that reads the',
-      'artifact via a DIFFERENT path than the one that wrote it, or call',
-      'EmitVerification with concrete evidence. If the task is genuinely',
-      'verification-free (pure read-only research), emit a single',
-      'EmitVerification entry with source=\'human\' explaining why.',
+      'ledger contains no tool / hook / human entries.' + claimSummary,
+      'To unlock exit, produce evidence from a DIFFERENT path than the',
+      'one that wrote the artifact: run a test via Bash (bun test /',
+      'pytest / etc. — this auto-records a source=\'tool\' ledger entry),',
+      'render the produced artifact with a different tool than the one',
+      'that wrote it, or have a human review and mark it verified.',
+      'EmitVerification records your reasoning but does NOT satisfy the',
+      'gate.',
     ].join(' '),
   }
 }

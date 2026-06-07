@@ -1009,7 +1009,36 @@ describe('evaluateCompletionExit', () => {
     if (!out.allowed) {
       expect(out.reason).toBe('requires_verification')
       expect(out.nudge).toContain('COMPLETION EXIT BLOCKED')
+      // The nudge mentions EmitVerification ONLY as a caveat (it doesn't
+      // unlock the gate) — not as a way out. Pin that contract here so
+      // a future regression of the original "EmitVerification with
+      // source='human'" advice (which was impossible to follow because
+      // EmitVerification hard-codes source='agent') gets caught.
       expect(out.nudge).toContain('EmitVerification')
+      expect(out.nudge).toContain('NOT satisfy the gate')
+      expect(out.nudge).not.toContain("source='human'")
+    }
+  })
+
+  it('surfaces the agent-claim count in the nudge so the model can reason about it', () => {
+    // Stack two agent claims.
+    let s = createInitialLoopDisciplineState(2)
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'one', source: 'agent' },
+      turnCount: 1,
+      now: 0,
+    })
+    s = applyVerificationEntry({
+      state: s,
+      entry: { claim: 'two', source: 'agent' },
+      turnCount: 2,
+      now: 0,
+    })
+    const out = evaluateCompletionExit(s, true)
+    expect(out.allowed).toBe(false)
+    if (!out.allowed) {
+      expect(out.nudge).toContain('2 agent-source claims')
     }
   })
 
