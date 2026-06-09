@@ -1,6 +1,6 @@
 // src/tools/AgentTool/dispatchOverride.test.ts
 import { expect, test } from 'bun:test'
-import { resolveDispatchOverride } from './runAgent.js'
+import { resolveDispatchOverride, personaModelForDispatch } from './runAgent.js'
 
 const REG = {
   firstPartyModels: ['claude-opus-4-8'],
@@ -17,4 +17,11 @@ test('a cross-provider model id yields an override', () => {
 })
 test('a first-party model id yields no override', () => {
   expect(resolveDispatchOverride('claude-opus-4-8', REG)).toBeNull()
+})
+test('persona is keyed off the effective (override) model, not the parent', () => {
+  const o = resolveDispatchOverride('openai/gpt-5.5', REG)!
+  expect(personaModelForDispatch(o, 'claude-opus-4-8')).toBe('openai/gpt-5.5')
+})
+test('persona falls back to parent model when no override', () => {
+  expect(personaModelForDispatch(null, 'claude-opus-4-8')).toBe('claude-opus-4-8')
 })

@@ -565,13 +565,16 @@ export async function* runAgent({
     appState.toolPermissionContext.additionalWorkingDirectories.keys(),
   )
 
+  // M5: use the target model's persona when dispatching cross-provider.
+  const promptModel = personaModelForDispatch(effectiveOverride ?? null, resolvedAgentModel)
+
   const agentSystemPrompt = override?.systemPrompt
     ? override.systemPrompt
     : asSystemPrompt(
         await getAgentSystemPrompt(
           agentDefinition,
           toolUseContext,
-          resolvedAgentModel,
+          promptModel,
           additionalWorkingDirectories,
           resolvedTools,
         ),
