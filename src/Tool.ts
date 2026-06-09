@@ -84,6 +84,7 @@ import type {
 } from './types/hooks.js'
 import type { AgentId } from './types/ids.js'
 import type { DeepImmutable } from './types/utils.js'
+import type { ResolvedProvider } from './services/api/resolvedProvider.js'
 import type { AttributionState } from './utils/commitAttribution.js'
 import type { FileHistoryState } from './utils/fileHistory.js'
 import type { Theme, ThemeName } from './utils/theme.js'
@@ -178,7 +179,7 @@ export type ToolUseContext = {
     /** Optional callback to get the latest tools (e.g., after MCP servers connect mid-query) */
     refreshTools?: () => Tools
     /** Per-agent provider override from agentRouting config */
-    providerOverride?: { model: string; baseURL: string; apiKey: string }
+    providerOverride?: ResolvedProvider
   }
   abortController: AbortController
   readFileState: FileStateCache

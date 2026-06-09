@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
 import { shouldUseFirstPartyAnthropicAuthForProvider } from './authRouting.js'
+import type { ResolvedProvider } from './resolvedProvider.js'
 
-const providerOverride = {
+const providerOverride: ResolvedProvider = {
+  profileId: 'p1',
+  kind: 'openai-compatible',
   model: 'gpt-4o',
   baseURL: 'https://provider.example/v1',
   apiKey: 'provider-test-key',

@@ -70,6 +70,7 @@ import {
   shouldAttemptLocalToollessRetry,
   type LocalFastPathConfig,
 } from './providerConfig.js'
+import type { ResolvedProvider } from './resolvedProvider.js'
 import {
   buildOpenAICompatibilityErrorMessage,
   classifyOpenAIHttpFailure,
@@ -1583,9 +1584,9 @@ class OpenAIShimStream {
 class OpenAIShimMessages {
   private defaultHeaders: Record<string, string>
   private reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
-  private providerOverride?: { model: string; baseURL: string; apiKey: string }
+  private providerOverride?: ResolvedProvider
 
-  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string }) {
+  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: ResolvedProvider) {
     this.defaultHeaders = filterAnthropicHeaders(defaultHeaders)
     this.reasoningEffort = reasoningEffort
     this.providerOverride = providerOverride
@@ -1600,7 +1601,7 @@ class OpenAIShimMessages {
     let httpResponse: Response | undefined
 
     const promise = (async () => {
-      const request = resolveProviderRequest({ model: self.providerOverride?.model ?? params.model, baseUrl: self.providerOverride?.baseURL, reasoningEffortOverride: self.reasoningEffort })
+      const request = resolveProviderRequest({ model: self.providerOverride?.model ?? params.model, baseUrl: self.providerOverride?.baseURL, reasoningEffortOverride: self.reasoningEffort, apiFormat: self.providerOverride?.apiFormat })
       const response = await self._doRequest(request, params, options)
       httpResponse = response
 
@@ -1723,9 +1724,18 @@ class OpenAIShimMessages {
           }
         },
       )
-      const credentials = resolveRuntimeCodexCredentials({
+      const resolvedCodexCredentials = resolveRuntimeCodexCredentials({
         storedCredentials: refreshResult.credentials,
       })
+      // A Codex OAuth override carries its own bearer; prefer it over the
+      // stored credential while keeping the resolved chatgpt account id.
+      const credentials = this.providerOverride?.oauthAccessToken
+        ? {
+            ...resolvedCodexCredentials,
+            apiKey: this.providerOverride.oauthAccessToken,
+            source: 'env' as const,
+          }
+        : resolvedCodexCredentials
       if (!credentials.apiKey) {
         const oauthHint = isBareMode() ? '' : ', choose Codex OAuth in /provider'
         const authHint = credentials.authPath
@@ -1999,8 +2009,12 @@ class OpenAIShimMessages {
       process.env.OPENAI_API_KEY ??
       xaiOAuthToken ??
       ''
-    const configuredAuthHeaderValue = process.env.OPENAI_AUTH_HEADER_VALUE?.trim()
-    const customAuthHeader = process.env.OPENAI_AUTH_HEADER?.trim()
+    const configuredAuthHeaderValue =
+      this.providerOverride?.authHeaderValue?.trim() ??
+      process.env.OPENAI_AUTH_HEADER_VALUE?.trim()
+    const customAuthHeader =
+      this.providerOverride?.authHeader?.trim() ??
+      process.env.OPENAI_AUTH_HEADER?.trim()
     const hasCustomAuthHeader = Boolean(
       customAuthHeader &&
       /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(customAuthHeader),
@@ -2584,7 +2598,7 @@ class OpenAIShimBeta {
   messages: OpenAIShimMessages
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
 
-  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string }) {
+  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: ResolvedProvider) {
     this.messages = new OpenAIShimMessages(defaultHeaders, reasoningEffort, providerOverride)
     this.reasoningEffort = reasoningEffort
   }
@@ -2595,7 +2609,7 @@ export function createOpenAIShimClient(options: {
   maxRetries?: number
   timeout?: number
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
-  providerOverride?: { model: string; baseURL: string; apiKey: string }
+  providerOverride?: ResolvedProvider
 }): unknown {
   hydrateGeminiAccessTokenFromSecureStorage()
   hydrateGithubModelsTokenFromSecureStorage()

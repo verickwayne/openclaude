@@ -21,6 +21,8 @@ describe('resolveAgentProvider', () => {
   test('name takes priority over subagentType', () => {
     const result = resolveAgentProvider('frontend-dev', 'Explore', baseSettings)
     expect(result).toEqual({
+      profileId: 'deepseek-chat',
+      kind: 'openai-compatible',
       model: 'deepseek-chat',
       baseURL: 'https://api.deepseek.com/v1',
       apiKey: 'sk-ds',
@@ -30,6 +32,8 @@ describe('resolveAgentProvider', () => {
   test('subagentType used when name has no match', () => {
     const result = resolveAgentProvider('unknown-name', 'Explore', baseSettings)
     expect(result).toEqual({
+      profileId: 'deepseek-chat',
+      kind: 'openai-compatible',
       model: 'deepseek-chat',
       baseURL: 'https://api.deepseek.com/v1',
       apiKey: 'sk-ds',
@@ -39,6 +43,8 @@ describe('resolveAgentProvider', () => {
   test('falls back to "default" when neither name nor subagentType match', () => {
     const result = resolveAgentProvider('nobody', 'unknown-type', baseSettings)
     expect(result).toEqual({
+      profileId: 'gpt-4o',
+      kind: 'openai-compatible',
       model: 'gpt-4o',
       baseURL: 'https://api.openai.com/v1',
       apiKey: 'sk-oai',

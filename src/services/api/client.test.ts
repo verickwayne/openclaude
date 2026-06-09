@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { acquireSharedMutationLock, releaseSharedMutationLock } from '../../test/sharedMutationLock.js'
-import { getAnthropicClient } from './client.js'
+import {
+  getAnthropicClient,
+  isTrustedAnthropicBaseURL,
+  overrideClientTarget,
+} from './client.js'
+import type { ResolvedProvider } from './resolvedProvider.js'
 
 type FetchType = typeof globalThis.fetch
 
@@ -1024,6 +1029,8 @@ test('strips Anthropic-specific custom headers on providerOverride shim requests
   const client = (await getAnthropicClient({
     maxRetries: 0,
     providerOverride: {
+      profileId: 'p1',
+      kind: 'openai-compatible',
       model: 'gpt-4o',
       baseURL: 'http://example.test/v1',
       apiKey: 'provider-test-key',
@@ -1044,4 +1051,75 @@ test('strips Anthropic-specific custom headers on providerOverride shim requests
   expect(capturedHeaders?.get('api-key')).toBeNull()
   expect(capturedHeaders?.get('x-safe-header')).toBe('keep-me')
   expect(capturedHeaders?.get('authorization')).toBe('Bearer provider-test-key')
+})
+
+test('openai-compatible override targets the shim', () => {
+  const o: ResolvedProvider = {
+    profileId: 'p',
+    kind: 'openai-compatible',
+    model: 'gpt-5.5',
+    baseURL: 'https://x/v1',
+    apiKey: 'k',
+  }
+  expect(overrideClientTarget(o)).toBe('openai-shim')
+})
+
+test('gemini override targets the shim', () => {
+  const o: ResolvedProvider = {
+    profileId: 'p',
+    kind: 'gemini',
+    model: 'gemini-2.5-pro',
+    baseURL: 'https://x/v1',
+    apiKey: 'k',
+  }
+  expect(overrideClientTarget(o)).toBe('openai-shim')
+})
+
+test('anthropic-native override targets the anthropic client', () => {
+  const o: ResolvedProvider = {
+    profileId: 'first-party',
+    kind: 'anthropic-native',
+    model: 'claude-opus-4-8',
+  }
+  expect(overrideClientTarget(o)).toBe('anthropic')
+})
+
+test('anthropic-proxy override targets the anthropic client', () => {
+  const o: ResolvedProvider = {
+    profileId: 'p',
+    kind: 'anthropic-proxy',
+    model: 'claude-sonnet-4-5',
+    baseURL: 'http://127.0.0.1:8031',
+  }
+  expect(overrideClientTarget(o)).toBe('anthropic')
+})
+
+test('isTrustedAnthropicBaseURL: undefined base URL is trusted (default api.anthropic.com)', () => {
+  expect(isTrustedAnthropicBaseURL(undefined)).toBe(true)
+})
+
+test('isTrustedAnthropicBaseURL: api.anthropic.com is trusted', () => {
+  expect(isTrustedAnthropicBaseURL('https://api.anthropic.com')).toBe(true)
+})
+
+test('isTrustedAnthropicBaseURL: loopback proxy is trusted', () => {
+  expect(isTrustedAnthropicBaseURL('http://127.0.0.1:8031')).toBe(true)
+  expect(isTrustedAnthropicBaseURL('http://localhost:8031')).toBe(true)
+})
+
+test('isTrustedAnthropicBaseURL: an untrusted host is not trusted', () => {
+  expect(isTrustedAnthropicBaseURL('https://evil.example/v1')).toBe(false)
+})
+
+test('isTrustedAnthropicBaseURL: a look-alike host that merely contains the trusted substring is not trusted', () => {
+  // Credential-exfil guard must reject hosts like api.anthropic.com.evil.com
+  // and paths that embed the trusted string — exact-host matching only.
+  expect(isTrustedAnthropicBaseURL('https://api.anthropic.com.evil.com/v1')).toBe(false)
+  expect(isTrustedAnthropicBaseURL('https://evil.example/api.anthropic.com')).toBe(false)
+  expect(isTrustedAnthropicBaseURL('https://127.0.0.1.evil.com/v1')).toBe(false)
+  expect(isTrustedAnthropicBaseURL('https://localhost.evil.com/v1')).toBe(false)
+})
+
+test('isTrustedAnthropicBaseURL: staging Anthropic host is trusted', () => {
+  expect(isTrustedAnthropicBaseURL('https://api-staging.anthropic.com')).toBe(true)
 })
