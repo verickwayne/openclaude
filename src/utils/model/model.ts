@@ -435,7 +435,13 @@ export function getDefaultMainLoopModel(): ModelName {
 export function firstPartyNameToCanonical(name: ModelName): ModelShortName {
   name = name.toLowerCase()
   // Special cases for Claude 4+ models to differentiate versions
-  // Order matters: check more specific versions first (4-7 before 4-6 before 4-5 before 4)
+  // Order matters: check more specific versions first (4-8 before 4-7 before 4-6 before 4-5 before 4)
+  if (name.includes('claude-opus-4-8')) {
+    return 'claude-opus-4-8'
+  }
+  if (name.includes('claude-fable-5')) {
+    return 'claude-fable-5'
+  }
   if (name.includes('claude-opus-4-7')) {
     return 'claude-opus-4-7'
   }
@@ -874,6 +880,12 @@ export function getMarketingNameForModel(modelId: string): string | undefined {
   const has1m = modelId.toLowerCase().includes('[1m]')
   const canonical = getCanonicalName(modelId)
 
+  if (canonical.includes('claude-opus-4-8')) {
+    return has1m ? 'Opus 4.8 (with 1M context)' : 'Opus 4.8'
+  }
+  if (canonical.includes('claude-fable-5')) {
+    return 'Fable 5'
+  }
   if (canonical.includes('claude-opus-4-7')) {
     return has1m ? 'Opus 4.7 (with 1M context)' : 'Opus 4.7'
   }

@@ -621,12 +621,17 @@ function getModelFamilyInfo(
     }
   }
 
-  // Opus family
+  // Opus family (includes Opus 4.8)
   if (canonical.includes('claude-opus-4')) {
     const currentName = getMarketingNameForModel(getDefaultOpusModel())
     if (currentName) {
       return { alias: 'Opus', currentVersionName: currentName }
     }
+  }
+
+  // Fable family
+  if (canonical.includes('claude-fable-5')) {
+    return { alias: 'Fable', currentVersionName: 'Fable 5' }
   }
 
   // Haiku family
