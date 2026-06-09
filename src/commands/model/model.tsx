@@ -62,8 +62,12 @@ import { parseCustomHeadersEnv } from '../../utils/providerCustomHeaders.js'
 import {
   getActiveOpenAIModelOptionsCache,
   getActiveProviderProfile,
+  getProviderProfiles,
   setActiveOpenAIModelOptionsCache,
 } from '../../utils/providerProfiles.js'
+import { getModelOptions } from '../../utils/model/modelOptions.js'
+import { getAllProviderModelOptions } from '../../utils/model/multiProviderOptions.js'
+import type { ProviderProfile } from '../../utils/config.js'
 
 type ModelDiscoveryContext =
   | {
@@ -83,6 +87,14 @@ type ModelDiscoveryContext =
       discoveryState?: ModelPickerDiscoveryState
       routeLabel: string
     }
+
+export function buildMultiProviderOptionsOverride(input: {
+  firstPartyOptions: ModelOption[]
+  profiles: ProviderProfile[]
+}): ModelOption[] | null {
+  if (input.profiles.length === 0) return null
+  return getAllProviderModelOptions(input)
+}
 
 function renderModelLabel(model: string | null): string {
   const rendered = renderDefaultModelSetting(
@@ -262,6 +274,26 @@ async function loadModelDiscoveryContext(): Promise<ModelDiscoveryContext | null
       autoRefresh: !isEssentialTrafficOnly(),
       canRefresh: !isEssentialTrafficOnly(),
       routeLabel: getLocalOpenAICompatibleProviderLabel(baseUrl),
+    }
+  }
+
+  // Multi-provider: when provider profiles are configured, aggregate all
+  // logged-in providers' models into one picker list.
+  const profiles = getProviderProfiles()
+  if (profiles.length > 0) {
+    const multiOverride = buildMultiProviderOptionsOverride({
+      firstPartyOptions: getModelOptions(false),
+      profiles,
+    })
+    if (multiOverride) {
+      return {
+        kind: 'descriptor',
+        autoRefresh: false,
+        canRefresh: false,
+        optionsOverride: multiOverride,
+        routeId: 'multi-provider',
+        routeLabel: 'All providers',
+      }
     }
   }
 

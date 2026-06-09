@@ -1,6 +1,7 @@
 // src/utils/model/multiProviderOptions.ts
 import type { ProviderProfile } from '../config.js'
 import type { ModelOption } from './modelOptions.js'
+import type { ModelSetting } from './model.js'
 import { parseModelList } from '../providerModels.js' // verified path (one level up, NOT ./providerModels)
 
 export type TaggedModelOption = ModelOption & {
@@ -12,7 +13,7 @@ export function getAllProviderModelOptions(input: {
   firstPartyOptions: ModelOption[]
   profiles: ProviderProfile[]
 }): TaggedModelOption[] {
-  const seen = new Set<string>()
+  const seen = new Set<ModelSetting>()
   const out: TaggedModelOption[] = []
   const push = (o: ModelOption, providerId: string, providerName: string) => {
     if (seen.has(o.value)) return
