@@ -66,7 +66,9 @@ import {
   setActiveOpenAIModelOptionsCache,
 } from '../../utils/providerProfiles.js'
 import { getModelOptions } from '../../utils/model/modelOptions.js'
-import { getAllProviderModelOptions } from '../../utils/model/multiProviderOptions.js'
+import {
+  getGroupedProviderModelOptions,
+} from '../../utils/model/multiProviderOptions.js'
 import type { ProviderProfile } from '../../utils/config.js'
 
 type ModelDiscoveryContext =
@@ -98,7 +100,7 @@ export function buildMultiProviderOptionsOverride(input: {
   profiles: ProviderProfile[]
 }): ModelOption[] | null {
   if (input.profiles.length === 0) return null
-  return getAllProviderModelOptions(input)
+  return getGroupedProviderModelOptions(input)
 }
 
 function renderModelLabel(model: string | null): string {

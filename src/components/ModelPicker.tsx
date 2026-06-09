@@ -11,6 +11,7 @@ import { useAppState, useSetAppState } from '../state/AppState.js';
 import { convertEffortValueToLevel, type EffortLevel, getDefaultEffortForModel, modelSupportsEffort, modelSupportsMaxEffort, resolvePickerEffortPersistence, toPersistableEffort } from '../utils/effort.js';
 import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel } from '../utils/model/model.js';
 import { getModelOptions, type ModelOption } from '../utils/model/modelOptions.js';
+import { isGroupHeaderValue } from '../utils/model/multiProviderOptions.js';
 import { getSettingsForSource, updateSettingsForSource } from '../utils/settings/settings.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Select } from './CustomSelect/index.js';
@@ -147,7 +148,11 @@ export function ModelPicker(t0) {
   const selectOptions = t5;
   let t6;
   if ($[14] !== initialValue || $[15] !== selectOptions) {
-    t6 = selectOptions.some(_ => _.value === initialValue) ? initialValue : selectOptions[0]?.value ?? undefined;
+    // Skip group header items when determining initial focus
+    const firstSelectableOption = selectOptions.find(o => !isGroupHeaderValue(String(o.value)));
+    t6 = selectOptions.some(_ => _.value === initialValue && !isGroupHeaderValue(String(_.value)))
+      ? initialValue
+      : firstSelectableOption?.value ?? undefined;
     $[14] = initialValue;
     $[15] = selectOptions;
     $[16] = t6;
@@ -155,8 +160,10 @@ export function ModelPicker(t0) {
     t6 = $[16];
   }
   const initialFocusValue = t6;
-  const visibleCount = Math.min(10, selectOptions.length);
-  const hiddenCount = Math.max(0, selectOptions.length - visibleCount);
+  // Exclude non-selectable group header items from visible/hidden counts
+  const selectableCount = selectOptions.filter(o => !isGroupHeaderValue(String(o.value))).length;
+  const visibleCount = Math.min(10, selectableCount) + Math.min(selectOptions.length - selectableCount, 4);
+  const hiddenCount = Math.max(0, selectableCount - Math.min(10, selectableCount));
   let t7;
   if ($[17] !== focusedValue || $[18] !== selectOptions) {
     t7 = selectOptions.find(opt_1 => opt_1.value === focusedValue)?.label;
@@ -194,6 +201,8 @@ export function ModelPicker(t0) {
   let t10;
   if ($[25] !== effortValue || $[26] !== hasToggledEffort) {
     t10 = value => {
+      // Don't update focused model state for group header items
+      if (isGroupHeaderValue(String(value))) return;
       setFocusedValue(value);
       if (!hasToggledEffort && effortValue === undefined) {
         setEffort(getDefaultEffortLevelForOption(value));
@@ -243,6 +252,8 @@ export function ModelPicker(t0) {
   let t14;
   if ($[35] !== effort || $[36] !== hasToggledEffort || $[37] !== onSelect || $[38] !== setAppState || $[39] !== skipSettingsWrite) {
     t14 = function handleSelect(value_0) {
+      // Group header items are non-selectable — guard here as well as in Select
+      if (isGroupHeaderValue(String(value_0))) return;
       logEvent("tengu_model_command_menu_effort", {
         effort: effort as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
