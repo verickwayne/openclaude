@@ -604,6 +604,9 @@ export type GlobalConfig = {
   additionalModelOptionsCache?: ModelOption[]
   additionalModelOptionsCacheScope?: string
 
+  // First-party-only bootstrap additions — never overwritten by OpenAI discovery.
+  firstPartyAdditionalModelOptionsCache?: ModelOption[]
+
   // Additional model options discovered from OpenAI-compatible endpoints.
   openaiAdditionalModelOptionsCache?: ModelOption[]
 

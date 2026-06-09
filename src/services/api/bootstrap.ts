@@ -228,22 +228,38 @@ export async function fetchBootstrapData(): Promise<void> {
 
     // Only persist if data actually changed — avoids a config write on every startup.
     const config = getGlobalConfig()
-    if (
-      isEqual(config.clientDataCache, clientData) &&
-      isEqual(config.additionalModelOptionsCache, additionalModelOptions) &&
-      config.additionalModelOptionsCacheScope === additionalModelOptionsScope
-    ) {
+    // Scope-aware unchanged check: first-party uses its own field, others use the shared field.
+    const isUnchanged = additionalModelOptionsScope === 'firstParty'
+      ? (
+        isEqual(config.clientDataCache, clientData) &&
+        isEqual(config.firstPartyAdditionalModelOptionsCache, additionalModelOptions)
+      )
+      : (
+        isEqual(config.clientDataCache, clientData) &&
+        isEqual(config.additionalModelOptionsCache, additionalModelOptions) &&
+        config.additionalModelOptionsCacheScope === additionalModelOptionsScope
+      )
+
+    if (isUnchanged) {
       logForDebugging('[Bootstrap] Cache unchanged, skipping write')
       return
     }
 
     logForDebugging('[Bootstrap] Cache updated, persisting to disk')
-    saveGlobalConfig(current => ({
-      ...current,
-      clientDataCache: clientData,
-      additionalModelOptionsCache: additionalModelOptions,
-      additionalModelOptionsCacheScope: additionalModelOptionsScope,
-    }))
+    if (additionalModelOptionsScope === 'firstParty') {
+      saveGlobalConfig(current => ({
+        ...current,
+        clientDataCache: clientData,
+        firstPartyAdditionalModelOptionsCache: additionalModelOptions,
+      }))
+    } else {
+      saveGlobalConfig(current => ({
+        ...current,
+        clientDataCache: clientData,
+        additionalModelOptionsCache: additionalModelOptions,
+        additionalModelOptionsCacheScope: additionalModelOptionsScope,
+      }))
+    }
   } catch (error) {
     logError(error)
   }

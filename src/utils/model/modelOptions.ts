@@ -53,23 +53,24 @@ export type ModelOption = {
   descriptionForModel?: string
 }
 
-function getScopedAdditionalModelOptions(): ModelOption[] {
+export function getScopedAdditionalModelOptions(activeScope: string | null = null): ModelOption[] {
   const config = getGlobalConfig()
-  const activeScope = getAdditionalModelOptionsCacheScope()
+  // If called with no argument, derive scope from the current provider env.
+  const scope = activeScope ?? getAdditionalModelOptionsCacheScope()
 
-  if (!activeScope) {
+  if (!scope) {
     return []
   }
 
-  if (config.additionalModelOptionsCacheScope !== undefined) {
-    return config.additionalModelOptionsCacheScope === activeScope
-      ? (config.additionalModelOptionsCache ?? [])
-      : []
+  if (scope === 'firstParty') {
+    return config.firstPartyAdditionalModelOptionsCache ?? []
   }
 
-  return activeScope === 'firstParty'
-    ? (config.additionalModelOptionsCache ?? [])
-    : []
+  if (config.additionalModelOptionsCacheScope === scope) {
+    return config.additionalModelOptionsCache ?? []
+  }
+
+  return []
 }
 
 export function getDefaultOptionForUser(fastMode = false): ModelOption {
@@ -724,7 +725,7 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   }
 
   // Append additional model options fetched during bootstrap
-  for (const opt of getScopedAdditionalModelOptions()) {
+  for (const opt of getScopedAdditionalModelOptions(getAdditionalModelOptionsCacheScope())) {
     if (!options.some(existing => existing.value === opt.value)) {
       options.push(opt)
     }
