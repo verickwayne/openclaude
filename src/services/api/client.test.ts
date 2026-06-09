@@ -1110,3 +1110,16 @@ test('isTrustedAnthropicBaseURL: loopback proxy is trusted', () => {
 test('isTrustedAnthropicBaseURL: an untrusted host is not trusted', () => {
   expect(isTrustedAnthropicBaseURL('https://evil.example/v1')).toBe(false)
 })
+
+test('isTrustedAnthropicBaseURL: a look-alike host that merely contains the trusted substring is not trusted', () => {
+  // Credential-exfil guard must reject hosts like api.anthropic.com.evil.com
+  // and paths that embed the trusted string — exact-host matching only.
+  expect(isTrustedAnthropicBaseURL('https://api.anthropic.com.evil.com/v1')).toBe(false)
+  expect(isTrustedAnthropicBaseURL('https://evil.example/api.anthropic.com')).toBe(false)
+  expect(isTrustedAnthropicBaseURL('https://127.0.0.1.evil.com/v1')).toBe(false)
+  expect(isTrustedAnthropicBaseURL('https://localhost.evil.com/v1')).toBe(false)
+})
+
+test('isTrustedAnthropicBaseURL: staging Anthropic host is trusted', () => {
+  expect(isTrustedAnthropicBaseURL('https://api-staging.anthropic.com')).toBe(true)
+})

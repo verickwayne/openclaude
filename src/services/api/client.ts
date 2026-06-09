@@ -77,12 +77,21 @@ export function overrideClientTarget(
  */
 export function isTrustedAnthropicBaseURL(baseURL?: string): boolean {
   if (!baseURL) return true // default = api.anthropic.com
-  const u = baseURL.toLowerCase()
-  return (
-    u.includes('api.anthropic.com') ||
-    u.includes('127.0.0.1') ||
-    u.includes('localhost')
-  )
+  // Exact-hostname match only. A substring check would accept exfil hosts like
+  // `api.anthropic.com.evil.com`, so parse the URL and compare the hostname.
+  try {
+    const { hostname } = new URL(baseURL)
+    const host = hostname.toLowerCase()
+    const trustedHosts = [
+      'api.anthropic.com',
+      'api-staging.anthropic.com',
+      '127.0.0.1',
+      'localhost',
+    ]
+    return trustedHosts.includes(host)
+  } catch {
+    return false
+  }
 }
 
 const importRuntimeModule = new Function(
