@@ -48,6 +48,10 @@ import {
   spawnInProcessTeammate,
 } from '../../utils/swarm/spawnInProcess.js'
 import type { ResolvedProvider } from '../../services/api/resolvedProvider.js'
+import {
+  TeamMessageBus,
+  type TeamMessage,
+} from '../../services/api/teamMessageBus.js'
 import { buildInheritedEnvVars } from '../../utils/swarm/spawnUtils.js'
 import {
   getTeamFilePath,
@@ -114,6 +118,40 @@ export function resolveTeammateProviderOverride(
   _model: string,
 ): ResolvedProvider | undefined {
   return undefined
+}
+
+/**
+ * Comms facade over the in-process TeamMessageBus for one team (M6).
+ *
+ * Process boundaries (review #7): TeamMessageBus is in-process. It directly
+ * serves the orchestrator and any in-process sub-agents (the AgentTool path).
+ * Subprocess teammates spawned by spawnMultiAgent are separate OS processes
+ * and cannot receive in-memory bus events — their messaging rides the existing
+ * SendMessage tool / team IPC. The bridge is one-directional on the
+ * orchestrator side: when a subprocess teammate calls SendMessage, the
+ * orchestrator's inbound IPC handler should call `comms.bus.send(...)` to fan
+ * the message out to in-process subscribers. Do NOT attempt to deliver bus
+ * events into a child process; outbound to a subprocess teammate uses the
+ * existing SendMessage delivery, not the bus.
+ */
+export function createTeamComms(teamId: string, teammateIds: string[]) {
+  const bus = new TeamMessageBus(teamId)
+  return {
+    bus,
+    onOrchestratorMessage(handler: (m: TeamMessage) => void) {
+      return bus.subscribe('orchestrator', handler)
+    },
+    fromTeammate(agentId: string) {
+      return {
+        send: (to: string, body: string) =>
+          bus.send({ from: agentId, to, body }),
+        broadcast: (body: string) => bus.broadcast({ from: agentId, body }),
+        onMessage: (handler: (m: TeamMessage) => void) =>
+          bus.subscribe(agentId, handler),
+      }
+    },
+    teammateIds,
+  }
 }
 
 // ============================================================================
