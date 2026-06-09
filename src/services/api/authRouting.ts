@@ -8,7 +8,10 @@ import {
   resolveActiveRouteIdFromEnv,
 } from '../../integrations/routeMetadata.js'
 
-export type ProviderOverride = { model: string; baseURL: string; apiKey: string }
+import type { ResolvedProvider } from './resolvedProvider.js'
+
+// Back-compat alias: the per-request override carrier is now ResolvedProvider.
+export type ProviderOverride = ResolvedProvider
 
 export function shouldUseFirstPartyAnthropicAuthForProvider({
   providerOverride,
@@ -21,7 +24,15 @@ export function shouldUseFirstPartyAnthropicAuthForProvider({
   isFirstPartyBaseUrl?: boolean
   routeId?: string | null
 }): boolean {
-  if (providerOverride || apiProvider !== 'firstParty') {
+  if (providerOverride) {
+    // Anthropic-native/proxy overrides still authenticate as Anthropic;
+    // every other override kind is third-party and must not.
+    return (
+      providerOverride.kind === 'anthropic-native' ||
+      providerOverride.kind === 'anthropic-proxy'
+    )
+  }
+  if (apiProvider !== 'firstParty') {
     return false
   }
 

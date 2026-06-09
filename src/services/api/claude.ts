@@ -225,6 +225,7 @@ import { getInitializationStatus } from '../lsp/manager.js'
 import { isToolFromMcpServer } from '../mcp/utils.js'
 import { withStreamingVCR, withVCR } from '../vcr.js'
 import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
+import type { ResolvedProvider } from './resolvedProvider.js'
 import {
   API_ERROR_MESSAGE_PREFIX,
   CUSTOM_OFF_SWITCH_MESSAGE,
@@ -713,7 +714,7 @@ export type Options = {
   // so the model can pace itself. `remaining` is computed by the caller
   // (query.ts decrements across the agentic loop).
   taskBudget?: { total: number; remaining?: number }
-  providerOverride?: { model: string; baseURL: string; apiKey: string }
+  providerOverride?: ResolvedProvider
 }
 
 export async function queryModelWithoutStreaming({

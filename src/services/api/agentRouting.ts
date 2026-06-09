@@ -1,17 +1,12 @@
 import type { SettingsJson } from '../../utils/settings/types.js'
+import type { ResolvedProvider } from './resolvedProvider.js'
 
 /**
  * Provider override resolved from agent routing config.
  * When present, the API client should use these instead of global env vars.
+ * Unified onto ResolvedProvider (back-compat alias).
  */
-export interface ProviderOverride {
-  /** Model name to send to the API (e.g. "deepseek-chat", "gpt-4o") */
-  model: string
-  /** OpenAI-compatible base URL */
-  baseURL: string
-  /** API key for this provider */
-  apiKey: string
-}
+export type { ResolvedProvider as ProviderOverride } from './resolvedProvider.js'
 
 /**
  * Normalize an agent identifier for case-insensitive, hyphen/underscore-agnostic matching.
@@ -29,7 +24,7 @@ export function resolveAgentProvider(
   name: string | undefined,
   subagentType: string | undefined,
   settings: SettingsJson | null,
-): ProviderOverride | null {
+): ResolvedProvider | null {
   if (!settings) return null
 
   const routing = settings.agentRouting
@@ -68,6 +63,8 @@ export function resolveAgentProvider(
   if (!modelConfig) return null
 
   return {
+    profileId: modelName,
+    kind: 'openai-compatible',
     model: modelName,
     baseURL: modelConfig.base_url,
     apiKey: modelConfig.api_key,
