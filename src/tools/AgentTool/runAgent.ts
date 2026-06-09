@@ -66,7 +66,7 @@ import {
 import type { ResolvedProvider } from '../../services/api/resolvedProvider.js'
 import { getProviderProfiles } from '../../utils/providerProfiles.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
-import type { ModelAlias } from '../../utils/model/aliases.js'
+import { isModelAlias } from '../../utils/model/aliases.js'
 import {
   clearAgentTranscriptSubdir,
   recordSidechainTranscript,
@@ -329,7 +329,8 @@ export async function* runAgent({
     abortController?: AbortController
     agentId?: AgentId
   }
-  model?: ModelAlias
+  /** Tier alias ('sonnet'|'opus'|'haiku') or a full registry model id (e.g. 'openai/gpt-5.5'). */
+  model?: string
   maxTurns?: number
   /** Preserve toolUseResult on messages for subagents with viewable transcripts */
   preserveToolUseResults?: boolean
@@ -383,10 +384,13 @@ export async function* runAgent({
   const rootSetAppState =
     toolUseContext.setAppStateForTasks ?? toolUseContext.setAppState
 
+  // Pass only tier aliases to getAgentModel; non-alias model ids (cross-provider
+  // registry ids) are resolved separately by resolveDispatchOverride below.
+  const modelAlias = model && isModelAlias(model) ? model : undefined
   const resolvedAgentModel = getAgentModel(
     agentDefinition.model,
     toolUseContext.options.mainLoopModel,
-    model,
+    modelAlias,
     permissionMode,
   )
 
