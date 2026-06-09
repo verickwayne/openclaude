@@ -58,6 +58,13 @@ import { executeSubagentStartHooks } from '../../utils/hooks.js'
 import { createUserMessage } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
 import { resolveAgentProvider } from '../../services/api/agentRouting.js'
+import {
+  resolveProviderForModel,
+  buildLiveRegistryInput,
+  type RegistryInput,
+} from '../../services/api/modelRegistry.js'
+import type { ResolvedProvider } from '../../services/api/resolvedProvider.js'
+import { getProviderProfiles } from '../../utils/providerProfiles.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import type { ModelAlias } from '../../utils/model/aliases.js'
 import {
@@ -78,6 +85,45 @@ import type { ContentReplacementState } from '../../utils/toolResultStorage.js'
 import { createAgentId } from '../../utils/uuid.js'
 import { resolveAgentTools } from './agentToolUtils.js'
 import { type AgentDefinition, isBuiltInAgent } from './loadAgentsDir.js'
+
+// ─── M5: Cross-provider sub-agent dispatch ─────────────────────────────────
+
+const TIER_ALIASES = new Set(['sonnet', 'opus', 'haiku', 'inherit'])
+
+/**
+ * Resolve a registry-backed provider override for a Task tool `model` value.
+ *
+ * Returns null when:
+ * - the kill switch is active (OPENCLAUDE_MULTI_PROVIDER=0)
+ * - `model` is a tier alias ('sonnet', 'opus', 'haiku', 'inherit') — those
+ *   are handled by the existing getAgentModel path
+ * - `model` resolves to a first-party Anthropic model
+ * - `model` is not found in the registry
+ */
+export function resolveDispatchOverride(
+  model: string | undefined,
+  registryInput: RegistryInput,
+): ResolvedProvider | null {
+  if (process.env.OPENCLAUDE_MULTI_PROVIDER === '0') return null // kill switch (constraint #6)
+  if (!model || TIER_ALIASES.has(model)) return null
+  const rp = resolveProviderForModel(model, registryInput)
+  if (!rp || rp.profileId === 'first-party') return null
+  return rp
+}
+
+/**
+ * Return the model id that should key the sub-agent's persona.
+ * When a dispatch override is present, use its model (the target model); otherwise
+ * fall back to the parent model so the persona is consistent with the actual runner.
+ */
+export function personaModelForDispatch(
+  override: ResolvedProvider | null,
+  parentModel: string,
+): string {
+  return override?.model ?? parentModel
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Initialize agent-specific MCP servers
@@ -350,7 +396,18 @@ export async function* runAgent({
     agentDefinition.agentType,
     getInitialSettings(),
   )
-  const effectiveModel = providerOverride ? providerOverride.model : resolvedAgentModel
+
+  // M5: if the Task tool supplied a registry model id (not a tier alias),
+  // prefer a per-dispatch override over the settings-based providerOverride.
+  const dispatchOverride = resolveDispatchOverride(
+    model,
+    buildLiveRegistryInput({
+      getFirstPartyModels: () => [],
+      getProfiles: () => getProviderProfiles(),
+    }),
+  )
+  const effectiveOverride = dispatchOverride ?? providerOverride ?? undefined
+  const effectiveModel = effectiveOverride ? effectiveOverride.model : resolvedAgentModel
 
   const agentId = override?.agentId ? override.agentId : createAgentId()
 
@@ -679,7 +736,7 @@ export async function* runAgent({
     debug: toolUseContext.options.debug,
     verbose: toolUseContext.options.verbose,
     mainLoopModel: effectiveModel,
-    providerOverride: providerOverride ?? undefined,
+    providerOverride: effectiveOverride,
     // For fork children (useExactTools), inherit thinking config to match the
     // parent's API request prefix for prompt cache hits. For regular
     // sub-agents, disable thinking to control output token costs.
