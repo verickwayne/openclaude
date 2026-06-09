@@ -162,6 +162,7 @@ function mockProviderProfilesModule(options?: {
   getProviderProfiles?: () => unknown[]
   updateProviderProfile?: (...args: unknown[]) => unknown
   setActiveProviderProfile?: (...args: unknown[]) => unknown
+  addModelsToProviderProfile?: (...args: unknown[]) => unknown
 }): void {
   mock.module('../utils/providerProfiles.js', () => ({
     addProviderProfile: options?.addProviderProfile ?? (() => null),
@@ -280,6 +281,8 @@ function mockProviderProfilesModule(options?: {
     getProviderProfiles: options?.getProviderProfiles ?? (() => []),
     setActiveProviderProfile: options?.setActiveProviderProfile ?? (() => null),
     updateProviderProfile: options?.updateProviderProfile ?? (() => null),
+    addModelsToProviderProfile:
+      options?.addModelsToProviderProfile ?? (() => null),
   }))
 }
 
@@ -315,6 +318,7 @@ function mockProviderManagerDependencies(
     codexAsyncRead?: () => Promise<unknown>
     updateProviderProfile?: (...args: any[]) => unknown
     setActiveProviderProfile?: (...args: any[]) => unknown
+    addModelsToProviderProfile?: (...args: any[]) => unknown
     useCodexOAuthFlow?: (options: {
       onAuthenticated: (tokens: {
         accessToken: string
@@ -338,6 +342,7 @@ function mockProviderManagerDependencies(
     getProviderProfiles: options?.getProviderProfiles,
     updateProviderProfile: options?.updateProviderProfile,
     setActiveProviderProfile: options?.setActiveProviderProfile,
+    addModelsToProviderProfile: options?.addModelsToProviderProfile,
   })
 
   mock.module('../utils/providerDiscovery.js', () => ({
@@ -1020,6 +1025,8 @@ test('ProviderManager clears hidden Hicap auth fields when editing', async () =>
     await Bun.sleep(25)
     mounted.stdin.write('j')
     await Bun.sleep(25)
+    mounted.stdin.write('j')
+    await Bun.sleep(25)
     mounted.stdin.write('\r')
 
     await waitForFrameOutput(mounted.getOutput, frame =>
@@ -1091,6 +1098,8 @@ test('ProviderManager skips advanced fields for legacy Kimi Code profiles', asyn
       frame.includes('Edit provider'),
     )
 
+    mounted.stdin.write('j')
+    await Bun.sleep(25)
     mounted.stdin.write('j')
     await Bun.sleep(25)
     mounted.stdin.write('j')
@@ -1697,6 +1706,8 @@ test('ProviderManager keeps OpenAI (Subscription) as next-startup only when acti
 
   mounted.stdin.write('j')
   await Bun.sleep(25)
+  mounted.stdin.write('j')
+  await Bun.sleep(25)
   mounted.stdin.write('\r')
 
   await waitForFrameOutput(
@@ -1765,6 +1776,8 @@ test('ProviderManager activating a multi-model provider sets the session model t
       frame.includes('Set active provider'),
   )
 
+  mounted.stdin.write('j')
+  await Bun.sleep(25)
   mounted.stdin.write('j')
   await Bun.sleep(25)
   mounted.stdin.write('\r')
@@ -1848,6 +1861,8 @@ test('ProviderManager editing an active multi-model provider keeps app state on 
       frame.includes('Edit provider'),
   )
 
+  mounted.stdin.write('j')
+  await Bun.sleep(25)
   mounted.stdin.write('j')
   await Bun.sleep(25)
   mounted.stdin.write('j')
@@ -1980,6 +1995,8 @@ test('ProviderManager set-active list uses descriptor-backed provider type label
       frame.includes('Set active provider'),
   )
 
+  mounted.stdin.write('j')
+  await Bun.sleep(25)
   mounted.stdin.write('j')
   await Bun.sleep(25)
   mounted.stdin.write('\r')

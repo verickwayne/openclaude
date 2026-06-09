@@ -1052,6 +1052,76 @@ describe('persistActiveProviderProfileModel', () => {
   })
 })
 
+describe('addModelsToProviderProfile', () => {
+  test('appends new models to the target profile, deduping against existing', async () => {
+    const { addModelsToProviderProfile, getProviderProfiles } =
+      await importFreshProviderProfileModules()
+    const profile = buildProfile({
+      id: 'saved_openrouter',
+      model: 'openai/gpt-5-mini',
+    })
+
+    saveMockGlobalConfig(current => ({
+      ...current,
+      providerProfiles: [profile],
+      activeProviderProfileId: profile.id,
+    }))
+
+    const updated = addModelsToProviderProfile(profile.id, [
+      'deepseek/deepseek-chat-v3',
+      'openai/gpt-5-mini',
+      'mistralai/mistral-large',
+    ])
+
+    expect(updated?.model).toBe(
+      'openai/gpt-5-mini, deepseek/deepseek-chat-v3, mistralai/mistral-large',
+    )
+
+    const saved = getProviderProfiles().find(
+      (entry: ProviderProfile) => entry.id === profile.id,
+    )
+    expect(saved?.model).toBe(
+      'openai/gpt-5-mini, deepseek/deepseek-chat-v3, mistralai/mistral-large',
+    )
+  })
+
+  test('is a no-op (returns profile unchanged) when all models already exist', async () => {
+    const { addModelsToProviderProfile, getProviderProfiles } =
+      await importFreshProviderProfileModules()
+    const profile = buildProfile({
+      id: 'saved_openrouter',
+      model: 'a, b',
+    })
+
+    saveMockGlobalConfig(current => ({
+      ...current,
+      providerProfiles: [profile],
+      activeProviderProfileId: profile.id,
+    }))
+
+    const updated = addModelsToProviderProfile(profile.id, ['a', 'b'])
+    expect(updated?.model).toBe('a, b')
+
+    const saved = getProviderProfiles().find(
+      (entry: ProviderProfile) => entry.id === profile.id,
+    )
+    expect(saved?.model).toBe('a, b')
+  })
+
+  test('returns null when the profile does not exist', async () => {
+    const { addModelsToProviderProfile } =
+      await importFreshProviderProfileModules()
+
+    saveMockGlobalConfig(current => ({
+      ...current,
+      providerProfiles: [],
+      activeProviderProfileId: undefined,
+    }))
+
+    expect(addModelsToProviderProfile('missing', ['x'])).toBeNull()
+  })
+})
+
 describe('getProviderPresetDefaults', () => {
   test('ollama preset defaults to a local Ollama model', async () => {
     const { getProviderPresetDefaults } = await importFreshProviderProfileModules()

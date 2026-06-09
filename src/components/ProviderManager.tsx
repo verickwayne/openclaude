@@ -49,6 +49,7 @@ import {
 import { openAIShimSupportsApiFormatForModel } from '../integrations/runtimeMetadata.js'
 import { probeRouteReadiness } from '../integrations/discoveryService.js'
 import {
+  addModelsToProviderProfile,
   addProviderProfile,
   applyActiveProviderProfileFromConfig,
   deleteProviderProfile,
@@ -119,6 +120,8 @@ type Screen =
   | 'select-active'
   | 'select-edit'
   | 'select-delete'
+  | 'select-add-models-profile'
+  | 'add-models-input'
 
 type DraftField =
   | 'name'
@@ -227,6 +230,16 @@ const XAI_OAUTH_PROVIDER_MODEL = 'grok-4.3'
 const XAI_OAUTH_PROVIDER_BASE_URL = 'https://api.x.ai/v1'
 
 const PINNED_PROVIDER_PRESETS = ['claude-max-proxy', 'openrouter'] as const
+
+// Suggested model IDs offered as defaults when adding models to a provider.
+// Primary use is OpenRouter model IDs.
+const SUGGESTED_ADD_MODEL_IDS = [
+  'deepseek/deepseek-chat-v3',
+  'meta-llama/llama-3.3-70b-instruct',
+  'google/gemini-2.0-flash-001',
+  'qwen/qwen-2.5-coder-32b-instruct',
+  'mistralai/mistral-large',
+] as const
 
 type GithubCredentialSource = 'stored' | 'env' | 'none'
 
@@ -744,6 +757,10 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
         : 'menu',
   )
   const [editingProfileId, setEditingProfileId] = React.useState<string | null>(null)
+  const [addModelsProfileId, setAddModelsProfileId] = React.useState<string | null>(
+    null,
+  )
+  const [addModelsInput, setAddModelsInput] = React.useState('')
   const [draftProvider, setDraftProvider] = React.useState<ProviderProfile['provider']>(
     'openai',
   )
@@ -837,6 +854,12 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
         value: 'add',
         label: 'Add provider',
         description: 'Create a new provider profile',
+      },
+      {
+        value: 'add-models',
+        label: 'Add model(s) to a provider',
+        description: 'Append model IDs to an existing provider profile',
+        disabled: !hasProfiles,
       },
       {
         value: 'activate',
@@ -1834,6 +1857,20 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     isActive: screen === 'preset-api-key',
   })
 
+  // add-models-input renders a TextInput, so register Esc at the top level
+  // (same pattern as preset-api-key) to return to the provider picker.
+  function handleBackFromAddModelsInput(): void {
+    setErrorMessage(undefined)
+    setAddModelsInput('')
+    setCursorOffset(0)
+    setScreen('select-add-models-profile')
+  }
+
+  useKeybinding('confirm:no', handleBackFromAddModelsInput, {
+    context: 'Settings',
+    isActive: screen === 'add-models-input',
+  })
+
   // xAI OAuth setup renders a TextInput for the manual-code recovery
   // path, which registers its own useInput listener. The child-component
   // useKeybinding inside XaiOAuthSetup ends up racing the input handler
@@ -2152,6 +2189,105 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     )
   }
 
+  function startAddModelsForProfile(profileId: string): void {
+    setAddModelsProfileId(profileId)
+    const seeded = SUGGESTED_ADD_MODEL_IDS.join(', ')
+    setAddModelsInput(seeded)
+    setCursorOffset(seeded.length)
+    setErrorMessage(undefined)
+    setScreen('add-models-input')
+  }
+
+  function commitAddModels(rawInput: string): void {
+    const profileId = addModelsProfileId
+    if (!profileId) {
+      setErrorMessage('No provider selected.')
+      return
+    }
+
+    const models = parseModelInput(rawInput)
+    if (models.length === 0) {
+      setErrorMessage('Enter at least one model ID.')
+      return
+    }
+
+    const targetProfile = profiles.find(profile => profile.id === profileId)
+    const beforeCount = targetProfile
+      ? parseModelList(targetProfile.model).length
+      : 0
+
+    const updated = addModelsToProviderProfile(profileId, models)
+    if (!updated) {
+      setErrorMessage('Could not add models to the provider profile.')
+      return
+    }
+
+    const afterCount = parseModelList(updated.model).length
+    const added = afterCount - beforeCount
+
+    setAddModelsProfileId(null)
+    setAddModelsInput('')
+    setCursorOffset(0)
+    setErrorMessage(undefined)
+    refreshProfiles()
+    setStatusMessage(
+      added > 0
+        ? `Added ${added} model${added === 1 ? '' : 's'} to ${updated.name}`
+        : `No new models added to ${updated.name} (already present)`,
+    )
+    returnToMenu()
+  }
+
+  function renderAddModelsInput(): React.ReactNode {
+    const targetProfile = profiles.find(
+      profile => profile.id === addModelsProfileId,
+    )
+
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="remember" bold>
+          Add model(s) to a provider
+        </Text>
+        <Text dimColor>
+          {targetProfile
+            ? `Adding models to ${targetProfile.name}.`
+            : 'Adding models to the selected provider.'}{' '}
+          Separate model IDs with commas or new lines. Existing models are
+          kept; duplicates are ignored.
+        </Text>
+        {targetProfile ? (
+          <Text dimColor>Current models: {targetProfile.model}</Text>
+        ) : null}
+        <Text dimColor>Suggested:</Text>
+        {SUGGESTED_ADD_MODEL_IDS.map(modelId => (
+          <Text key={modelId} dimColor>
+            {'  '}
+            {figures.bullet} {modelId}
+          </Text>
+        ))}
+        <Box flexDirection="row" gap={1}>
+          <Text>{figures.pointer}</Text>
+          <TextInput
+            value={addModelsInput}
+            onChange={value => setAddModelsInput(value)}
+            onSubmit={value => commitAddModels(value)}
+            focus={true}
+            showCursor={true}
+            placeholder={`Enter model IDs${figures.ellipsis}`}
+            columns={inputColumns}
+            cursorOffset={cursorOffset}
+            onChangeCursorOffset={setCursorOffset}
+          />
+        </Box>
+        {errorMessage && <Text color="error">{errorMessage}</Text>}
+        <Text dimColor>
+          Press Enter to accept the suggested models or your edits. Press Esc to
+          go back.
+        </Text>
+      </Box>
+    )
+  }
+
   function renderMenu(): React.ReactNode {
     // Use memoized menuOptions from component scope
     const hasProfiles = profiles.length > 0
@@ -2203,6 +2339,11 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             switch (value) {
               case 'add':
                 setScreen('select-preset')
+                break
+              case 'add-models':
+                if (hasProfiles) {
+                  setScreen('select-add-models-profile')
+                }
                 break
               case 'activate':
                 if (hasSelectableProviders) {
@@ -2666,6 +2807,18 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
         },
         { includeGithub: true },
       )
+      break
+    case 'select-add-models-profile':
+      content = renderProfileSelection(
+        'Add model(s) to a provider',
+        'No providers available. Add one first.',
+        profileId => {
+          startAddModelsForProfile(profileId)
+        },
+      )
+      break
+    case 'add-models-input':
+      content = renderAddModelsInput()
       break
     case 'menu':
     default:
