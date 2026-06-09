@@ -338,6 +338,8 @@ test('strips store when providerOverride routes chat_completions to the Gemini h
   const client = createOpenAIShimClient({
     defaultHeaders: {},
     providerOverride: {
+      profileId: 'gemini',
+      kind: 'gemini',
       model: 'gemini-3.1-pro',
       baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
       apiKey: 'gemini-key',
@@ -378,6 +380,8 @@ test('strips store when providerOverride routes responses API to the Gemini host
   const client = createOpenAIShimClient({
     defaultHeaders: {},
     providerOverride: {
+      profileId: 'gemini',
+      kind: 'gemini',
       model: 'gemini-3.1-pro',
       baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
       apiKey: 'gemini-key',
@@ -773,6 +777,8 @@ test('strips Anthropic-specific headers on GitHub Codex transport with providerO
 
   const client = createOpenAIShimClient({
     providerOverride: {
+      profileId: 'github',
+      kind: 'openai-compatible',
       model: 'github:gpt-5-codex',
       baseURL: 'https://api.githubcopilot.com',
       apiKey: 'provider-override-key',
