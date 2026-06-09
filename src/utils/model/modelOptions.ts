@@ -416,6 +416,49 @@ function getCopilotModelOptions(): ModelOption[] {
   }))
 }
 
+/**
+ * The first-party (native Anthropic) tier's model options, independent of the
+ * currently-active provider. This is the single source the first-party picker
+ * branch and `getFirstPartyModelIds` both derive from, so the registry's set of
+ * first-party model ids stays in lock-step with what the picker offers.
+ */
+function buildFirstPartyModelOptions(fastMode = false): ModelOption[] {
+  const options = [getDefaultOptionForUser(fastMode)]
+  if (checkSonnet1mAccess()) {
+    options.push(getSonnet46_1MOption())
+  }
+  options.push(getOpus48Option())
+  options.push(getFable5Option())
+  if (isOpus1mMergeEnabled()) {
+    options.push(getMergedOpus1MOption(fastMode))
+  } else {
+    options.push(getOpus47Option(fastMode))
+    options.push(getOpus46Option(fastMode))
+    if (checkOpus1mAccess()) {
+      options.push(getOpus46_1MOption(fastMode))
+    }
+  }
+  options.push(getHaiku45Option())
+  return options
+}
+
+/**
+ * Tier-derived list of first-party model ids: the `value`s of the first-party
+ * picker branch plus every `value` in `firstPartyAdditionalModelOptionsCache`.
+ * Feeds the model→provider registry so a first-party model can be routed to
+ * native Anthropic regardless of which provider env is active.
+ */
+export function getFirstPartyModelIds(): string[] {
+  const fromTier = buildFirstPartyModelOptions().map(o => o.value)
+  const fromCache = (
+    getGlobalConfig().firstPartyAdditionalModelOptionsCache ?? []
+  ).map(o => o.value)
+  const ids = [...fromTier, ...fromCache].filter(
+    (v): v is string => typeof v === 'string' && v.length > 0,
+  )
+  return [...new Set(ids)]
+}
+
 function getModelOptionsBase(fastMode = false): ModelOption[] {
   if (getAPIProvider() === 'github') {
     return [getDefaultOptionForUser(fastMode), ...getCopilotModelOptions()]
@@ -553,24 +596,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
 
   // PAYG 1P API: Default (Sonnet) + Sonnet 1M + Opus 4.8 + Fable 5 + Opus 4.7 + Opus 4.6 + Opus 1M + Haiku
   if (getAPIProvider() === 'firstParty') {
-    const payg1POptions = [getDefaultOptionForUser(fastMode)]
-    if (checkSonnet1mAccess()) {
-      payg1POptions.push(getSonnet46_1MOption())
-    }
-    payg1POptions.push(getOpus48Option())
-    payg1POptions.push(getFable5Option())
-    if (isOpus1mMergeEnabled()) {
-      payg1POptions.push(getMergedOpus1MOption(fastMode))
-    } else {
-      payg1POptions.push(getOpus47Option(fastMode))
-      payg1POptions.push(getOpus46Option(fastMode))
-      if (checkOpus1mAccess()) {
-        payg1POptions.push(getOpus46_1MOption(fastMode))
-      }
-    }
-    payg1POptions.push(getHaiku45Option())
-    payg1POptions.push(...profileModelOptions)
-    return payg1POptions
+    return [...buildFirstPartyModelOptions(fastMode), ...profileModelOptions]
   }
 
   // PAYG 3P: Default (Sonnet 4.5) + Sonnet (3P custom) or Sonnet 4.6/1M + Opus (3P custom) or Opus 4.1/Opus 4.6/Opus1M + Haiku + Opus 4.1

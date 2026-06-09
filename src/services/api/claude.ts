@@ -205,6 +205,8 @@ import {
   normalizeModelStringForAPI,
   parseUserSpecifiedModel,
 } from '../../utils/model/model.js'
+import { getFirstPartyModelIds } from '../../utils/model/modelOptions.js'
+import { getProviderProfiles } from '../../utils/providerProfiles.js'
 import {
   startSessionActivity,
   stopSessionActivity,
@@ -225,7 +227,15 @@ import { getInitializationStatus } from '../lsp/manager.js'
 import { isToolFromMcpServer } from '../mcp/utils.js'
 import { withStreamingVCR, withVCR } from '../vcr.js'
 import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
-import type { ResolvedProvider } from './resolvedProvider.js'
+import {
+  buildLiveRegistryInput,
+  resolveProviderForModel,
+  type RegistryInput,
+} from './modelRegistry.js'
+import {
+  firstPartyResolvedProvider,
+  type ResolvedProvider,
+} from './resolvedProvider.js'
 import {
   API_ERROR_MESSAGE_PREFIX,
   CUSTOM_OFF_SWITCH_MESSAGE,
@@ -325,6 +335,25 @@ export function getExtraBodyParams(betaHeaders?: string[]): JsonObject {
   }
 
   return result
+}
+
+export function resolveMainLoopOverride(
+  model: string,
+  registryInput: RegistryInput,
+  ctx: { globalRouteIsFirstParty: boolean },
+): ResolvedProvider | null {
+  // Kill switch (review #8): when disabled, never route per-model — preserve
+  // legacy single-provider behavior entirely.
+  if (process.env.OPENCLAUDE_MULTI_PROVIDER === '0') return null
+  const rp = resolveProviderForModel(model, registryInput)
+  if (!rp) return null
+  if (rp.profileId === 'first-party') {
+    // Native default path only when the global env is already first-party;
+    // otherwise force an explicit anthropic-native override so a first-party
+    // model never authenticates as the (different) active provider.
+    return ctx.globalRouteIsFirstParty ? null : firstPartyResolvedProvider(model)
+  }
+  return rp
 }
 
 export function getPromptCachingEnabled(model: string): boolean {
@@ -1791,6 +1820,18 @@ async function* queryModel(
   let isFastModeRequest = isFastMode // Keep separate state as it may change if falling back
   let isAdvisorInProgress = false
 
+  // Per-request routing: resolve the selected model to its provider so the
+  // main loop reaches the model the operator picked regardless of which
+  // provider env is "active". A sub-agent's own providerOverride wins (??).
+  const mainLoopOverride = resolveMainLoopOverride(
+    options.model,
+    buildLiveRegistryInput({
+      getFirstPartyModels: getFirstPartyModelIds,
+      getProfiles: getProviderProfiles,
+    }),
+    { globalRouteIsFirstParty: getAPIProvider() === 'firstParty' },
+  )
+
   try {
     queryCheckpoint('query_client_creation_start')
     const generator = withRetry(
@@ -1800,7 +1841,7 @@ async function* queryModel(
           model: options.model,
           fetchOverride: options.fetchOverride,
           source: options.querySource,
-          providerOverride: options.providerOverride,
+          providerOverride: options.providerOverride ?? mainLoopOverride ?? undefined,
           effortValue: effort,
         }),
       async (anthropic, attempt, context) => {
@@ -2569,7 +2610,7 @@ async function* queryModel(
           : 'other') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       })
       const result = yield* executeNonStreamingRequest(
-        { model: options.model, source: options.querySource, providerOverride: options.providerOverride, effortValue: effort },
+        { model: options.model, source: options.querySource, providerOverride: options.providerOverride ?? mainLoopOverride ?? undefined, effortValue: effort },
         {
           model: options.model,
           fallbackModel: options.fallbackModel,
@@ -2668,7 +2709,7 @@ async function* queryModel(
       try {
         // Fall back to non-streaming mode
         const result = yield* executeNonStreamingRequest(
-          { model: options.model, source: options.querySource, effortValue: effort },
+          { model: options.model, source: options.querySource, providerOverride: options.providerOverride ?? mainLoopOverride ?? undefined, effortValue: effort },
           {
             model: options.model,
             fallbackModel: options.fallbackModel,
