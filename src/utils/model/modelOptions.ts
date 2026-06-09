@@ -53,23 +53,24 @@ export type ModelOption = {
   descriptionForModel?: string
 }
 
-function getScopedAdditionalModelOptions(): ModelOption[] {
+export function getScopedAdditionalModelOptions(activeScope: string | null = null): ModelOption[] {
   const config = getGlobalConfig()
-  const activeScope = getAdditionalModelOptionsCacheScope()
+  // If called with no argument, derive scope from the current provider env.
+  const scope = activeScope ?? getAdditionalModelOptionsCacheScope()
 
-  if (!activeScope) {
+  if (!scope) {
     return []
   }
 
-  if (config.additionalModelOptionsCacheScope !== undefined) {
-    return config.additionalModelOptionsCacheScope === activeScope
-      ? (config.additionalModelOptionsCache ?? [])
-      : []
+  if (scope === 'firstParty') {
+    return config.firstPartyAdditionalModelOptionsCache ?? []
   }
 
-  return activeScope === 'firstParty'
-    ? (config.additionalModelOptionsCache ?? [])
-    : []
+  if (config.additionalModelOptionsCacheScope === scope) {
+    return config.additionalModelOptionsCache ?? []
+  }
+
+  return []
 }
 
 export function getDefaultOptionForUser(fastMode = false): ModelOption {
@@ -186,6 +187,22 @@ function getOpus46Option(fastMode = false): ModelOption {
     label: 'Opus',
     description: `Opus 4.6 · Most capable for complex work${getOpus46PricingSuffix(fastMode)}`,
     descriptionForModel: 'Opus 4.6 - most capable for complex work',
+  }
+}
+
+export function getOpus48Option(): ModelOption {
+  return {
+    value: 'claude-opus-4-8',
+    label: 'Opus 4.8',
+    description: 'Most capable Claude model',
+  }
+}
+
+export function getFable5Option(): ModelOption {
+  return {
+    value: 'claude-fable-5',
+    label: 'Fable 5',
+    description: 'Latest Claude model',
   }
 }
 
@@ -534,12 +551,14 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     }
   }
 
-  // PAYG 1P API: Default (Sonnet) + Sonnet 1M + Opus 4.7 + Opus 4.6 + Opus 1M + Haiku
+  // PAYG 1P API: Default (Sonnet) + Sonnet 1M + Opus 4.8 + Fable 5 + Opus 4.7 + Opus 4.6 + Opus 1M + Haiku
   if (getAPIProvider() === 'firstParty') {
     const payg1POptions = [getDefaultOptionForUser(fastMode)]
     if (checkSonnet1mAccess()) {
       payg1POptions.push(getSonnet46_1MOption())
     }
+    payg1POptions.push(getOpus48Option())
+    payg1POptions.push(getFable5Option())
     if (isOpus1mMergeEnabled()) {
       payg1POptions.push(getMergedOpus1MOption(fastMode))
     } else {
@@ -621,12 +640,17 @@ function getModelFamilyInfo(
     }
   }
 
-  // Opus family
+  // Opus family (includes Opus 4.8)
   if (canonical.includes('claude-opus-4')) {
     const currentName = getMarketingNameForModel(getDefaultOpusModel())
     if (currentName) {
       return { alias: 'Opus', currentVersionName: currentName }
     }
+  }
+
+  // Fable family
+  if (canonical.includes('claude-fable-5')) {
+    return { alias: 'Fable', currentVersionName: 'Fable 5' }
   }
 
   // Haiku family
@@ -701,7 +725,7 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   }
 
   // Append additional model options fetched during bootstrap
-  for (const opt of getScopedAdditionalModelOptions()) {
+  for (const opt of getScopedAdditionalModelOptions(getAdditionalModelOptionsCacheScope())) {
     if (!options.some(existing => existing.value === opt.value)) {
       options.push(opt)
     }
