@@ -46,6 +46,44 @@ import {
   shouldUseFirstPartyAnthropicAuth,
   type ProviderOverride,
 } from './authRouting.js'
+import type { ResolvedProvider } from './resolvedProvider.js'
+
+/**
+ * Decide which client a per-request override targets, purely from its kind.
+ * openai-compatible/gemini → the OpenAI shim; anthropic-native/proxy and the
+ * cloud-native providers (bedrock/vertex) → the native Anthropic client.
+ */
+export function overrideClientTarget(
+  override: ResolvedProvider,
+): 'openai-shim' | 'anthropic' {
+  switch (override.kind) {
+    case 'openai-compatible':
+    case 'gemini':
+      return 'openai-shim'
+    case 'anthropic-native':
+    case 'anthropic-proxy':
+    case 'bedrock':
+    case 'vertex':
+      return 'anthropic'
+  }
+}
+
+/**
+ * Security guard (review #5): the operator's Anthropic subscription token /
+ * ANTHROPIC_API_KEY may only be attached when the override base URL is the
+ * real Anthropic API or a loopback Claude Max proxy. A profile claiming
+ * provider:'anthropic' but pointed at an arbitrary host must NOT receive the
+ * subscription credential.
+ */
+export function isTrustedAnthropicBaseURL(baseURL?: string): boolean {
+  if (!baseURL) return true // default = api.anthropic.com
+  const u = baseURL.toLowerCase()
+  return (
+    u.includes('api.anthropic.com') ||
+    u.includes('127.0.0.1') ||
+    u.includes('localhost')
+  )
+}
 
 const importRuntimeModule = new Function(
   'specifier',
@@ -275,24 +313,48 @@ export async function getAnthropicClient({
       fetch: resolvedFetch,
     }),
   }
-  // Agent routing override: use per-agent provider when configured.
-  // Strip auth-related headers to prevent leaking Anthropic credentials
-  // to third-party endpoints (SSRF / credential forwarding mitigation).
+  // Per-request override: route by provider kind.
   if (providerOverride) {
-    const { createOpenAIShimClient } = await import('./openaiShim.js')
-    const safeHeaders: Record<string, string> = {}
-    for (const [k, v] of Object.entries(defaultHeaders)) {
-      const lower = k.toLowerCase()
-      if (lower === 'authorization' || lower === 'x-api-key' || lower === 'api-key') continue
-      safeHeaders[k] = v
+    if (overrideClientTarget(providerOverride) === 'openai-shim') {
+      // OpenAI-compatible / Gemini → shim. Strip auth-related headers to
+      // prevent leaking Anthropic credentials to third-party endpoints
+      // (SSRF / credential forwarding mitigation).
+      const { createOpenAIShimClient } = await import('./openaiShim.js')
+      const safeHeaders: Record<string, string> = {}
+      for (const [k, v] of Object.entries(defaultHeaders)) {
+        const lower = k.toLowerCase()
+        if (lower === 'authorization' || lower === 'x-api-key' || lower === 'api-key') continue
+        safeHeaders[k] = v
+      }
+      return createOpenAIShimClient({
+        defaultHeaders: safeHeaders,
+        maxRetries,
+        timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
+        providerOverride,
+        reasoningEffort: shimReasoningEffort,
+      }) as unknown as Anthropic
     }
-    return createOpenAIShimClient({
-      defaultHeaders: safeHeaders,
-      maxRetries,
-      timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
-      providerOverride,
-      reasoningEffort: shimReasoningEffort,
-    }) as unknown as Anthropic
+    // anthropic-native / anthropic-proxy (and cloud-native kinds): native
+    // Anthropic client with the override's base URL. Attach the operator's
+    // Anthropic credentials ONLY for trusted hosts (review #5) — a profile
+    // pointed at an untrusted host gets only its own explicit credentials.
+    const trusted = isTrustedAnthropicBaseURL(providerOverride.baseURL)
+    const overrideArgs: ConstructorParameters<typeof Anthropic>[0] = {
+      ...ARGS,
+      ...(providerOverride.baseURL
+        ? { baseURL: providerOverride.baseURL }
+        : {}),
+      apiKey: trusted
+        ? (providerOverride.apiKey ?? getAnthropicApiKey() ?? null)
+        : (providerOverride.apiKey ?? null),
+      authToken: trusted
+        ? (providerOverride.oauthAccessToken ??
+          getClaudeAIOAuthTokens()?.accessToken ??
+          undefined)
+        : (providerOverride.oauthAccessToken ?? undefined),
+      ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+    }
+    return new Anthropic(overrideArgs)
   }
   // GitHub provider in native Anthropic API mode: send requests in Anthropic
   // format so cache_control blocks are honoured and prompt caching works.
