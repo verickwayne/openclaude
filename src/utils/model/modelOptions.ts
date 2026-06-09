@@ -189,6 +189,22 @@ function getOpus46Option(fastMode = false): ModelOption {
   }
 }
 
+export function getOpus48Option(): ModelOption {
+  return {
+    value: 'claude-opus-4-8',
+    label: 'Opus 4.8',
+    description: 'Most capable Claude model',
+  }
+}
+
+export function getFable5Option(): ModelOption {
+  return {
+    value: 'claude-fable-5',
+    label: 'Fable 5',
+    description: 'Latest Claude model',
+  }
+}
+
 export function getSonnet46_1MOption(): ModelOption {
   const is3P = getAPIProvider() !== 'firstParty'
   return {
@@ -534,12 +550,14 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     }
   }
 
-  // PAYG 1P API: Default (Sonnet) + Sonnet 1M + Opus 4.7 + Opus 4.6 + Opus 1M + Haiku
+  // PAYG 1P API: Default (Sonnet) + Sonnet 1M + Opus 4.8 + Fable 5 + Opus 4.7 + Opus 4.6 + Opus 1M + Haiku
   if (getAPIProvider() === 'firstParty') {
     const payg1POptions = [getDefaultOptionForUser(fastMode)]
     if (checkSonnet1mAccess()) {
       payg1POptions.push(getSonnet46_1MOption())
     }
+    payg1POptions.push(getOpus48Option())
+    payg1POptions.push(getFable5Option())
     if (isOpus1mMergeEnabled()) {
       payg1POptions.push(getMergedOpus1MOption(fastMode))
     } else {
