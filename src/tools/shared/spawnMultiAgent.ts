@@ -19,6 +19,8 @@ import { formatAgentId } from '../../utils/agentId.js'
 import { quote } from '../../utils/bash/shellQuote.js'
 import { isInBundledMode } from '../../utils/bundledMode.js'
 import { getGlobalConfig } from '../../utils/config.js'
+import { getProviderProfiles } from '../../utils/providerProfiles.js'
+import { resolveProviderForModel, buildLiveRegistryInput } from '../../services/api/modelRegistry.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
@@ -109,15 +111,27 @@ export function resolveTeammateModel(
  * Resolve a per-teammate provider override from the teammate's requested
  * model so the subprocess can route to its own provider (M6).
  *
- * The model→provider registry resolver (`resolveProviderForModel`, M2) is the
- * authoritative mapper. Until it is wired in, this returns `undefined`, which
- * keeps the existing behavior: the teammate inherits the parent's provider env
- * and first-party models stay on the native Anthropic path (backward compat).
+ * Resolution uses the model→provider registry (`resolveProviderForModel`, M1).
+ * A model that belongs to a saved provider profile yields that profile's
+ * override so the teammate subprocess routes to its own provider. First-party
+ * and unknown models return `undefined` → the teammate inherits the parent's
+ * provider env (backward compat). Full first-party-aware override (anthropic
+ * native while the parent is on another provider) lands with
+ * `getFirstPartyModelIds` in the main-loop routing milestone (M4).
  */
 export function resolveTeammateProviderOverride(
-  _model: string,
+  model: string | undefined,
 ): ResolvedProvider | undefined {
-  return undefined
+  if (!model || process.env.OPENCLAUDE_MULTI_PROVIDER === '0') return undefined
+  const rp = resolveProviderForModel(
+    model,
+    buildLiveRegistryInput({
+      getFirstPartyModels: () => [],
+      getProfiles: () => getProviderProfiles(),
+    }),
+  )
+  if (!rp || rp.profileId === 'first-party') return undefined
+  return rp
 }
 
 /**
