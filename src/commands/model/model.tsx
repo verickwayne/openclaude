@@ -88,6 +88,11 @@ type ModelDiscoveryContext =
       routeLabel: string
     }
 
+/** Model selection is provider-routing via the registry, never a global env swap. */
+export function selectionMutatesProviderEnv(_model: string): boolean {
+  return false
+}
+
 export function buildMultiProviderOptionsOverride(input: {
   firstPartyOptions: ModelOption[]
   profiles: ProviderProfile[]
