@@ -121,6 +121,12 @@ result = await Bun.build({
   minify: false,
   naming: 'cli.mjs',
   define: {
+    // Pin NODE_ENV so the bundle is hermetic. Bun inlines process.env.NODE_ENV
+    // from the builder's shell by default — a build run after `bun test` (or
+    // any shell with NODE_ENV=test exported) constant-folds every test gate
+    // to true: the Ink reconciler stops re-rendering (frozen TUI input), VCR
+    // request replay activates, and file debug logging goes dark.
+    'process.env.NODE_ENV': JSON.stringify('production'),
     // MACRO.* build-time constants
     // Keep the internal compatibility version high enough to pass
     // first-party minimum-version guards, but expose the real package
@@ -430,6 +436,8 @@ sdkResult = await Bun.build({
   minify: false,
   naming: 'sdk.mjs',
   define: {
+    // Hermetic NODE_ENV — see the CLI define block above for why.
+    'process.env.NODE_ENV': JSON.stringify('production'),
     'MACRO.VERSION': JSON.stringify(version),
     'MACRO.DISPLAY_VERSION': JSON.stringify(version),
     'MACRO.BUILD_TIME': JSON.stringify(new Date().toISOString()),

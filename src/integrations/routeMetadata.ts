@@ -1,4 +1,5 @@
 import type {
+  AnthropicProxyDescriptor,
   GatewayDescriptor,
   TransportKind,
   ValidationRoutingMetadata,
@@ -6,15 +7,20 @@ import type {
 } from './descriptors.js'
 import {
   ensureIntegrationsLoaded,
+  getAllAnthropicProxies,
   getAllGateways,
   getAllVendors,
+  getAnthropicProxy,
   getGateway,
   getVendor,
   resolveProfileRoute,
 } from './index.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 
-export type RouteDescriptor = GatewayDescriptor | VendorDescriptor
+export type RouteDescriptor =
+  | AnthropicProxyDescriptor
+  | GatewayDescriptor
+  | VendorDescriptor
 
 const TRANSPORT_KIND_PROVIDER_TYPE_LABELS: Partial<
   Record<TransportKind, string>
@@ -74,7 +80,7 @@ function normalizeHost(
 
 function getAllRoutes(): RouteDescriptor[] {
   ensureIntegrationsLoaded()
-  return [...getAllGateways(), ...getAllVendors()]
+  return [...getAllAnthropicProxies(), ...getAllGateways(), ...getAllVendors()]
 }
 
 function resolveKnownLocalRouteIdFromBaseUrl(baseUrl?: string): string | null {
@@ -110,7 +116,7 @@ export function getRouteDescriptor(
   routeId: string,
 ): RouteDescriptor | null {
   ensureIntegrationsLoaded()
-  return getGateway(routeId) ?? getVendor(routeId) ?? null
+  return getAnthropicProxy(routeId) ?? getGateway(routeId) ?? getVendor(routeId) ?? null
 }
 
 export function getRouteLabel(
@@ -641,6 +647,17 @@ export function resolveActiveRouteIdFromEnv(
 
   const envOnlyRouteId = resolveEnvOnlyProviderRouteId(processEnv)
   if (envOnlyRouteId) return envOnlyRouteId
+
+  const anthropicBaseRouteId = resolveRouteIdFromBaseUrl(
+    processEnv.ANTHROPIC_BASE_URL,
+  )
+  if (
+    anthropicBaseRouteId &&
+    getRouteDescriptor(anthropicBaseRouteId)?.transportConfig.kind ===
+      'anthropic-proxy'
+  ) {
+    return anthropicBaseRouteId
+  }
 
   return 'anthropic'
 }

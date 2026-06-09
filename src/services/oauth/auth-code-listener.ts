@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http'
 import { createServer, type Server } from 'http'
-import type { AddressInfo } from 'net'
+import type { AddressInfo, Socket } from 'net'
 import { logEvent } from 'src/services/analytics/index.js'
 import { getOauthConfig } from '../../constants/oauth.js'
 import { logError } from '../../utils/log.js'
@@ -23,9 +23,17 @@ export class AuthCodeListener {
   private expectedState: string | null = null // State parameter for CSRF protection
   private pendingResponse: ServerResponse | null = null // Response object for final redirect
   private callbackPath: string // Configurable callback path
+  // Live sockets, tracked so close() can force-destroy keep-alive
+  // connections the browser leaves open after the redirect. Without this the
+  // server handle never frees and the process (and terminal) hang.
+  private openSockets = new Set<Socket>()
 
   constructor(callbackPath: string = '/callback') {
     this.localServer = createServer()
+    this.localServer.on('connection', socket => {
+      this.openSockets.add(socket)
+      socket.once('close', () => this.openSockets.delete(socket))
+    })
     this.callbackPath = callbackPath
   }
 
@@ -267,6 +275,18 @@ export class AuthCodeListener {
       // Remove all listeners to prevent memory leaks
       this.localServer.removeAllListeners()
       this.localServer.close()
+      // server.close() only stops accepting new connections — it waits for
+      // existing ones to end. Browsers hold the callback connection open with
+      // keep-alive after the redirect, so without forcing them closed the
+      // server handle never frees, the Node event loop stays alive, and (once
+      // Ink has released stdin) the terminal is left dead and unresettable.
+      // Destroy tracked sockets explicitly (works on Node and Bun); also call
+      // closeAllConnections() where available as a belt-and-suspenders.
+      for (const socket of this.openSockets) {
+        socket.destroy()
+      }
+      this.openSockets.clear()
+      this.localServer.closeAllConnections?.()
     }
 
     this.expectedState = null

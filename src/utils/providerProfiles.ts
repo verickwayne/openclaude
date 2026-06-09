@@ -70,7 +70,6 @@ export type ProviderPresetDefaults = Omit<ProviderProfileInput, 'provider'> & {
 
 const PROFILE_ENV_APPLIED_FLAG = 'CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED'
 const PROFILE_ENV_APPLIED_ID = 'CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID'
-export const FIRST_PARTY_PROVIDER_PROFILE_ID = '__openclaude_first_party__'
 
 type ProfileCompatibilityMode =
   | 'anthropic'
@@ -301,7 +300,7 @@ export function getProviderPresetDefaults(
     baseUrl: routeDefaults.baseUrl,
     model: routeDefaults.model,
     apiKey: metadata.apiKey,
-    requiresApiKey: metadata.requiresApiKey,
+    requiresApiKey: metadata.requiresApiKey && metadata.authMode === 'api-key',
   }
 }
 
@@ -556,9 +555,6 @@ export function getActiveProviderProfile(
   }
 
   const activeId = trimOrUndefined(config.activeProviderProfileId)
-  if (activeId === FIRST_PARTY_PROVIDER_PROFILE_ID) {
-    return undefined
-  }
   return profiles.find(profile => profile.id === activeId) ?? profiles[0]
 }
 
@@ -568,15 +564,6 @@ export function clearProviderProfileEnvFromProcessEnv(
   clearManagedProfileEnv(processEnv)
   delete processEnv[PROFILE_ENV_APPLIED_FLAG]
   delete processEnv[PROFILE_ENV_APPLIED_ID]
-}
-
-export function activateFirstPartyProviderProfile(): void {
-  saveGlobalConfig(current => ({
-    ...current,
-    activeProviderProfileId: FIRST_PARTY_PROVIDER_PROFILE_ID,
-    openaiAdditionalModelOptionsCache: [],
-  }))
-  clearProviderProfileEnvFromProcessEnv()
 }
 
 export function applyProviderProfileToProcessEnv(profile: ProviderProfile): void {

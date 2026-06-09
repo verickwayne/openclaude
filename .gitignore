@@ -17,3 +17,11 @@ package-lock.json
 coverage/
 agent.log
 plan/
+
+# Ralph scheduler — ephemeral dispatch state (entire dir; multi-tenant loop state)
+.ralph/
+
+# Runtime/session artifacts — never part of the source of truth
+.DS_Store
+logs/
+fixtures/

@@ -12,6 +12,9 @@ import {
 
 test('getRouteProviderTypeLabel uses descriptor transport kinds for provider labels', () => {
   expect(getRouteProviderTypeLabel('anthropic')).toBe('Anthropic native API')
+  expect(getRouteProviderTypeLabel('claude-max-proxy')).toBe(
+    'Anthropic-compatible API',
+  )
   expect(getRouteProviderTypeLabel('gemini')).toBe('Gemini API')
   expect(getRouteProviderTypeLabel('bedrock')).toBe(
     'AWS Bedrock Claude API',
@@ -54,6 +57,10 @@ test('getRouteCredentialEnvVars keeps descriptor env vars and openai fallback fo
   ])
 })
 
+test('oauth-backed anthropic proxy presets do not advertise API-key env vars', () => {
+  expect(getRouteCredentialEnvVars('claude-max-proxy')).toEqual([])
+})
+
 test('getRouteCredentialValue reads the first configured route credential', () => {
   expect(
     getRouteCredentialValue('openrouter', {
@@ -72,6 +79,21 @@ test('Venice route metadata uses official OpenAI-compatible defaults', () => {
   expect(getRouteDefaultModel('venice')).toBe('venice-uncensored')
   expect(resolveRouteIdFromBaseUrl('https://api.venice.ai/api/v1')).toBe('venice')
   expect(resolveRouteIdFromBaseUrl('https://api.venice.ai/api/v1/chat/completions')).toBe('venice')
+})
+
+test('Claude Max proxy route metadata uses local Anthropic-proxy defaults', () => {
+  expect(getRouteDefaultBaseUrl('claude-max-proxy')).toBe(
+    'http://127.0.0.1:8031',
+  )
+  expect(getRouteDefaultModel('claude-max-proxy')).toBe('claude-sonnet-4-5')
+  expect(resolveRouteIdFromBaseUrl('http://127.0.0.1:8031')).toBe(
+    'claude-max-proxy',
+  )
+  expect(
+    resolveActiveRouteIdFromEnv({
+      ANTHROPIC_BASE_URL: 'http://127.0.0.1:8031',
+    }),
+  ).toBe('claude-max-proxy')
 })
 
 test('Xiaomi MiMo route metadata uses official OpenAI-compatible defaults', () => {

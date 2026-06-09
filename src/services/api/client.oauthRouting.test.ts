@@ -11,7 +11,7 @@ test('Gemini provider routing does not use first-party Anthropic auth', () => {
   expect(
     shouldUseFirstPartyAnthropicAuthForProvider({
       apiProvider: 'gemini',
-      isFirstPartyBaseUrl: true,
+      routeId: 'gemini',
     }),
   ).toBe(false)
 })
@@ -21,7 +21,7 @@ test('providerOverride routing does not use first-party Anthropic auth', () => {
     shouldUseFirstPartyAnthropicAuthForProvider({
       providerOverride,
       apiProvider: 'firstParty',
-      isFirstPartyBaseUrl: true,
+      routeId: 'anthropic',
     }),
   ).toBe(false)
 })
@@ -30,16 +30,25 @@ test('first-party Anthropic routing uses first-party Anthropic auth', () => {
   expect(
     shouldUseFirstPartyAnthropicAuthForProvider({
       apiProvider: 'firstParty',
-      isFirstPartyBaseUrl: true,
+      routeId: 'anthropic',
     }),
   ).toBe(true)
 })
 
-test('custom Anthropic base URLs do not use first-party Anthropic auth', () => {
+test('anthropic oauth proxy routing uses first-party Anthropic auth', () => {
   expect(
     shouldUseFirstPartyAnthropicAuthForProvider({
       apiProvider: 'firstParty',
-      isFirstPartyBaseUrl: false,
+      routeId: 'claude-max-proxy',
+    }),
+  ).toBe(true)
+})
+
+test('custom routes without oauth-backed descriptor do not use first-party Anthropic auth', () => {
+  expect(
+    shouldUseFirstPartyAnthropicAuthForProvider({
+      apiProvider: 'firstParty',
+      routeId: 'custom',
     }),
   ).toBe(false)
 })

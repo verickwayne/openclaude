@@ -3,6 +3,7 @@
 
 import { describe, expect, test } from 'bun:test'
 import {
+  getAllAnthropicProxies,
   getBrandsForVendor,
   getAllGateways,
   getAllVendors,
@@ -20,6 +21,12 @@ describe('loaded registry validation', () => {
     const result = validateIntegrationRegistry()
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
+  })
+
+  test('Claude Max proxy is registered as an anthropic proxy route', () => {
+    expect(getAllAnthropicProxies().map(proxy => proxy.id)).toContain(
+      'claude-max-proxy',
+    )
   })
 
   test('MiniMax has shared brand and model descriptors wired to its route catalog', () => {

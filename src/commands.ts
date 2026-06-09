@@ -189,6 +189,12 @@ import env from './commands/env/index.js'
 import exit from './commands/exit/index.js'
 import exportCommand from './commands/export/index.js'
 import model from './commands/model/index.js'
+import {
+  openclaudeQwen30b,
+  openclaudeDolphin,
+  openclaudeWrn,
+  openclaudeOllama7b,
+} from './commands/openclaude-aliases/index.js'
 import tag from './commands/tag/index.js'
 import outputStyle from './commands/output-style/index.js'
 import remoteEnv from './commands/remote-env/index.js'
@@ -312,6 +318,10 @@ const COMMANDS = memoize((): Command[] => [
   memory,
   mobile,
   model,
+  openclaudeQwen30b,
+  openclaudeDolphin,
+  openclaudeWrn,
+  openclaudeOllama7b,
   onboardGithub,
   outputStyle,
   remoteEnv,
@@ -364,7 +374,14 @@ const COMMANDS = memoize((): Command[] => [
   hooks,
   exportCommand,
   sandboxToggle,
-  ...(!isUsing3PServices() ? [logout, login()].filter(Boolean) : []),
+  // /login is always registered: it resolves the right flow for the
+  // active provider (Anthropic OAuth, Claude Max proxy, ChatGPT/Codex
+  // OAuth, local model refresh) at invocation time. Gating it behind
+  // isUsing3PServices() froze the decision at first command-list load
+  // (COMMANDS is memoized) and removed /login entirely on the
+  // subscription providers that need it.
+  login(),
+  ...(!isUsing3PServices() ? [logout].filter(Boolean) : []),
   passes,
   ...(peersCmd ? [peersCmd] : []),
   tasks,

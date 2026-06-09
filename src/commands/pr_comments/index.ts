@@ -10,7 +10,7 @@ export default createMovedToPluginCommand({
     return [
       {
         type: 'text',
-        text: `You are an AI assistant integrated into a git-based version control system. Your task is to fetch and display comments from a GitHub pull request.
+        text: `You are operating in OpenClaude's /pr-comments slash command. Your task is to fetch and display comments from a GitHub pull request.
 
 Follow these steps:
 

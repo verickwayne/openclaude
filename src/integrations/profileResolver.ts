@@ -2,7 +2,7 @@
 // Resolves a stored profile.provider string to a descriptor-backed route.
 // This bridges legacy preset names, vendor ids, gateway ids, and custom strings.
 
-import { getGateway, getVendor } from './registry.js'
+import { getAnthropicProxy, getGateway, getVendor } from './registry.js'
 import { isProviderPreset, routeForPreset } from './compatibility.js'
 
 export type ResolvedProfileRoute = {
@@ -17,8 +17,9 @@ export type ResolvedProfileRoute = {
  * Resolution order:
  *   1. Try compatibility preset mapping
  *   2. Try direct vendor id lookup
- *   3. Try gateway id lookup
- *   4. Return safe unknown-provider fallback
+ *   3. Try direct anthropic-proxy lookup
+ *   4. Try gateway id lookup
+ *   5. Return safe unknown-provider fallback
  */
 export function resolveProfileRoute(provider: string): ResolvedProfileRoute {
   // 1. Try preset mapping
@@ -32,7 +33,16 @@ export function resolveProfileRoute(provider: string): ResolvedProfileRoute {
     return { vendorId: vendor.id, routeId: vendor.id }
   }
 
-  // 3. Try gateway id
+  // 3. Try direct anthropic-proxy id
+  const anthropicProxy = getAnthropicProxy(provider)
+  if (anthropicProxy) {
+    return {
+      vendorId: anthropicProxy.preset?.vendorId ?? 'anthropic',
+      routeId: anthropicProxy.id,
+    }
+  }
+
+  // 4. Try gateway id
   const gateway = getGateway(provider)
   if (gateway) {
     return {
@@ -42,7 +52,7 @@ export function resolveProfileRoute(provider: string): ResolvedProfileRoute {
     }
   }
 
-  // 4. Safe fallback — OpenAI-compatible so the user can still interact,
+  // 5. Safe fallback — OpenAI-compatible so the user can still interact,
   //    but the routeId makes it clear this is unrecognised.
   return { vendorId: 'openai', routeId: 'unknown-fallback' }
 }

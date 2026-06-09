@@ -163,6 +163,12 @@ async function main(): Promise<void> {
   const { printStartupScreen } = await import('../components/StartupScreen.js')
   printStartupScreen(earlyModelFlag)
 
+  // When the active route is the local Claude Max OAuth proxy, make sure the
+  // overlay proxy is actually running before the first request goes out —
+  // otherwise the model loop fails with ECONNREFUSED. Fast no-op when the
+  // route isn't the proxy or the proxy is already up.
+  await maybeStartClaudeMaxProxy()
+
   // For all other paths, load the startup profiler
   const {
     profileCheckpoint
@@ -420,6 +426,37 @@ async function main(): Promise<void> {
   profileCheckpoint('cli_after_main_import');
   await cliMain();
   profileCheckpoint('cli_after_main_complete');
+}
+
+/**
+ * If the active provider route is the local Claude Max OAuth proxy, ensure
+ * the overlay proxy is up before the model loop starts. No-op for every
+ * other provider. Best-effort: a failure to start prints an actionable
+ * warning but never blocks the session (the user can still /provider away).
+ */
+async function maybeStartClaudeMaxProxy(): Promise<void> {
+  const baseUrl = process.env.ANTHROPIC_BASE_URL?.trim()
+  if (!baseUrl) return
+
+  const { getRouteDescriptor, resolveRouteIdFromBaseUrl } = await import(
+    '../integrations/routeMetadata.js'
+  )
+  const routeId = resolveRouteIdFromBaseUrl(baseUrl)
+  if (
+    !routeId ||
+    getRouteDescriptor(routeId)?.transportConfig.kind !== 'anthropic-proxy'
+  ) {
+    return
+  }
+
+  const { ensureClaudeMaxProxyRunning, describeEnsureResult } = await import(
+    '../integrations/anthropicProxies/claudeMaxProxyRuntime.js'
+  )
+  const result = await ensureClaudeMaxProxyRunning()
+  const message = describeEnsureResult(result)
+  if (message) {
+    process.stderr.write(`${message}\n`)
+  }
 }
 
 // eslint-disable-next-line custom-rules/no-top-level-side-effects

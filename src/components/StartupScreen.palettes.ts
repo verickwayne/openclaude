@@ -21,17 +21,17 @@ export type LogoPalette = {
 export const LOGO_PALETTES = {
   sunset: {
     gradient: [
-      [255, 180, 100],
-      [240, 140, 80],
-      [217, 119, 87],
-      [193, 95, 60],
-      [160, 75, 55],
-      [130, 60, 50],
+      [255, 92, 92],
+      [238, 55, 70],
+      [220, 38, 38],
+      [190, 24, 38],
+      [153, 27, 27],
+      [110, 20, 24],
     ],
-    accent: [240, 148, 100],
-    cream: [220, 195, 170],
-    dim: [120, 100, 82],
-    border: [100, 80, 65],
+    accent: [255, 92, 92],
+    cream: [235, 205, 205],
+    dim: [135, 90, 90],
+    border: [115, 55, 60],
   },
   forest: {
     gradient: [
@@ -84,7 +84,7 @@ export const LOGO_PALETTE_NAMES = Object.keys(LOGO_PALETTES) as LogoPaletteName[
 export const DEFAULT_LOGO_PALETTE: LogoPaletteName = 'sunset'
 
 export const LOGO_PALETTE_LABELS: Record<LogoPaletteName, string> = {
-  sunset: 'Sunset (default)',
+  sunset: 'OpenClaude red (default)',
   forest: 'Forest green',
   ocean: 'Ocean blue',
   monochrome: 'Monochrome',

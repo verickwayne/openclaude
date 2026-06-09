@@ -49,7 +49,7 @@ How to use the statusLine command:
      },
      "version": "string",        // OpenClaude app version (e.g., "1.0.71")
      "output_style": {
-       "name": "string",         // Output style name (e.g., "default", "Explanatory", "Learning")
+       "name": "string",         // Output style name (e.g., "default" or any user-defined style)
      },
      "context_window": {
        "total_input_tokens": number,       // Total input tokens used in session (cumulative)

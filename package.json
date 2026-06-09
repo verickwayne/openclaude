@@ -35,6 +35,8 @@
     "dev:ollama": "bun run scripts/provider-launch.ts ollama",
     "dev:ollama:fast": "bun run scripts/provider-launch.ts ollama --fast --bare",
     "dev:atomic-chat": "bun run scripts/provider-launch.ts atomic-chat",
+    "dev:claude-max": "bun run scripts/dev-claude-max.ts",
+    "claude-max:proxy": "bun run scripts/claude-max-proxy.ts",
     "profile:init": "bun run scripts/provider-bootstrap.ts",
     "profile:recommend": "bun run scripts/provider-recommend.ts",
     "profile:auto": "bun run scripts/provider-recommend.ts --apply",

@@ -101,24 +101,18 @@ async function waitForCondition(
   throw new Error('Timed out waiting for ProviderManager test condition')
 }
 
-// Provider list is sorted from generated preset metadata by description, with
-// Gitlawb Opengateway pinned first, Claude Max OAuth injected after it,
-// Codex OAuth injected after DeepSeek, and Custom always pinned last. Keep the target-by-label indirection here so
-// these tests survive future list edits without hardcoding raw key counts.
-//
-// Order matches ProviderManager.renderPresetSelection() when
-// canUseClaudeMaxOAuth/canUseCodexOAuth/canUseXaiOAuth are true (default in mocked tests).
 const PRESET_ORDER = [
+  'Anthropic (Subscription)',
+  'OpenAI (Subscription)',
+  'OpenRouter',
+  'Local',
   'Gitlawb Opengateway',
-  'Claude Max OAuth',
   'Anthropic',
   'Alibaba Coding Plan (China)',
   'Alibaba Coding Plan',
   'Azure OpenAI',
   'Bankr',
   'DeepSeek',
-  'Codex OAuth',
-  'xAI OAuth (Grok)',
   'Google Gemini',
   'Groq',
   'Hicap',
@@ -131,7 +125,6 @@ const PRESET_ORDER = [
   'Moonshot AI - Kimi Code',
   'NVIDIA NIM',
   'OpenAI',
-  'OpenRouter',
   'Together AI',
   'Venice',
   'xAI',
@@ -171,11 +164,9 @@ function mockProviderProfilesModule(options?: {
   setActiveProviderProfile?: (...args: unknown[]) => unknown
 }): void {
   mock.module('../utils/providerProfiles.js', () => ({
-    activateFirstPartyProviderProfile: () => {},
     addProviderProfile: options?.addProviderProfile ?? (() => null),
     applyActiveProviderProfileFromConfig: () => {},
     deleteProviderProfile: () => ({ removed: false, activeProfileId: null }),
-    FIRST_PARTY_PROVIDER_PROFILE_ID: '__openclaude_first_party__',
     getActiveProviderProfile: options?.getActiveProviderProfile ?? (() => null),
     getProviderPresetDefaults: (preset: string) => {
       if (preset === 'ollama') {
@@ -228,6 +219,28 @@ function mockProviderProfilesModule(options?: {
           name: 'OpenAI',
           baseUrl: 'https://api.openai.com/v1',
           model: 'gpt-5.4',
+          apiKey: '',
+          requiresApiKey: true,
+        }
+      }
+
+      if (preset === 'claude-max-proxy') {
+        return {
+          provider: 'claude-max-proxy',
+          name: 'Claude Max OAuth Proxy',
+          baseUrl: 'http://127.0.0.1:8031',
+          model: 'claude-sonnet-4-5',
+          apiKey: '',
+          requiresApiKey: false,
+        }
+      }
+
+      if (preset === 'openrouter') {
+        return {
+          provider: 'openrouter',
+          name: 'OpenRouter',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          model: 'openai/gpt-5-mini',
           apiKey: '',
           requiresApiKey: true,
         }
@@ -741,6 +754,59 @@ test('ProviderManager asks for model and API key when adding OpenAI preset', asy
         model: 'gpt-5.4',
         apiKey: 'sk-openai-test',
         apiFormat: 'responses',
+      }),
+      expect.objectContaining({ makeActive: true }),
+    )
+  } finally {
+    await mounted.dispose()
+  }
+})
+
+test('ProviderManager saves Anthropic subscription preset without API key prompt', async () => {
+  const addProviderProfile = mock((payload: any) => ({
+    id: 'anthropic_subscription_profile',
+    ...payload,
+  }))
+
+  mockProviderManagerDependencies(() => undefined, async () => undefined, {
+    addProviderProfile,
+  })
+
+  const nonce = `${Date.now()}-${Math.random()}`
+  const { ProviderManager } = await import(`./ProviderManager.js?ts=${nonce}`)
+  const mounted = await mountProviderManager(ProviderManager)
+
+  try {
+    await waitForFrameOutput(mounted.getOutput, frame =>
+      frame.includes('Provider manager'),
+    )
+
+    mounted.stdin.write('\r')
+    await waitForFrameOutput(mounted.getOutput, frame =>
+      frame.includes('Choose provider preset'),
+    )
+
+    await navigateToPreset(mounted.stdin, 'Anthropic (Subscription)')
+    mounted.stdin.write('\r')
+    const modelOutput = await waitForFrameOutput(mounted.getOutput, frame =>
+      frame.includes('Create provider profile') &&
+      frame.includes('Step 1 of 1: Default model'),
+    )
+
+    expect(modelOutput).toContain('Anthropic (Subscription)')
+    expect(modelOutput).toContain('claude-sonnet-4-5')
+    expect(modelOutput).not.toContain('API key')
+
+    mounted.stdin.write('\r')
+
+    await waitForCondition(() => addProviderProfile.mock.calls.length > 0)
+    expect(addProviderProfile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'claude-max-proxy',
+        name: 'Anthropic (Subscription)',
+        baseUrl: 'http://127.0.0.1:8031',
+        model: 'claude-sonnet-4-5',
+        apiKey: '',
       }),
       expect.objectContaining({ makeActive: true }),
     )
@@ -1285,7 +1351,7 @@ test('ProviderManager first-run Atomic Chat preset auto-detects loaded models', 
   await mounted.dispose()
 })
 
-test('ProviderManager first-run Codex OAuth switches the current session after login completes', async () => {
+test('ProviderManager first-run OpenAI (Subscription) switches the current session after login completes', async () => {
   delete process.env.CLAUDE_CODE_SIMPLE
   delete process.env.CLAUDE_CODE_USE_GITHUB
   delete process.env.GITHUB_TOKEN
@@ -1297,7 +1363,7 @@ test('ProviderManager first-run Codex OAuth switches the current session after l
   const setActiveProviderProfile = mock((profileId: string) => ({
     id: profileId,
     provider: 'openai',
-    name: 'Codex OAuth',
+    name: 'OpenAI (Subscription)',
     baseUrl: 'https://chatgpt.com/backend-api/codex',
     model: 'codexplan',
     apiKey: '',
@@ -1351,10 +1417,10 @@ test('ProviderManager first-run Codex OAuth switches the current session after l
 
   await waitForFrameOutput(
     mounted.getOutput,
-    frame => frame.includes('Set up provider') && frame.includes('Codex OAuth'),
+    frame => frame.includes('Set up provider') && frame.includes('OpenAI (Subscription)'),
   )
 
-  await navigateToPreset(mounted.stdin, 'Codex OAuth')
+  await navigateToPreset(mounted.stdin, 'OpenAI (Subscription)')
   mounted.stdin.write('\r')
 
   await waitForCondition(() => onDone.mock.calls.length > 0)
@@ -1362,7 +1428,7 @@ test('ProviderManager first-run Codex OAuth switches the current session after l
   expect(addProviderProfile).toHaveBeenCalledWith(
     expect.objectContaining({
       provider: 'openai',
-      name: 'Codex OAuth',
+      name: 'OpenAI (Subscription)',
       baseUrl: 'https://chatgpt.com/backend-api/codex',
       model: 'codexplan',
       apiKey: '',
@@ -1380,14 +1446,14 @@ test('ProviderManager first-run Codex OAuth switches the current session after l
     expect.objectContaining({
       action: 'saved',
       message:
-        'Codex OAuth configured. OpenClaude switched to it for this session.',
+        'OpenAI (Subscription) configured. OpenClaude switched to it for this session.',
     }),
   )
 
   await mounted.dispose()
 })
 
-test('ProviderManager first-run Codex OAuth reports next-startup fallback when session activation fails', async () => {
+test('ProviderManager first-run OpenAI (Subscription) reports next-startup fallback when session activation fails', async () => {
   delete process.env.CLAUDE_CODE_SIMPLE
   delete process.env.CLAUDE_CODE_USE_GITHUB
   delete process.env.GITHUB_TOKEN
@@ -1401,7 +1467,7 @@ test('ProviderManager first-run Codex OAuth reports next-startup fallback when s
   const setActiveProviderProfile = mock((profileId: string) => ({
     id: profileId,
     provider: 'openai',
-    name: 'Codex OAuth',
+    name: 'OpenAI (Subscription)',
     baseUrl: 'https://chatgpt.com/backend-api/codex',
     model: 'codexplan',
     apiKey: '',
@@ -1455,10 +1521,10 @@ test('ProviderManager first-run Codex OAuth reports next-startup fallback when s
 
   await waitForFrameOutput(
     mounted.getOutput,
-    frame => frame.includes('Set up provider') && frame.includes('Codex OAuth'),
+    frame => frame.includes('Set up provider') && frame.includes('OpenAI (Subscription)'),
   )
 
-  await navigateToPreset(mounted.stdin, 'Codex OAuth')
+  await navigateToPreset(mounted.stdin, 'OpenAI (Subscription)')
   mounted.stdin.write('\r')
 
   await waitForCondition(() => onDone.mock.calls.length > 0)
@@ -1473,7 +1539,7 @@ test('ProviderManager first-run Codex OAuth reports next-startup fallback when s
     expect.objectContaining({
       action: 'saved',
       message:
-        'Codex OAuth configured. Saved for next startup. Warning: validation failed.',
+        'OpenAI (Subscription) configured. Saved for next startup. Warning: validation failed.',
     }),
   )
 
@@ -1490,7 +1556,7 @@ test('ProviderManager does not hijack a manual Codex profile when OAuth credenti
   const manualProfile = {
     id: 'provider_manual_codex',
     provider: 'openai',
-    name: 'Codex OAuth',
+    name: 'OpenAI (Subscription)',
     baseUrl: 'https://chatgpt.com/backend-api/codex',
     model: 'gpt-5.4',
     apiKey: 'manual-key',
@@ -1514,7 +1580,7 @@ test('ProviderManager does not hijack a manual Codex profile when OAuth credenti
   const setActiveProviderProfile = mock((profileId: string) => ({
     id: profileId,
     provider: 'openai',
-    name: 'Codex OAuth',
+    name: 'OpenAI (Subscription)',
     baseUrl: 'https://chatgpt.com/backend-api/codex',
     model: 'codexplan',
     apiKey: '',
@@ -1561,10 +1627,10 @@ test('ProviderManager does not hijack a manual Codex profile when OAuth credenti
 
   await waitForFrameOutput(
     mounted.getOutput,
-    frame => frame.includes('Set up provider') && frame.includes('Codex OAuth'),
+    frame => frame.includes('Set up provider') && frame.includes('OpenAI (Subscription)'),
   )
 
-  await navigateToPreset(mounted.stdin, 'Codex OAuth')
+  await navigateToPreset(mounted.stdin, 'OpenAI (Subscription)')
   mounted.stdin.write('\r')
 
   await waitForCondition(() => onDone.mock.calls.length > 0)
@@ -1581,7 +1647,7 @@ test('ProviderManager does not hijack a manual Codex profile when OAuth credenti
   await mounted.dispose()
 })
 
-test('ProviderManager keeps Codex OAuth as next-startup only when activating the session fails from the menu', async () => {
+test('ProviderManager keeps OpenAI (Subscription) as next-startup only when activating the session fails from the menu', async () => {
   delete process.env.CLAUDE_CODE_SIMPLE
   delete process.env.CLAUDE_CODE_USE_GITHUB
   delete process.env.GITHUB_TOKEN
@@ -1590,7 +1656,7 @@ test('ProviderManager keeps Codex OAuth as next-startup only when activating the
   const codexProfile = {
     id: 'provider_codex_oauth',
     provider: 'openai',
-    name: 'Codex OAuth',
+    name: 'OpenAI (Subscription)',
     baseUrl: 'https://chatgpt.com/backend-api/codex',
     model: 'codexplan',
     apiKey: '',
@@ -1626,7 +1692,7 @@ test('ProviderManager keeps Codex OAuth as next-startup only when activating the
     frame =>
       frame.includes('Provider manager') &&
       frame.includes('Set active provider') &&
-      frame.includes('Log out Codex OAuth'),
+      frame.includes('Log out OpenAI (Subscription)'),
   )
 
   mounted.stdin.write('j')
@@ -1635,7 +1701,7 @@ test('ProviderManager keeps Codex OAuth as next-startup only when activating the
 
   await waitForFrameOutput(
     mounted.getOutput,
-    frame => frame.includes('Set active provider') && frame.includes('Codex OAuth'),
+    frame => frame.includes('Set active provider') && frame.includes('OpenAI (Subscription)'),
   )
 
   await Bun.sleep(25)
@@ -1649,7 +1715,7 @@ test('ProviderManager keeps Codex OAuth as next-startup only when activating the
   const output = stripAnsi(extractLastFrame(mounted.getOutput()))
 
   expect(output).toContain(
-    'Active provider: Codex OAuth. Saved for next startup. Warning: validation failed.',
+    'Active provider: OpenAI (Subscription). Saved for next startup. Warning: validation failed.',
   )
   expect(applySavedProfileToCurrentSession).toHaveBeenCalled()
   expect(setActiveProviderProfile).toHaveBeenCalledWith('provider_codex_oauth')
@@ -1933,7 +1999,7 @@ test('ProviderManager set-active list uses descriptor-backed provider type label
   await mounted.dispose()
 })
 
-test('ProviderManager resolves Codex OAuth state from async storage without sync reads in render flow', async () => {
+test('ProviderManager resolves OpenAI (Subscription) state from async storage without sync reads in render flow', async () => {
   delete process.env.CLAUDE_CODE_SIMPLE
   delete process.env.CLAUDE_CODE_USE_GITHUB
   delete process.env.GITHUB_TOKEN
@@ -1959,16 +2025,16 @@ test('ProviderManager resolves Codex OAuth state from async storage without sync
   const output = await renderProviderManagerFrame(ProviderManager, {
     waitForOutput: frame =>
       frame.includes('Provider manager') &&
-      frame.includes('Log out Codex OAuth'),
+      frame.includes('Log out OpenAI (Subscription)'),
   })
 
   expect(output).toContain('Provider manager')
-  expect(output).toContain('Log out Codex OAuth')
+  expect(output).toContain('Log out OpenAI (Subscription)')
   expect(codexSyncRead).not.toHaveBeenCalled()
   expect(codexAsyncRead).toHaveBeenCalled()
 })
 
-test('ProviderManager hides Codex OAuth setup in bare mode', async () => {
+test('ProviderManager hides OpenAI (Subscription) setup in bare mode', async () => {
   process.env.CLAUDE_CODE_SIMPLE = '1'
   delete process.env.CLAUDE_CODE_USE_GITHUB
   delete process.env.GITHUB_TOKEN
@@ -1988,5 +2054,5 @@ test('ProviderManager hides Codex OAuth setup in bare mode', async () => {
   })
 
   expect(output).toContain('Set up provider')
-  expect(output).not.toContain('Codex OAuth')
+  expect(output).not.toContain('OpenAI (Subscription)')
 })

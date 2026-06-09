@@ -12,6 +12,7 @@ import {
   ConsoleOAuthFlow,
   type ConsoleOAuthFlowResult,
 } from '../../components/ConsoleOAuthFlow.js'
+import { ProviderManager } from '../../components/ProviderManager.js'
 import { Dialog } from '../../components/design-system/Dialog.js'
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js'
 import { Text } from '../../ink.js'
@@ -27,6 +28,7 @@ import {
   resetBypassPermissionsCheck,
 } from '../../utils/permissions/bypassPermissionsKillswitch.js'
 import { resetUserCache } from '../../utils/user.js'
+import { resolveLoginTarget } from './loginTarget.js'
 
 type LoginCompletion =
   | ConsoleOAuthFlowResult
@@ -38,8 +40,76 @@ export async function call(
   onDone: LocalJSXCommandOnDone,
   context: LocalJSXCommandContext,
 ): Promise<React.ReactNode> {
+  const target = resolveLoginTarget()
+
+  // OpenAI subscription (ChatGPT/Codex OAuth): run the Codex OAuth flow
+  // directly. ProviderManager owns the full success path — saving the
+  // profile, persisting credentials securely, and switching the session.
+  if (target.kind === 'codex') {
+    return (
+      <ProviderManager
+        mode="codex-login"
+        onDone={result => {
+          if (result?.action === 'saved') {
+            onDone(result.message ?? 'OpenAI subscription login successful', {
+              display: 'system',
+            })
+            return
+          }
+          onDone(result?.message ?? 'Login interrupted')
+        }}
+      />
+    )
+  }
+
+  // Local providers (Ollama, LM Studio, Atomic Chat) have no login —
+  // /login refreshes the local model list feeding the /model picker.
+  if (target.kind === 'local') {
+    const { discoverModelsForRoute } = await import(
+      '../../integrations/discoveryService.js'
+    )
+    const result = await discoverModelsForRoute(target.routeId, {
+      baseUrl: process.env.OPENAI_BASE_URL,
+      forceRefresh: true,
+    })
+    if (!result || result.source === 'error') {
+      onDone(
+        `Could not reach ${target.label} to refresh local models${
+          result?.error ? `: ${result.error.message}` : ''
+        }. Check that it is running, then retry /login or press r in /model.`,
+      )
+      return null
+    }
+    const count = result.models.length
+    onDone(
+      `${target.label}: ${count} local model${count === 1 ? '' : 's'} available in the /model picker.`,
+      { display: 'system' },
+    )
+    return null
+  }
+
+  // API-key providers (OpenRouter, Gemini, etc.) have no login flow.
+  if (target.kind === 'api-key-provider') {
+    onDone(
+      `${target.label} authenticates with an API key, not a login. Use /provider to add or update credentials, or switch to a subscription provider first.`,
+    )
+    return null
+  }
+
+  // Anthropic first-party and the Claude Max OAuth proxy both sign in
+  // with the Anthropic OAuth flow. On the Max proxy route, force the
+  // claude.ai subscription method — the proxy bills the subscription and
+  // cannot use Console API-key auth.
+  const claudeMaxTarget = target.kind === 'claude-max' ? target : null
+
   return (
     <Login
+      forceLoginMethod={claudeMaxTarget ? 'claudeai' : undefined}
+      startingMessage={
+        claudeMaxTarget
+          ? 'Sign in with your Claude subscription account. The local Claude Max proxy will use these credentials.'
+          : undefined
+      }
       onDone={async result => {
         if (result.type === 'cancel') {
           onDone('Login interrupted')
@@ -91,6 +161,23 @@ export async function call(
           authVersion: prev.authVersion + 1,
         }))
 
+        if (claudeMaxTarget) {
+          const { ensureClaudeMaxProxyRunning, describeEnsureResult } =
+            await import(
+              '../../integrations/anthropicProxies/claudeMaxProxyRuntime.js'
+            )
+          const result = await ensureClaudeMaxProxyRunning()
+          const warning = describeEnsureResult(result)
+          if (warning) {
+            onDone(`Login successful, but ${warning}`)
+            return
+          }
+          onDone(
+            'Login successful. The Claude Max proxy is running and will use these credentials.',
+          )
+          return
+        }
+
         onDone('Login successful')
       }}
     />
@@ -100,6 +187,7 @@ export async function call(
 export function Login(props: {
   onDone: (result: LoginCompletion, mainLoopModel: string) => void
   startingMessage?: string
+  forceLoginMethod?: 'claudeai' | 'console'
 }): React.ReactNode {
   const mainLoopModel = useMainLoopModel()
 
@@ -126,6 +214,7 @@ export function Login(props: {
           props.onDone(result ?? { type: 'cancel' }, mainLoopModel)
         }
         startingMessage={props.startingMessage}
+        forceLoginMethod={props.forceLoginMethod}
       />
     </Dialog>
   )

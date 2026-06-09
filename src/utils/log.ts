@@ -333,7 +333,7 @@ export function captureAPIRequest(
   querySource?: QuerySource,
 ): void {
   // startsWith, not exact match — users with non-default output styles get
-  // variants like 'repl_main_thread:outputStyle:Explanatory' (querySource.ts).
+  // variants like 'repl_main_thread:outputStyle:<style-name>' (querySource.ts).
   if (!querySource || !querySource.startsWith('repl_main_thread')) {
     return
   }
