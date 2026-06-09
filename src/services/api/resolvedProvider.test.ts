@@ -45,3 +45,16 @@ test('resolvedProviderFromProfile maps a Claude Max proxy profile to anthropic-p
   expect(rp.kind).toBe('anthropic-proxy')
   expect(rp.baseURL).toBe('http://127.0.0.1:8031')
 })
+
+import { enrichWithStoredCredentials } from './resolvedProvider.js'
+
+test('Codex OAuth profile gets its access token + account id injected', () => {
+  const base = {
+    profileId: 'p3', kind: 'openai-compatible' as const,
+    model: 'codexplan', baseURL: 'https://chatgpt.com/backend-api/codex',
+  }
+  const enriched = enrichWithStoredCredentials(base, {
+    readCodex: () => ({ accessToken: 'tok-123', accountId: 'acct-9', refreshToken: 'r' }),
+  })
+  expect(enriched.oauthAccessToken).toBe('tok-123')
+})
