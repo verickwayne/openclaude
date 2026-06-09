@@ -47,6 +47,7 @@ import {
   type InProcessSpawnConfig,
   spawnInProcessTeammate,
 } from '../../utils/swarm/spawnInProcess.js'
+import type { ResolvedProvider } from '../../services/api/resolvedProvider.js'
 import { buildInheritedEnvVars } from '../../utils/swarm/spawnUtils.js'
 import {
   getTeamFilePath,
@@ -98,6 +99,21 @@ export function resolveTeammateModel(
     return leaderModel ?? getDefaultTeammateModel(leaderModel)
   }
   return inputModel ?? getDefaultTeammateModel(leaderModel)
+}
+
+/**
+ * Resolve a per-teammate provider override from the teammate's requested
+ * model so the subprocess can route to its own provider (M6).
+ *
+ * The model→provider registry resolver (`resolveProviderForModel`, M2) is the
+ * authoritative mapper. Until it is wired in, this returns `undefined`, which
+ * keeps the existing behavior: the teammate inherits the parent's provider env
+ * and first-party models stay on the native Anthropic path (backward compat).
+ */
+export function resolveTeammateProviderOverride(
+  _model: string,
+): ResolvedProvider | undefined {
+  return undefined
 }
 
 // ============================================================================
@@ -514,7 +530,11 @@ async function handleSpawnSplitPane(
   const flagsStr = inheritedFlags ? ` ${inheritedFlags}` : ''
   // Propagate env vars that teammates need but may not inherit from tmux split-window shells.
   // Includes CLAUDECODE, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS, and API provider vars.
-  const envStr = buildInheritedEnvVars()
+  // If the teammate resolves to a different provider than the parent, its
+  // provider env replaces the inherited one (M6 per-teammate provider).
+  const envStr = buildInheritedEnvVars({
+    teammateOverride: resolveTeammateProviderOverride(model),
+  })
   const spawnCommand = `cd ${quote([workingDir])} && env ${envStr} ${quote([binaryPath])} ${teammateArgs}${flagsStr}`
 
   // Send the command to the new pane
@@ -716,7 +736,11 @@ async function handleSpawnSeparateWindow(
   const flagsStr = inheritedFlags ? ` ${inheritedFlags}` : ''
   // Propagate env vars that teammates need but may not inherit from tmux split-window shells.
   // Includes CLAUDECODE, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS, and API provider vars.
-  const envStr = buildInheritedEnvVars()
+  // If the teammate resolves to a different provider than the parent, its
+  // provider env replaces the inherited one (M6 per-teammate provider).
+  const envStr = buildInheritedEnvVars({
+    teammateOverride: resolveTeammateProviderOverride(model),
+  })
   const spawnCommand = `cd ${quote([workingDir])} && env ${envStr} ${quote([binaryPath])} ${teammateArgs}${flagsStr}`
 
   // Send the command to the new window
