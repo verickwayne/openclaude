@@ -429,14 +429,12 @@ function buildFirstPartyModelOptions(fastMode = false): ModelOption[] {
   }
   options.push(getOpus48Option())
   options.push(getFable5Option())
+  // Default picker shows only the current Opus tier (4.8 + Fable 5). Older
+  // Opus versions (4.7/4.6 and their 1M variants) remain selectable/add-able —
+  // their builders still exist and the active-model append step surfaces any
+  // model actually in use — they're just hidden from the default list.
   if (isOpus1mMergeEnabled()) {
     options.push(getMergedOpus1MOption(fastMode))
-  } else {
-    options.push(getOpus47Option(fastMode))
-    options.push(getOpus46Option(fastMode))
-    if (checkOpus1mAccess()) {
-      options.push(getOpus46_1MOption(fastMode))
-    }
   }
   options.push(getHaiku45Option())
   return options
