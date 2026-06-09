@@ -17,6 +17,10 @@ import {
 } from '../utils/providerCustomHeaders.js'
 import { getPrimaryModel, hasMultipleModels, parseModelList } from '../utils/providerModels.js'
 import {
+  isProviderAvailable,
+  parseModelInput,
+} from '../utils/providerAvailability.js'
+import {
   applySavedProfileToCurrentSession,
   buildCodexOAuthProfileEnv,
   buildXaiOAuthProfileEnv,
@@ -285,8 +289,23 @@ function canUseStreamlinedPresetFlow(draft: ProviderDraft): boolean {
   return !isSetupPlaceholder(draft.baseUrl) && !isSetupPlaceholder(draft.model)
 }
 
-function profileSummary(profile: ProviderProfile, isActive: boolean): string {
-  const activeSuffix = isActive ? ' (active)' : ''
+/**
+ * In a multi-provider setup every logged-in/usable profile is "(active)".
+ * The single configured default profile (activeProviderProfileId) is the
+ * one requests fall back to, shown as "(active · default)".
+ */
+function activeSuffixFor(isAvailable: boolean, isDefault: boolean): string {
+  if (isDefault) {
+    return ' (active · default)'
+  }
+  return isAvailable ? ' (active)' : ''
+}
+
+function profileSummary(
+  profile: ProviderProfile,
+  state: { isAvailable: boolean; isDefault: boolean },
+): string {
+  const activeSuffix = activeSuffixFor(state.isAvailable, state.isDefault)
   const keyInfo = profile.apiKey ? 'key set' : 'no key'
   const routeId = resolveProfileRoute(profile.provider).routeId
   const providerKind = getRouteProviderTypeLabel(routeId)
@@ -2158,7 +2177,11 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             <>
               {profiles.map(profile => (
                 <Text key={profile.id} dimColor>
-                  - {profile.name}: {profileSummary(profile, profile.id === activeProfileId)}
+                  - {profile.name}:{' '}
+                  {profileSummary(profile, {
+                    isAvailable: isProviderAvailable(profile),
+                    isDefault: profile.id === activeProfileId,
+                  })}
                 </Text>
               ))}
               {githubProviderAvailable ? (
@@ -2300,10 +2323,10 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     const includeGithub = options?.includeGithub ?? false
     const selectOptions = profiles.map(profile => ({
       value: profile.id,
-      label:
-        profile.id === activeProfileId
-          ? `${profile.name} (active)`
-          : profile.name,
+      label: `${profile.name}${activeSuffixFor(
+        isProviderAvailable(profile),
+        profile.id === activeProfileId,
+      )}`,
       description: `${getRouteProviderTypeLabel(resolveProfileRoute(profile.provider).routeId)} · ${profile.baseUrl} · ${profile.model}`,
     }))
 

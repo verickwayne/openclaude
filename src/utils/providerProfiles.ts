@@ -10,6 +10,7 @@ import {
 } from './config.js'
 import type { ModelOption } from './model/modelOptions.js'
 import { getPrimaryModel, parseModelList } from './providerModels.js'
+import { appendModelsToModelField } from './providerAvailability.js'
 import {
   buildCompatibilityProcessEnv,
   createProfileFile,
@@ -893,6 +894,68 @@ export function persistActiveProviderProfileModel(
   }
 
   return resolvedProfile
+}
+
+/**
+ * Append one or more model IDs to a specific profile's comma-separated
+ * `model` field, deduping against models already present. Persists via the
+ * shared saveGlobalConfig path and re-applies process env when the edited
+ * profile is the active one. Returns the updated profile, or null when the
+ * profile does not exist.
+ */
+export function addModelsToProviderProfile(
+  profileId: string,
+  newModels: string[],
+): ProviderProfile | null {
+  let updatedProfile: ProviderProfile | null = null
+  let shouldApply = false
+
+  saveGlobalConfig(current => {
+    const currentProfiles = getProviderProfiles(current)
+    const profileIndex = currentProfiles.findIndex(
+      profile => profile.id === profileId,
+    )
+
+    if (profileIndex < 0) {
+      return current
+    }
+
+    const currentProfile = currentProfiles[profileIndex]
+    const nextModelField = appendModelsToModelField(
+      currentProfile.model,
+      newModels,
+    )
+
+    if (nextModelField === currentProfile.model) {
+      updatedProfile = currentProfile
+      return current
+    }
+
+    const nextProfile = { ...currentProfile, model: nextModelField }
+    const nextProfiles = [...currentProfiles]
+    nextProfiles[profileIndex] = nextProfile
+    updatedProfile = nextProfile
+
+    const cacheByProfile = {
+      ...(current.openaiAdditionalModelOptionsCacheByProfile ?? {}),
+    }
+    delete cacheByProfile[profileId]
+
+    shouldApply =
+      trimOrUndefined(current.activeProviderProfileId) === profileId
+
+    return {
+      ...current,
+      providerProfiles: nextProfiles,
+      openaiAdditionalModelOptionsCacheByProfile: cacheByProfile,
+    }
+  })
+
+  if (updatedProfile && shouldApply) {
+    applyProviderProfileToProcessEnv(updatedProfile)
+  }
+
+  return updatedProfile
 }
 
 /**
