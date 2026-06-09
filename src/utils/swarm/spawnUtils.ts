@@ -9,6 +9,7 @@ import {
   getMainLoopModelOverride,
   getSessionBypassPermissionsMode,
 } from '../../bootstrap/state.js'
+import type { ResolvedProvider } from '../../services/api/resolvedProvider.js'
 import { quote } from '../bash/shellQuote.js'
 import { isInBundledMode } from '../bundledMode.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
@@ -147,11 +148,81 @@ const TEAMMATE_ENV_VARS = [
 ] as const
 
 /**
+ * Provider-selection env keys. When a per-teammate provider override is
+ * supplied to buildInheritedEnvVars, the parent's values for these keys are
+ * NOT forwarded — the override's own values (from buildTeammateProviderEnv)
+ * replace them so the teammate routes to its own provider.
+ */
+const PROVIDER_ENV_KEYS = new Set<string>([
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_USE_GITHUB',
+  'CLAUDE_CODE_USE_GEMINI',
+  'CLAUDE_CODE_USE_MISTRAL',
+  'CLAUDE_CODE_USE_OPENAI',
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'OPENAI_MODEL',
+  'OPENAI_API_FORMAT',
+  'OPENAI_AUTH_HEADER',
+  'OPENAI_AUTH_HEADER_VALUE',
+  'GEMINI_API_KEY',
+  'GEMINI_BASE_URL',
+  'GEMINI_MODEL',
+  'GOOGLE_API_KEY',
+  'MISTRAL_API_KEY',
+  'MISTRAL_MODEL',
+  'MISTRAL_BASE_URL',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_MODEL',
+])
+
+/**
+ * Builds the provider-selection env for a single teammate from a
+ * ResolvedProvider. Returns a plain env map (not a shell string) so callers
+ * can merge or inspect it. ResolvedProvider carries CAPITAL `baseURL`.
+ */
+export function buildTeammateProviderEnv(
+  rp: ResolvedProvider,
+): NodeJS.ProcessEnv {
+  if (rp.kind === 'openai-compatible' || rp.kind === 'gemini') {
+    return {
+      CLAUDE_CODE_USE_OPENAI: '1',
+      OPENAI_BASE_URL: rp.baseURL ?? '',
+      OPENAI_API_KEY: rp.apiKey ?? '',
+      OPENAI_MODEL: rp.model,
+      ...(rp.apiFormat ? { OPENAI_API_FORMAT: rp.apiFormat } : {}),
+      ...(rp.authHeader ? { OPENAI_AUTH_HEADER: rp.authHeader } : {}),
+      ...(rp.authHeaderValue
+        ? { OPENAI_AUTH_HEADER_VALUE: rp.authHeaderValue }
+        : {}),
+    }
+  }
+  // anthropic-native / anthropic-proxy / bedrock / vertex
+  return {
+    ANTHROPIC_MODEL: rp.model,
+    ...(rp.baseURL ? { ANTHROPIC_BASE_URL: rp.baseURL } : {}),
+    ...(rp.apiKey ? { ANTHROPIC_API_KEY: rp.apiKey } : {}),
+  }
+}
+
+/**
  * Builds the `env KEY=VALUE ...` string for teammate spawn commands.
  * Always includes CLAUDECODE=1 and CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1,
  * plus any provider/config env vars that are set in the current process.
+ *
+ * When `options.teammateOverride` is supplied, the parent's provider-selection
+ * env (CLAUDE_CODE_USE_* / OPENAI_* / ANTHROPIC_* / GEMINI_* / MISTRAL_*) is
+ * replaced by the override's own provider env, so the teammate can run on a
+ * different provider than its parent. The host-managed marker is preserved.
  */
-export function buildInheritedEnvVars(): string {
+export function buildInheritedEnvVars(options?: {
+  teammateOverride?: ResolvedProvider
+}): string {
+  const { teammateOverride } = options || {}
+
   const envVars = [
     'CLAUDECODE=1',
     'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1',
@@ -161,9 +232,23 @@ export function buildInheritedEnvVars(): string {
   ]
 
   for (const key of TEAMMATE_ENV_VARS) {
+    // When overriding the teammate's provider, skip the parent's
+    // provider-selection vars; the override supplies its own below.
+    if (teammateOverride && PROVIDER_ENV_KEYS.has(key)) {
+      continue
+    }
     const value = process.env[key]
     if (value !== undefined && value !== '') {
       envVars.push(`${key}=${quote([value])}`)
+    }
+  }
+
+  if (teammateOverride) {
+    const overrideEnv = buildTeammateProviderEnv(teammateOverride)
+    for (const [key, value] of Object.entries(overrideEnv)) {
+      if (value !== undefined && value !== '') {
+        envVars.push(`${key}=${quote([value])}`)
+      }
     }
   }
 

@@ -47,6 +47,11 @@ import {
   type InProcessSpawnConfig,
   spawnInProcessTeammate,
 } from '../../utils/swarm/spawnInProcess.js'
+import type { ResolvedProvider } from '../../services/api/resolvedProvider.js'
+import {
+  TeamMessageBus,
+  type TeamMessage,
+} from '../../services/api/teamMessageBus.js'
 import { buildInheritedEnvVars } from '../../utils/swarm/spawnUtils.js'
 import {
   getTeamFilePath,
@@ -98,6 +103,55 @@ export function resolveTeammateModel(
     return leaderModel ?? getDefaultTeammateModel(leaderModel)
   }
   return inputModel ?? getDefaultTeammateModel(leaderModel)
+}
+
+/**
+ * Resolve a per-teammate provider override from the teammate's requested
+ * model so the subprocess can route to its own provider (M6).
+ *
+ * The model→provider registry resolver (`resolveProviderForModel`, M2) is the
+ * authoritative mapper. Until it is wired in, this returns `undefined`, which
+ * keeps the existing behavior: the teammate inherits the parent's provider env
+ * and first-party models stay on the native Anthropic path (backward compat).
+ */
+export function resolveTeammateProviderOverride(
+  _model: string,
+): ResolvedProvider | undefined {
+  return undefined
+}
+
+/**
+ * Comms facade over the in-process TeamMessageBus for one team (M6).
+ *
+ * Process boundaries (review #7): TeamMessageBus is in-process. It directly
+ * serves the orchestrator and any in-process sub-agents (the AgentTool path).
+ * Subprocess teammates spawned by spawnMultiAgent are separate OS processes
+ * and cannot receive in-memory bus events — their messaging rides the existing
+ * SendMessage tool / team IPC. The bridge is one-directional on the
+ * orchestrator side: when a subprocess teammate calls SendMessage, the
+ * orchestrator's inbound IPC handler should call `comms.bus.send(...)` to fan
+ * the message out to in-process subscribers. Do NOT attempt to deliver bus
+ * events into a child process; outbound to a subprocess teammate uses the
+ * existing SendMessage delivery, not the bus.
+ */
+export function createTeamComms(teamId: string, teammateIds: string[]) {
+  const bus = new TeamMessageBus(teamId)
+  return {
+    bus,
+    onOrchestratorMessage(handler: (m: TeamMessage) => void) {
+      return bus.subscribe('orchestrator', handler)
+    },
+    fromTeammate(agentId: string) {
+      return {
+        send: (to: string, body: string) =>
+          bus.send({ from: agentId, to, body }),
+        broadcast: (body: string) => bus.broadcast({ from: agentId, body }),
+        onMessage: (handler: (m: TeamMessage) => void) =>
+          bus.subscribe(agentId, handler),
+      }
+    },
+    teammateIds,
+  }
 }
 
 // ============================================================================
@@ -514,7 +568,11 @@ async function handleSpawnSplitPane(
   const flagsStr = inheritedFlags ? ` ${inheritedFlags}` : ''
   // Propagate env vars that teammates need but may not inherit from tmux split-window shells.
   // Includes CLAUDECODE, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS, and API provider vars.
-  const envStr = buildInheritedEnvVars()
+  // If the teammate resolves to a different provider than the parent, its
+  // provider env replaces the inherited one (M6 per-teammate provider).
+  const envStr = buildInheritedEnvVars({
+    teammateOverride: resolveTeammateProviderOverride(model),
+  })
   const spawnCommand = `cd ${quote([workingDir])} && env ${envStr} ${quote([binaryPath])} ${teammateArgs}${flagsStr}`
 
   // Send the command to the new pane
@@ -716,7 +774,11 @@ async function handleSpawnSeparateWindow(
   const flagsStr = inheritedFlags ? ` ${inheritedFlags}` : ''
   // Propagate env vars that teammates need but may not inherit from tmux split-window shells.
   // Includes CLAUDECODE, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS, and API provider vars.
-  const envStr = buildInheritedEnvVars()
+  // If the teammate resolves to a different provider than the parent, its
+  // provider env replaces the inherited one (M6 per-teammate provider).
+  const envStr = buildInheritedEnvVars({
+    teammateOverride: resolveTeammateProviderOverride(model),
+  })
   const spawnCommand = `cd ${quote([workingDir])} && env ${envStr} ${quote([binaryPath])} ${teammateArgs}${flagsStr}`
 
   // Send the command to the new window
