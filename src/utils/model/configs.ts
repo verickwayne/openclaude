@@ -227,6 +227,22 @@ export const CLAUDE_SONNET_4_6_CONFIG = {
   xai: 'grok-4.3',
 } as const satisfies LegacyProviderModelConfig
 
+// @[MODEL LAUNCH] Opus 4.8
+export const CLAUDE_OPUS_4_8_CONFIG = {
+  ...CLAUDE_OPUS_4_7_CONFIG,
+  firstParty: 'claude-opus-4-8',
+  bedrock: 'anthropic.claude-opus-4-8-v1:0',
+  vertex: 'claude-opus-4-8@20260601',
+} as const satisfies LegacyProviderModelConfig
+
+// @[MODEL LAUNCH] Fable 5
+export const CLAUDE_FABLE_5_CONFIG = {
+  ...CLAUDE_OPUS_4_7_CONFIG,
+  firstParty: 'claude-fable-5',
+  bedrock: 'anthropic.claude-fable-5-v1:0',
+  vertex: 'claude-fable-5@20260601',
+} as const satisfies LegacyProviderModelConfig
+
 // @[MODEL LAUNCH]: Register the new config here.
 export const LEGACY_PROVIDER_MODEL_CONFIGS = {
   haiku35: CLAUDE_3_5_HAIKU_CONFIG,
