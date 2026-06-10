@@ -3,6 +3,7 @@ import type { ProviderProfile } from '../../utils/config.js'
 import { parseModelList } from '../../utils/providerModels.js' // verified path (NOT utils/model/)
 import {
   aggregateLedgerStats,
+  wilsonLower,
   type LedgerEntry,
   MIN_RELIABLE_N,
 } from '../../utils/model/outcomeLedger.js'
@@ -308,9 +309,9 @@ export function resolveProviderForClass(
 
   if (liveRPs.length === 0) return []
 
-  // Step 3 — build ledger lookup: provider_model_used → { successRate, n }.
+  // Step 3 — build ledger lookup: provider_model_used → { successRate, successes, n }.
   type LedgerKey = string
-  const ledgerLookup = new Map<LedgerKey, { successRate: number; n: number }>()
+  const ledgerLookup = new Map<LedgerKey, { successRate: number; successes: number; n: number }>()
 
   if (ledgerEntries && ledgerEntries.length > 0) {
     const stats = aggregateLedgerStats(
@@ -324,6 +325,7 @@ export function resolveProviderForClass(
       if (s.n >= MIN_RELIABLE_N) {
         ledgerLookup.set(s.provider_model_used, {
           successRate: s.successRate ?? 0,
+          successes: s.successes,
           n: s.n,
         })
       }
@@ -332,15 +334,18 @@ export function resolveProviderForClass(
 
   // Step 4 — rank.
   // Groups (lower = higher priority in sort):
-  //   0: ledger-reliable (n >= MIN_RELIABLE_N), sorted by successRate desc
+  //   0: ledger-reliable (n >= MIN_RELIABLE_N), sorted by confidence-adjusted
+  //      success rate (Wilson lower confidence bound) descending — prevents
+  //      early-luck lock-in from a handful of draws permanently burying
+  //      under-sampled candidates; as n grows, LCB converges to the true rate.
   //   1: under-sampled (0 < n < MIN_RELIABLE_N) — exploration preferred
   //   2: no ledger data — static order preserved within group
-  type Ranked = { rp: ResolvedProvider; successRate: number | null; n: number; group: 0 | 1 | 2; staticIdx: number }
+  type Ranked = { rp: ResolvedProvider; successRate: number | null; successes: number; n: number; group: 0 | 1 | 2; staticIdx: number }
 
   const ranked: Ranked[] = liveRPs.map((rp, staticIdx) => {
     const ledgerData = ledgerLookup.get(rp.model)
     if (ledgerData) {
-      return { rp, successRate: ledgerData.successRate, n: ledgerData.n, group: 0, staticIdx }
+      return { rp, successRate: ledgerData.successRate, successes: ledgerData.successes, n: ledgerData.n, group: 0, staticIdx }
     }
     // Check under-sampled: exists in stats but n < MIN_RELIABLE_N
     const rawStats = ledgerEntries
@@ -353,16 +358,20 @@ export function resolveProviderForClass(
         ).find(s => s.provider_model_used === rp.model)
       : undefined
     if (rawStats && rawStats.n > 0) {
-      return { rp, successRate: rawStats.successRate, n: rawStats.n, group: 1, staticIdx }
+      return { rp, successRate: rawStats.successRate, successes: rawStats.successes, n: rawStats.n, group: 1, staticIdx }
     }
-    return { rp, successRate: null, n: 0, group: 2, staticIdx }
+    return { rp, successRate: null, successes: 0, n: 0, group: 2, staticIdx }
   })
+
+  // z=1.0 (≈84% one-sided confidence) tunes the LCB conservatism:
+  // enough to dampen early-luck lock-in without over-penalising large-n cells.
+  const WILSON_Z = 1.0
 
   ranked.sort((a, b) => {
     if (a.group !== b.group) return a.group - b.group
     if (a.group === 0) {
-      // Both reliable — sort by success rate descending
-      return (b.successRate ?? 0) - (a.successRate ?? 0)
+      // Both reliable — sort by best confidence-adjusted success rate (Wilson LCB) descending
+      return wilsonLower(b.successes, b.n, WILSON_Z) - wilsonLower(a.successes, a.n, WILSON_Z)
     }
     // Groups 1 and 2 — preserve static order
     return a.staticIdx - b.staticIdx

@@ -46,6 +46,30 @@ export const LEDGER_RELATIVE_PATH = '.openclaude/ralph/ledger/outcomes.jsonl'
  *  exploration threshold used by resolveProviderForClass). */
 export const MIN_RELIABLE_N = 3
 
+/**
+ * Wilson score lower confidence bound for a binomial proportion.
+ *
+ * Used as the sort key for ledger-ranked candidates (group 0) instead of
+ * raw successRate, so that early-luck lock-in is dampened: a 3/3 record
+ * (LCB ≈ 0.75 at z=1.0) no longer crushes a 5/8 record (LCB ≈ 0.45);
+ * as n grows, LCB converges to the true rate.
+ *
+ * @param successes  Number of successful outcomes in the cell.
+ * @param n          Total outcomes in the cell (must be > 0).
+ * @param z          Normal quantile for the one-sided confidence level
+ *                   (1.0 ≈ 84%, 1.28 ≈ 90%, 1.645 ≈ 95%).  Default 1.0.
+ * @returns          Lower bound in [0, 1].  Returns 0 when n === 0.
+ */
+export function wilsonLower(successes: number, n: number, z = 1.0): number {
+  if (n === 0) return 0
+  const phat = successes / n
+  const z2 = z * z
+  const num =
+    phat + z2 / (2 * n) - z * Math.sqrt(phat * (1 - phat) / n + z2 / (4 * n * n))
+  const den = 1 + z2 / n
+  return num / den
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
