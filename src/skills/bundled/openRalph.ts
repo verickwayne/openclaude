@@ -264,6 +264,23 @@ fi
 # Wrapped in || true so a malformed YAML or absent field never fails the hook.
 if [[ "$EVENT" == "PostToolUse" && "$TOOL_NAME" == "Agent" ]]; then
   TOOL_RESPONSE="$(read_json_field tool_response)"
+  # TOOL_RESPONSE_JSON re-serializes the tool_response value as valid JSON so
+  # the Python block can json.loads it for token extraction.  When tool_response
+  # is already a plain string (legacy tests / plain-text hook callers), json.dumps
+  # produces a JSON-quoted string that json.loads back to the original.  When
+  # tool_response is a nested AgentToolResult object, json.dumps produces the
+  # JSON representation of that object.  Either way json.loads succeeds.
+  TOOL_RESPONSE_JSON="$(python3 - "tool_response" "$INPUT" <<'PY'
+import json, sys
+field, raw = sys.argv[1], sys.argv[2]
+try:
+  data = json.loads(raw or "{}")
+  val = data.get(field)
+  print(json.dumps(val) if val is not None else "")
+except Exception:
+  print("")
+PY
+)"
   TOOL_INPUT_RAW="$(python3 - "tool_input" "$INPUT" <<'PY'
 import json, sys
 field, raw = sys.argv[1], sys.argv[2]
@@ -276,11 +293,12 @@ except Exception:
 PY
 )"
   START_MARKER="$RALPH_DIR/bridges/start-\${TOOL_USE_ID}.ts"
-  export TOOL_RESPONSE TOOL_INPUT_RAW START_MARKER
+  export TOOL_RESPONSE TOOL_RESPONSE_JSON TOOL_INPUT_RAW START_MARKER
   python3 - "$RALPH_DIR/ledger/outcomes.jsonl" "$SESSION_STATE_DIR/session.json" <<'PY' || true
 import json, os, re, sys, time
 ledger_path, session_json_path = sys.argv[1], sys.argv[2]
 tool_response = os.environ.get("TOOL_RESPONSE", "")
+tool_response_json = os.environ.get("TOOL_RESPONSE_JSON", "")
 tool_input_raw = os.environ.get("TOOL_INPUT_RAW", "")
 session_id = os.environ.get("SESSION_ID", "unknown")
 
@@ -297,10 +315,48 @@ except Exception:
 if not (persona and persona.startswith("openralph-")):
   sys.exit(0)
 
+# ── Token usage extraction (Gap 3) ────────────────────────────────────────────
+# tool_response_json is the JSON-preserved AgentToolResult value (re-serialized
+# from the parsed hook input so it is valid JSON regardless of whether the
+# original was a nested object or a plain string).
+# CAVEAT: AgentToolResult.usage reflects the FINAL assistant turn only — it is a
+# proxy for total dispatch cost, not a per-tool-call sum.
+input_tokens = None
+output_tokens = None
+cache_read_tokens = None
+cache_write_tokens = None
+service_tier = None
+# yaml_search_text defaults to tool_response (plain-text path).  When
+# tool_response_json is a JSON AgentToolResult object, the YAML lives in
+# content[0].text with real newlines; we pull that text so the YAML regex
+# finds the fence correctly even though the outer JSON encodes newlines as \\n.
+yaml_search_text = tool_response
+try:
+  parsed_response = json.loads(tool_response_json)
+  if isinstance(parsed_response, dict):
+    usage = parsed_response.get("usage")
+    if isinstance(usage, dict):
+      input_tokens = usage.get("input_tokens")
+      output_tokens = usage.get("output_tokens")
+      cache_read_tokens = usage.get("cache_read_input_tokens")
+      cache_write_tokens = usage.get("cache_creation_input_tokens")
+      service_tier = usage.get("service_tier")
+    content = parsed_response.get("content")
+    if isinstance(content, list) and content:
+      first = content[0]
+      if isinstance(first, dict) and first.get("type") == "text":
+        yaml_search_text = first.get("text") or tool_response
+  elif isinstance(parsed_response, str):
+    # tool_response was a plain string (legacy path); use it for YAML regex.
+    yaml_search_text = parsed_response
+except Exception:
+  pass
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Extract the trailing YAML block from the tool response.
 # Build the backtick fence programmatically to avoid quoting issues.
 _bt3 = chr(96) * 3
-yaml_match = re.search(_bt3 + r"yaml\\s*\\n([\\s\\S]*?)" + _bt3, tool_response or "")
+yaml_match = re.search(_bt3 + r"yaml\\s*\\n([\\s\\S]*?)" + _bt3, yaml_search_text or "")
 if not yaml_match:
   sys.exit(0)
 yaml_text = yaml_match.group(1)
@@ -368,6 +424,27 @@ if start_marker:
   except Exception:
     pass
 
+# billing_model heuristic — mirrors billingModel() in modelRegistry.ts.
+# Tokens for subscription rows have $0 marginal cost.
+# NOTE: do NOT compute dollars here — the cross-provider price table is
+# incomplete; tokens are the honest unit (researcher verdict, Gap 3 feasibility).
+billing_model = None
+if provider_model_used:
+  pmu = provider_model_used.lower()
+  # free: any localhost/127.0.0.1 marker (local models, dev proxies)
+  if "localhost" in pmu or "127.0.0.1" in pmu:
+    billing_model = "free"
+  # subscription: anthropic-proxy prefix (Claude Max OAuth proxy) or
+  # Codex endpoint (chatgpt.com/backend-api/codex URL pattern or codex-prefix alias)
+  elif pmu.startswith("anthropic-proxy"):
+    billing_model = "subscription"
+  elif "codex" in pmu:
+    billing_model = "subscription"
+  # metered: everything else (anthropic-native, gemini, bedrock, vertex,
+  # generic openai-compatible, etc.)
+  else:
+    billing_model = "metered"
+
 record = {
   "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
   "session_id": session_id,
@@ -381,6 +458,12 @@ record = {
   "new_gaps": new_gaps,
   "duration_s": duration_s,
   "goal_met": goal_met,
+  "input_tokens": input_tokens,
+  "output_tokens": output_tokens,
+  "cache_read_tokens": cache_read_tokens,
+  "cache_write_tokens": cache_write_tokens,
+  "service_tier": service_tier,
+  "billing_model": billing_model,
 }
 
 # Clean up the start marker regardless of whether we write a ledger row.
@@ -736,7 +819,7 @@ for row in rows:
 # Aggregate per (persona, workload, provider_model_used).
 # Worker rows: persona does NOT end with "-checker".
 Cell = collections.namedtuple("Cell", ["persona", "workload", "model"])
-stats = {}  # Cell -> {n, successes, durations, n_verified, verified_successes}
+stats = {}  # Cell -> {n, successes, durations, n_verified, verified_successes, token_pairs}
 
 for row in rows:
   persona = row.get("persona") or "unknown"
@@ -746,7 +829,7 @@ for row in rows:
   model = row.get("provider_model_used") or "unknown"
   cell = Cell(persona, workload, model)
   if cell not in stats:
-    stats[cell] = {"n": 0, "successes": 0, "durations": [], "n_verified": 0, "verified_successes": 0}
+    stats[cell] = {"n": 0, "successes": 0, "durations": [], "n_verified": 0, "verified_successes": 0, "token_pairs": []}
   entry = stats[cell]
   entry["n"] += 1
   # self-reported success: status == complete AND tests_passed is not False
@@ -758,6 +841,11 @@ for row in rows:
   dur = row.get("duration_s")
   if dur is not None:
     entry["durations"].append(dur)
+  # token pair: input_tokens + output_tokens (both must be non-null integers)
+  it = row.get("input_tokens")
+  ot = row.get("output_tokens")
+  if isinstance(it, int) and isinstance(ot, int):
+    entry["token_pairs"].append(it + ot)
   # checker-verified join: absent verdict excluded (not a failure)
   slug = row.get("task_slug")
   if slug and slug in checker_by_slug:
@@ -768,10 +856,15 @@ for row in rows:
         entry["verified_successes"] += 1
 
 any_verified = any(e["n_verified"] > 0 for e in stats.values())
+any_tokens = any(len(e["token_pairs"]) > 0 for e in stats.values())
 
 # Print table
-if any_verified:
+if any_verified and any_tokens:
+  header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'avg_tokens':>10} {'n_verified':>10} {'verified_rate':>13}"
+elif any_verified:
   header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'n_verified':>10} {'verified_rate':>13}"
+elif any_tokens:
+  header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'avg_tokens':>10}"
 else:
   header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14}"
 print(header)
@@ -782,11 +875,20 @@ for cell in sorted(stats, key=lambda c: (c.persona, c.workload, c.model)):
   success_rate = e["successes"] / n if n > 0 else 0.0
   avg_duration = sum(e["durations"]) / len(e["durations"]) if e["durations"] else None
   avg_dur_str = f"{avg_duration:.1f}" if avg_duration is not None else "   n/a"
-  if any_verified:
+  avg_tok = sum(e["token_pairs"]) / len(e["token_pairs"]) if e["token_pairs"] else None
+  avg_tok_str = f"{int(avg_tok)}" if avg_tok is not None else "   n/a"
+  if any_verified and any_tokens:
+    nv = e["n_verified"]
+    vr = e["verified_successes"] / nv if nv > 0 else None
+    vr_str = f"{vr:.0%}" if vr is not None else "    n/a"
+    print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {avg_tok_str:>10} {nv:>10} {vr_str:>13}")
+  elif any_verified:
     nv = e["n_verified"]
     vr = e["verified_successes"] / nv if nv > 0 else None
     vr_str = f"{vr:.0%}" if vr is not None else "    n/a"
     print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {nv:>10} {vr_str:>13}")
+  elif any_tokens:
+    print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {avg_tok_str:>10}")
   else:
     print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14}")
 PY

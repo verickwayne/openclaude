@@ -835,7 +835,7 @@ test('hook PostToolUse ledger block reads start-marker and computes integer dura
   // START_MARKER env var must be set from RALPH_DIR/bridges/start-${TOOL_USE_ID}
   // before the Python ledger block runs.
   expect(hook).toContain('START_MARKER=')
-  expect(hook).toContain('export TOOL_RESPONSE TOOL_INPUT_RAW START_MARKER')
+  expect(hook).toContain('export TOOL_RESPONSE TOOL_RESPONSE_JSON TOOL_INPUT_RAW START_MARKER')
   // Python must read the marker and cast elapsed to int.
   expect(hook).toContain('duration_s = int(time.time() - start_ts)')
   // All failure paths must leave duration_s None (try/except wraps the read).
@@ -1248,4 +1248,274 @@ test('buildKickPrompt contains verb-distinction sentence for kick, resume, and d
   expect(text).toContain('shell-level')
   // resume = model-driven continuation
   expect(text).toContain('model-driven')
+})
+
+// ── Gap 3: token usage capture ────────────────────────────────────────────────
+
+test('hook script contains JSON-parse block for token extraction and billing_model heuristic', () => {
+  const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
+
+  // json.loads path must be present (Gap 3 extraction block)
+  expect(hook).toContain('json.loads(tool_response_json)')
+
+  // billing_model heuristic must reference the three tiers
+  expect(hook).toContain('"free"')
+  expect(hook).toContain('"subscription"')
+  expect(hook).toContain('"metered"')
+
+  // billing_model must mirror modelRegistry.ts billingModel() decision inputs
+  expect(hook).toContain('anthropic-proxy')
+  expect(hook).toContain('codex')
+  expect(hook).toContain('localhost')
+
+  // The no-dollars comment must be present (tokens are the honest unit)
+  expect(hook).toMatch(/do NOT compute dollars|NOT compute dollars/i)
+  // Must not compute cost values — no cost/price variable assignments
+  expect(hook).not.toMatch(/cost\s*=\s*|price\s*=\s*/i)
+
+  // CAVEAT comment: AgentToolResult.usage is final-turn only
+  expect(hook).toMatch(/FINAL assistant turn|final assistant turn/i)
+
+  // New fields must appear in the JSONL record dict
+  expect(hook).toContain('"input_tokens"')
+  expect(hook).toContain('"output_tokens"')
+  expect(hook).toContain('"cache_read_tokens"')
+  expect(hook).toContain('"cache_write_tokens"')
+  expect(hook).toContain('"service_tier"')
+  expect(hook).toContain('"billing_model"')
+})
+
+test('hook billing_model heuristic: subscription/free/metered/null cases', () => {
+  const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
+
+  // anthropic-proxy → subscription
+  expect(hook).toContain('pmu.startswith("anthropic-proxy")')
+  // codex keyword → subscription
+  expect(hook).toContain('"codex" in pmu')
+  // localhost/127.0.0.1 → free
+  expect(hook).toContain('"localhost" in pmu or "127.0.0.1" in pmu')
+  // null when no provider_model_used (guarded by `if provider_model_used:`)
+  expect(hook).toContain('if provider_model_used:')
+})
+
+test('hook AgentToolResult round-trip: token fields and billing_model land in ledger', () => {
+  // Construct a minimal AgentToolResult-shaped object and wrap it in a JSON
+  // string that also carries the persona YAML inside content[0].text.
+  // This exercises the dual-read: json.loads extracts tokens AND the YAML
+  // regex finds the fence in the content text.
+  const personaYaml = [
+    '```yaml',
+    'task_slug: "token-roundtrip-task"',
+    'task_category: "implementation"',
+    'status: "complete"',
+    'commit: "abc1234"',
+    'files_changed: []',
+    'tests_run: null',
+    'tests_passed: true',
+    'provider_model_used: "anthropic/claude-sonnet-4-6"',
+    'new_gaps: []',
+    'next_action: null',
+    'notes: "token round-trip test"',
+    '```',
+  ].join('\n')
+
+  // Build AgentToolResult-shaped JSON; content[0].text carries the YAML.
+  const agentToolResult = {
+    agentId: 'test-agent-001',
+    agentType: 'openralph-builder',
+    content: [{ type: 'text', text: `Work done.\n\n${personaYaml}\n` }],
+    totalToolUseCount: 3,
+    totalDurationMs: 12000,
+    totalTokens: 1050,
+    usage: {
+      input_tokens: 900,
+      output_tokens: 150,
+      cache_read_input_tokens: 200,
+      cache_creation_input_tokens: 50,
+      server_tool_use: null,
+      service_tier: 'standard',
+      cache_creation: null,
+    },
+  }
+
+  // tool_response is the JSON-serialized AgentToolResult passed as a
+  // nested object in the outer hook input (the harness does JSON.stringify
+  // on the full hookInput, so tool_response ends up as a JSON sub-object).
+  const { root, exitCode, stderr } = runHookSubprocess({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'openralph-builder', prompt: 'build the thing' },
+    tool_response: agentToolResult,
+    session_id: 'token-sess',
+    cwd: 'test-cwd',
+    transcript_path: 'test-transcript',
+  })
+
+  expect(exitCode).toBe(0)
+  expect(stderr).not.toContain('Traceback')
+  expect(stderr).not.toContain('SyntaxError')
+
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  expect(existsSync(ledgerPath)).toBe(true)
+
+  const lines = readFileSync(ledgerPath, 'utf8').trim().split('\n')
+  expect(lines).toHaveLength(1)
+
+  const record = JSON.parse(lines[0]!) as Record<string, unknown>
+
+  // Core YAML fields extracted correctly (confirms YAML regex works on content[0].text)
+  expect(record.task_slug).toBe('token-roundtrip-task')
+  expect(record.status).toBe('complete')
+  expect(record.tests_passed).toBe(true)
+  expect(record.provider_model_used).toBe('anthropic/claude-sonnet-4-6')
+
+  // Token fields from AgentToolResult.usage
+  expect(record.input_tokens).toBe(900)
+  expect(record.output_tokens).toBe(150)
+  expect(record.cache_read_tokens).toBe(200)
+  expect(record.cache_write_tokens).toBe(50)
+  expect(record.service_tier).toBe('standard')
+
+  // billing_model inferred from provider_model_used ('anthropic/...' → metered)
+  expect(record.billing_model).toBe('metered')
+})
+
+test('hook token fields are null when tool_response is plain text (no AgentToolResult JSON)', () => {
+  // Plain-text tool_response (existing behavioral tests) → tokens null, YAML works
+  const personaYaml = [
+    '```yaml',
+    'task_slug: "plain-text-tokens-null"',
+    'status: "complete"',
+    'commit: null',
+    'files_changed: []',
+    'tests_run: null',
+    'tests_passed: true',
+    'provider_model_used: "openai-compatible/gpt-5.3-codex"',
+    'new_gaps: []',
+    'next_action: null',
+    'notes: "plain text path"',
+    '```',
+  ].join('\n')
+
+  const { root, exitCode, stderr } = runHookSubprocess({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'openralph-builder', prompt: 'build' },
+    tool_response: `Done.\n\n${personaYaml}\n`,
+    session_id: 'plain-sess',
+    cwd: 'test-cwd',
+    transcript_path: 'test-transcript',
+  })
+
+  expect(exitCode).toBe(0)
+  expect(stderr).not.toContain('Traceback')
+
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  expect(existsSync(ledgerPath)).toBe(true)
+  const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
+
+  // YAML extraction still works on plain-text tool_response
+  expect(record.task_slug).toBe('plain-text-tokens-null')
+  expect(record.status).toBe('complete')
+
+  // Token fields are null when tool_response is not a JSON AgentToolResult
+  expect(record.input_tokens).toBeNull()
+  expect(record.output_tokens).toBeNull()
+  expect(record.cache_read_tokens).toBeNull()
+  expect(record.cache_write_tokens).toBeNull()
+  expect(record.service_tier).toBeNull()
+
+  // billing_model still inferred from provider_model_used
+  expect(record.billing_model).toBe('subscription') // codex → subscription
+})
+
+test('hook billing_model heuristic covers all three tiers across provider string patterns', () => {
+  const cases: Array<{ provider_model_used: string; expected: 'subscription' | 'metered' | 'free' }> = [
+    { provider_model_used: 'anthropic-proxy/claude-max', expected: 'subscription' },
+    { provider_model_used: 'openai-compatible/gpt-5.3-codex', expected: 'subscription' },
+    { provider_model_used: 'openai-compatible/codex-mini', expected: 'subscription' },
+    { provider_model_used: 'anthropic/claude-sonnet-4-6', expected: 'metered' },
+    { provider_model_used: 'openai-compatible/gpt-5.4', expected: 'metered' },
+    { provider_model_used: 'gemini/gemini-2.5-pro', expected: 'metered' },
+    { provider_model_used: 'localhost/llama-3', expected: 'free' },
+    { provider_model_used: 'openai-compatible/127.0.0.1:11434/llama', expected: 'free' },
+  ]
+
+  for (const { provider_model_used, expected } of cases) {
+    const personaYaml = [
+      '```yaml',
+      `task_slug: "billing-test-${expected}"`,
+      'status: "complete"',
+      'commit: null',
+      'files_changed: []',
+      'tests_run: null',
+      'tests_passed: true',
+      `provider_model_used: "${provider_model_used}"`,
+      'new_gaps: []',
+      'next_action: null',
+      'notes: null',
+      '```',
+    ].join('\n')
+
+    const { root, exitCode } = runHookSubprocess({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Agent',
+      tool_input: { subagent_type: 'openralph-builder', prompt: 'build' },
+      tool_response: `Done.\n\n${personaYaml}\n`,
+      session_id: 'billing-heuristic-sess',
+      cwd: 'test-cwd',
+      transcript_path: 'test-transcript',
+    })
+
+    expect(exitCode).toBe(0)
+    const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+    const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
+    expect(record.billing_model).toBe(expected)
+  }
+})
+
+// ── Gap 3: LedgerEntry shape ──────────────────────────────────────────────────
+
+test('LedgerEntry type accepts all six new token/billing fields', () => {
+  // Import and verify the TypeScript type accepts the fields at compile time.
+  // We do this by constructing a valid LedgerEntry with all six fields and
+  // asserting the values survive a JSONL round-trip through readLedgerEntries.
+  const { readLedgerEntries, LEDGER_RELATIVE_PATH } = require('./../../utils/model/outcomeLedger.js') as typeof import('../../utils/model/outcomeLedger.js')
+
+  const dir = mkdtempSync(join(tmpdir(), 'openralph-ledger-shape-'))
+  const ledgerPath = join(dir, LEDGER_RELATIVE_PATH)
+  mkdirSync(join(dir, '.openclaude', 'ralph', 'ledger'), { recursive: true })
+
+  const entry = {
+    ts: '2026-06-10T00:00:00Z',
+    session_id: 'shape-test',
+    task_slug: 'shape-check',
+    persona: 'openralph-builder',
+    workload: 'long-running',
+    provider_model_used: 'anthropic/claude-sonnet-4-6',
+    status: 'complete',
+    tests_passed: true,
+    new_gaps: 0,
+    duration_s: 120,
+    goal_met: null,
+    input_tokens: 500,
+    output_tokens: 100,
+    cache_read_tokens: 200,
+    cache_write_tokens: 25,
+    service_tier: 'standard',
+    billing_model: 'metered' as const,
+  }
+
+  writeFileSync(ledgerPath, JSON.stringify(entry) + '\n', 'utf8')
+  const [parsed] = readLedgerEntries(dir)
+
+  expect((parsed as Record<string, unknown>).input_tokens).toBe(500)
+  expect((parsed as Record<string, unknown>).output_tokens).toBe(100)
+  expect((parsed as Record<string, unknown>).cache_read_tokens).toBe(200)
+  expect((parsed as Record<string, unknown>).cache_write_tokens).toBe(25)
+  expect((parsed as Record<string, unknown>).service_tier).toBe('standard')
+  expect((parsed as Record<string, unknown>).billing_model).toBe('metered')
+
+  // Clean up
+  require('node:fs').rmSync(dir, { recursive: true })
 })
