@@ -136,8 +136,8 @@ describe('getGroupedProviderModelOptions', () => {
     const openrouterHeaderIdx = values.findIndex(v => v === makeGroupHeaderValue('openrouter'))
     expect(anthropicHeaderIdx).toBeGreaterThanOrEqual(0)
     expect(openrouterHeaderIdx).toBeGreaterThan(anthropicHeaderIdx)
-    // Sonnet comes after Anthropic header but before OpenRouter header
-    const sonnetIdx = values.indexOf('claude-sonnet')
+    // Anthropic curated rows come after Anthropic header but before OpenRouter.
+    const sonnetIdx = values.indexOf('sonnet')
     expect(sonnetIdx).toBeGreaterThan(anthropicHeaderIdx)
     expect(sonnetIdx).toBeLessThan(openrouterHeaderIdx)
   })
@@ -264,7 +264,7 @@ describe('getGroupedProviderModelOptions', () => {
     })
     const modelEntries = opts.filter(o => !isGroupHeaderValue(String(o.value)))
     expect(modelEntries.filter(o => o.value === 'dup-model').length).toBe(1)
-    expect(modelEntries.find(o => o.value === 'dup-model')?.providerId).toBe('anthropic')
+    expect(modelEntries.find(o => o.value === 'dup-model')?.providerId).toBe('p1')
   })
 
   test('still includes pinned Anthropic models when no first-party options and no profiles are passed', () => {

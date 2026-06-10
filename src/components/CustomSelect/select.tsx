@@ -447,6 +447,9 @@ export function Select(t0) {
               label_0 = <>{labelText_0.slice(0, index_2)}<Text {...styles.highlightedText()}>{highlightText}</Text>{labelText_0.slice(index_2 + highlightText.length)}</>;
             }
             const isOptionDisabled_0 = option_2.disabled === true;
+            if (isOptionDisabled_0) {
+              return <Box key={String(option_2.value)} flexDirection="row" flexShrink={0} paddingTop={index_1 === 0 ? 0 : 1}><Text dimColor={true} bold={true}>{label_0}</Text></Box>;
+            }
             return <Box key={String(option_2.value)} flexDirection="column" flexShrink={0}><SelectOption isFocused={isFocused_0} isSelected={isSelected_0} shouldShowDownArrow={areMoreOptionsBelow_0 && isLastVisibleOption_0} shouldShowUpArrow={areMoreOptionsAbove_0 && isFirstVisibleOption_0}><>{!hideIndexes && <Text dimColor={true}>{`${i_0}.`.padEnd(maxIndexWidth_0 + 1)}</Text>}<Text dimColor={isOptionDisabled_0} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}>{label_0}</Text></></SelectOption>{option_2.description && <Box paddingLeft={hideIndexes ? 4 : maxIndexWidth_0 + 4}><Text dimColor={isOptionDisabled_0 || option_2.dimDescription !== false} color={isOptionDisabled_0 ? undefined : isSelected_0 ? "success" : isFocused_0 ? "suggestion" : undefined}><Ansi>{option_2.description}</Ansi></Text></Box>}</Box>;
           })}</Box>;
         break bb0;
@@ -513,6 +516,9 @@ export function Select(t0) {
           t20 = data_0 => {
             if (data_0.option.type === "input") {
               return null;
+            }
+            if (data_0.isOptionDisabled) {
+              return <Box key={String(data_0.option.value)} flexDirection="row" flexShrink={0} paddingTop={data_0.index === 1 ? 0 : 1}><Text dimColor={true} bold={true}>{data_0.label}</Text></Box>;
             }
             const labelText_3 = getTextContent(data_0.option.label);
             const indexWidth_0 = hideIndexes ? 0 : maxIndexWidth_1 + 2;

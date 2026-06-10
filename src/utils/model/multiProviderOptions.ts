@@ -281,12 +281,12 @@ function getConfiguredOptionsForProfiles(profiles: ProviderProfile[]): ModelOpti
 function getStableGroupModelOptions(
   group: ProviderGroup,
   profiles: ProviderProfile[],
-  firstPartyOptions: ModelOption[],
+  _firstPartyOptions: ModelOption[],
 ): ModelOption[] {
   const configured = getConfiguredOptionsForProfiles(profiles)
   switch (group) {
     case 'anthropic':
-      return [...ANTHROPIC_PICKER_MODELS, ...firstPartyOptions, ...configured]
+      return [...ANTHROPIC_PICKER_MODELS, ...configured]
     case 'openai':
       return [...OPENAI_PICKER_MODELS, ...configured]
     case 'openrouter':

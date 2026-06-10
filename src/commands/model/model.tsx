@@ -621,6 +621,7 @@ function ModelPickerWrapper({
         isFastModeAvailable()
       }
       optionsOverride={optionsOverride}
+      headerText="Choose a model from any configured provider. Availability markers show whether that provider is ready to use."
       discoveryState={discoveryState}
       onRefresh={
         discoveryContext?.canRefresh
