@@ -6,9 +6,14 @@ Branch: `feat/multi-provider`
 
 ## Summary
 
-This update improves OpenClaude's internal agent-loop harness for long-running autonomous work while reducing overhead for simple direct-answer prompts.
+This report is cumulative for the June 10 OpenClaude harness work. It covers:
+
+1. The internal agent-loop harness update that improves long-running autonomous work while reducing overhead for simple direct-answer prompts.
+2. The follow-up OpenRalph workstream: a Ralph-style skill and supporting process architecture for OpenClaude that lives outside the internal harness.
 
 ## What Changed
+
+### Internal Harness Update
 
 1. Adaptive loop-discipline activation
    - Added `LoopWorkloadClass` and workload classification in `src/types/loopDiscipline.ts`.
@@ -32,11 +37,44 @@ This update improves OpenClaude's internal agent-loop harness for long-running a
 5. Architecture note
    - Added `docs/architecture/agent-loop-harness.md` to record design decisions and local source references.
 
+### OpenRalph Workstream
+
+1. Bundled OpenRalph skills
+   - Added `/openralph` with aliases `/ralph`, `/ralph-engage`, and `/openralph-engage`.
+   - Added `/openralph-status`, `/openralph-resume`, and `/openralph-disengage`.
+   - These are skill/process commands, not internal loop changes.
+
+2. Project-local support files
+   - `/openralph` extracts support files that can be installed into `.openclaude/ralph/bin/`.
+   - `openralph-bootstrap.sh` creates `.openclaude/ralph/` state, queue, progress, goal, current-task, persona-result, session, and bridge directories.
+   - `openralph-hook.sh` reads OpenClaude hook stdin JSON, records `session_id`, event, tool, cwd, and transcript path, and keeps unfinished OpenRalph sessions visible through the Stop hook.
+   - `openralph-status.sh` and `openralph-disengage.sh` provide operational status and state-preserving shutdown.
+
+3. Hook/session bridge
+   - The OpenRalph hook architecture intentionally ports the useful part of Claude Ralph's session bridge into OpenClaude.
+   - It uses OpenClaude's existing hook payload fields, especially `session_id`, `cwd`, and `transcript_path`.
+   - The hook reads stdin first and falls back to environment variables, which makes it work across normal CLI sessions and subprocess contexts.
+
+4. Goal-led scheduler pattern
+   - OpenRalph borrows the newer Claude Code `/goal` concept: a concrete completion condition lives in `.openclaude/ralph/goal.json`.
+   - The Stop hook blocks ordinary stopping while `goal.json.status` is still running, telling the next turn to resume from OpenRalph files.
+   - Unlike native `/goal`, this layer is project-local and inspectable. The proof trail lives in `progress.md` and the goal ledger.
+
+5. Persona agents
+   - Added built-in `openralph-builder`, `openralph-refiner`, `openralph-researcher`, and `openralph-test-analyzer` agents.
+   - Each persona reads `.openclaude/ralph/current-task.md` and returns structured YAML for the scheduler.
+   - Persona results include `provider_model_used` so OpenRalph can use OpenClaude's provider/model-agnostic model picker intentionally.
+
+6. Architecture note
+   - Added `docs/architecture/openralph.md` to explain how the skill/process layer maps Ralph, `/goal`, `/loop`, hooks, and provider routing onto OpenClaude.
+
 ## Why
 
 The existing loop-discipline system has useful long-running work primitives: phases, saturation redirect, forced plan, and verification ledger. The performance problem is that those primitives can be too heavy for simple questions when discipline is enabled.
 
 The adaptive workload gate preserves strict behavior for real implementation work while skipping the harness for one-turn direct answers. The `/longtask` skill and `orchestration` agent add durable state and delegation planning without making every turn pay that cost.
+
+OpenRalph addresses a different layer. Ralph's strongest property is operational: persistent state, session bridging, persona dispatch, status/resume/disengage, and stop-time pressure to keep working. OpenClaude already has hooks, session ids, provider routing, and skills, so the better port is not a direct copy of Claude scripts. It is a project-local process layer that uses those primitives and improves Ralph with a goal ledger and provider/model routing.
 
 ## Research Inputs
 
@@ -44,7 +82,13 @@ The adaptive workload gate preserves strict behavior for real implementation wor
 - Anthropic harness design for long-running application development: https://www.anthropic.com/engineering/harness-design-long-running-apps
 - Claude skill authoring best practices: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
 - Claude Managed Agents overview: https://platform.claude.com/docs/en/managed-agents/overview
+- Claude Code `/goal`: https://code.claude.com/docs/en/goal
+- Claude Code scheduled tasks and `/loop`: https://code.claude.com/docs/en/scheduled-tasks
+- Claude Code dynamic workflows: https://code.claude.com/docs/en/workflows
+- Claude Code hooks: https://code.claude.com/docs/en/agent-sdk/hooks
+- Claude Code Week 20 `/goal` release note: https://code.claude.com/docs/en/whats-new/2026-w20
 - Local Maestro reference: `/Users/verickwayne/Projects/ruflo/v2/src/maestro`
+- Local Claude Ralph reference: `/Users/verickwayne/.claude/ralph` and `/Users/verickwayne/.codex/skills/claude-command-ralph-engage/SKILL.md`
 
 ## Verification
 
@@ -68,4 +112,10 @@ bun run build
 
 ```bash
 git diff --check
+```
+
+Additional OpenRalph verification:
+
+```bash
+bun test src/skills/bundled/openRalph.test.ts src/skills/bundled/longTask.test.ts
 ```
