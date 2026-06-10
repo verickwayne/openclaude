@@ -15,6 +15,7 @@ import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from 
 import { getAPIMetadata } from '../services/api/claude.js'
 import { getAnthropicClient } from '../services/api/client.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
+import { modelSupportsAdaptiveThinking } from './thinking.js'
 import { computeFingerprint } from './fingerprint.js'
 import { normalizeModelStringForAPI } from './model/model.js'
 
@@ -168,7 +169,9 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
 
   let thinkingConfig: BetaThinkingConfigParam | undefined
   if (thinking === false) {
-    thinkingConfig = { type: 'disabled' }
+    if (!modelSupportsAdaptiveThinking(model)) {
+      thinkingConfig = { type: 'disabled' }
+    }
   } else if (thinking !== undefined) {
     thinkingConfig = {
       type: 'enabled',
