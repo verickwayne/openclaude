@@ -35,6 +35,7 @@ const originalEnv = {
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
   MIMO_API_KEY: process.env.MIMO_API_KEY,
+  OPENCLAUDE_DISABLE_STRICT_TOOLS: process.env.OPENCLAUDE_DISABLE_STRICT_TOOLS,
 }
 
 const originalFetch = globalThis.fetch
@@ -117,6 +118,7 @@ beforeEach(async () => {
   delete process.env.OPENROUTER_API_KEY
   delete process.env.DEEPSEEK_API_KEY
   delete process.env.MIMO_API_KEY
+  delete process.env.OPENCLAUDE_DISABLE_STRICT_TOOLS
 })
 
 afterEach(() => {
@@ -150,6 +152,10 @@ afterEach(() => {
     restoreEnv('OPENROUTER_API_KEY', originalEnv.OPENROUTER_API_KEY)
     restoreEnv('DEEPSEEK_API_KEY', originalEnv.DEEPSEEK_API_KEY)
     restoreEnv('MIMO_API_KEY', originalEnv.MIMO_API_KEY)
+    restoreEnv(
+      'OPENCLAUDE_DISABLE_STRICT_TOOLS',
+      originalEnv.OPENCLAUDE_DISABLE_STRICT_TOOLS,
+    )
     globalThis.fetch = originalFetch
     _clearRegistryForTesting()
     ensureIntegrationsLoaded()
@@ -3779,6 +3785,61 @@ test('optional tool properties are not added to required[] — fixes Groq/Azure 
   expect(required).not.toContain('limit')
   expect(required).not.toContain('pages')
   expect(parameters?.additionalProperties).toBe(false)
+})
+
+test('OpenAI MCP tool parameters are closed even when strict tools are disabled', async () => {
+  process.env.OPENCLAUDE_DISABLE_STRICT_TOOLS = '1'
+  let requestBody: Record<string, unknown> | undefined
+
+  globalThis.fetch = (async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body))
+
+    return new Response(
+      JSON.stringify({
+        id: 'chatcmpl-5',
+        model: 'gpt-4o',
+        choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+      }),
+      { headers: { 'Content-Type': 'application/json' } },
+    )
+  }) as FetchType
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+
+  await client.beta.messages.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'draft an email' }],
+    tools: [
+      {
+        name: 'mcp__claude_ai_Gmail__create_draft',
+        description: 'Create a draft in Gmail',
+        input_schema: {
+          type: 'object',
+          properties: {
+            to: { type: 'array', items: { type: 'string' } },
+            headers: {
+              type: 'object',
+              properties: { 'In-Reply-To': { type: 'string' } },
+            },
+          },
+          required: ['to'],
+        },
+      },
+    ],
+    max_tokens: 16,
+    stream: false,
+  })
+
+  const parameters = (
+    requestBody?.tools as Array<{ function?: { parameters?: Record<string, unknown> } }>
+  )?.[0]?.function?.parameters
+  const props = parameters?.properties as
+    | Record<string, Record<string, unknown>>
+    | undefined
+
+  expect(parameters?.additionalProperties).toBe(false)
+  expect(props?.headers?.additionalProperties).toBe(false)
 })
 
 // ---------------------------------------------------------------------------

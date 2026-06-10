@@ -468,11 +468,11 @@ async function waitForFrameOutput(
 
 async function mountProviderManager(
   ProviderManager: React.ComponentType<{
-    mode: 'first-run' | 'manage'
+    mode: 'first-run' | 'manage' | 'codex-login'
     onDone: (result?: unknown) => void
   }>,
   options?: {
-    mode?: 'first-run' | 'manage'
+    mode?: 'first-run' | 'manage' | 'codex-login'
     onDone?: (result?: unknown) => void
     onChangeAppState?: (args: {
       newState: unknown
@@ -1465,6 +1465,112 @@ test('ProviderManager first-run OpenAI (Subscription) switches the current sessi
   expect(applySavedProfileToCurrentSession).toHaveBeenCalled()
   expect(persistCredentials).toHaveBeenCalledWith({
     profileId: 'provider_codex_oauth',
+  })
+  expect(onDone).toHaveBeenCalledWith(
+    expect.objectContaining({
+      action: 'saved',
+      message:
+        'OpenAI (Subscription) configured. OpenClaude activated it for this session.',
+    }),
+  )
+
+  await mounted.dispose()
+})
+
+test('/login OpenAI subscription makes the saved profile active immediately', async () => {
+  delete process.env.CLAUDE_CODE_SIMPLE
+  delete process.env.CLAUDE_CODE_USE_GITHUB
+  delete process.env.GITHUB_TOKEN
+  delete process.env.GH_TOKEN
+
+  const onDone = mock(() => {})
+  const persistCredentials = mock(() => {})
+  const oldDuplicateProfile = {
+    id: 'provider_old_codex',
+    provider: 'openai',
+    name: 'OpenAI (Subscription)',
+    baseUrl: 'https://chatgpt.com/backend-api/codex',
+    model: 'codexplan',
+    apiKey: '',
+  }
+  const addProviderProfile = mock((payload: {
+    provider: string
+    name: string
+    baseUrl: string
+    model: string
+    apiKey?: string
+  }) => ({
+    id: 'provider_new_codex_oauth',
+    provider: payload.provider,
+    name: payload.name,
+    baseUrl: payload.baseUrl,
+    model: payload.model,
+    apiKey: payload.apiKey,
+  }))
+  const setActiveProviderProfile = mock((profileId: string) => ({
+    id: profileId,
+    provider: 'openai',
+    name: 'OpenAI (Subscription)',
+    baseUrl: 'https://chatgpt.com/backend-api/codex',
+    model: 'codexplan',
+    apiKey: '',
+  }))
+
+  mockProviderManagerDependencies(
+    () => undefined,
+    async () => undefined,
+    {
+      addProviderProfile,
+      getProviderProfiles: () => [oldDuplicateProfile],
+      setActiveProviderProfile,
+      useCodexOAuthFlow: ({ onAuthenticated }) => {
+        const hasAuthenticated = React.useRef(false)
+
+        React.useEffect(() => {
+          if (hasAuthenticated.current) {
+            return
+          }
+          hasAuthenticated.current = true
+          void onAuthenticated({
+            accessToken: 'oauth-access-token',
+            refreshToken: 'oauth-refresh-token',
+            accountId: 'acct_oauth',
+          }, persistCredentials)
+        }, [onAuthenticated])
+
+        return {
+          state: 'waiting',
+          authUrl: 'https://chatgpt.com/codex',
+          browserOpened: true,
+        }
+      },
+    },
+  )
+
+  const nonce = `${Date.now()}-${Math.random()}`
+  const { ProviderManager } = await import(`./ProviderManager.js?ts=${nonce}`)
+  const mounted = await mountProviderManager(ProviderManager, {
+    mode: 'codex-login',
+    onDone,
+  })
+
+  await waitForCondition(() => onDone.mock.calls.length > 0)
+
+  expect(addProviderProfile).toHaveBeenCalledWith(
+    expect.objectContaining({
+      provider: 'openai',
+      name: 'OpenAI (Subscription)',
+      baseUrl: 'https://chatgpt.com/backend-api/codex',
+      model: 'codexplan',
+      apiKey: '',
+    }),
+    expect.objectContaining({ makeActive: true }),
+  )
+  expect(setActiveProviderProfile).toHaveBeenCalledWith(
+    'provider_new_codex_oauth',
+  )
+  expect(persistCredentials).toHaveBeenCalledWith({
+    profileId: 'provider_new_codex_oauth',
   })
   expect(onDone).toHaveBeenCalledWith(
     expect.objectContaining({

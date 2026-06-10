@@ -2568,7 +2568,9 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             )
             const saved = existing
               ? updateProviderProfile(existing.id, payload)
-              : addProviderProfile(payload, { makeActive: false })
+              : addProviderProfile(payload, {
+                  makeActive: mode === 'codex-login',
+                })
 
             if (!saved) {
               setErrorMessage(
@@ -2672,7 +2674,9 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             )
             const saved = existing
               ? updateProviderProfile(existing.id, payload)
-              : addProviderProfile(payload, { makeActive: false })
+              : addProviderProfile(payload, {
+                  makeActive: mode === 'codex-login',
+                })
 
             if (!saved) {
               failSetup(

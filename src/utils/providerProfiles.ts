@@ -897,56 +897,23 @@ export function persistActiveProviderProfileModel(
     return null
   }
 
-  // If the model is already part of the profile's model list, don't
-  // overwrite the field. This preserves comma-separated model lists like
-  // "glm-4.5, glm-4.7". Switching between models in the list is a
-  // session-level choice handled by mainLoopModelOverride, not a profile
-  // edit — the profile's model list should only change via explicit edit.
+  // In the multi-provider picker, selecting a model is a session/settings
+  // choice. Request routing resolves the provider from the selected model;
+  // do not rewrite the globally-default profile just because it happens to
+  // be the active startup fallback.
   const existingModels = parseModelList(activeProfile.model)
-  if (existingModels.includes(nextModel)) {
-    return activeProfile
-  }
-
-  saveGlobalConfig(current => {
-    const currentProfiles = getProviderProfiles(current)
-    const profileIndex = currentProfiles.findIndex(
-      profile => profile.id === activeProfile.id,
-    )
-
-    if (profileIndex < 0) {
-      return current
-    }
-
-    const currentProfile = currentProfiles[profileIndex]
-    if (currentProfile.model === nextModel) {
-      return current
-    }
-
-    const nextProfiles = [...currentProfiles]
-    nextProfiles[profileIndex] = {
-      ...currentProfile,
-      model: nextModel,
-    }
-
-    return {
-      ...current,
-      providerProfiles: nextProfiles,
-    }
-  })
-
-  const resolvedProfile = getActiveProviderProfile()
-  if (!resolvedProfile || resolvedProfile.id !== activeProfile.id) {
+  if (!existingModels.includes(nextModel)) {
     return null
   }
 
   if (
     process.env[PROFILE_ENV_APPLIED_FLAG] === '1' &&
-    trimOrUndefined(process.env[PROFILE_ENV_APPLIED_ID]) === resolvedProfile.id
+    trimOrUndefined(process.env[PROFILE_ENV_APPLIED_ID]) === activeProfile.id
   ) {
-    applyProviderProfileToProcessEnv(resolvedProfile)
+    applyProviderProfileToProcessEnv(activeProfile)
   }
 
-  return resolvedProfile
+  return activeProfile
 }
 
 /**

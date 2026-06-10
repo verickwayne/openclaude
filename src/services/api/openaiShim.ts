@@ -943,19 +943,19 @@ function convertTools(
         }
       }
 
-      const parameters = normalizeSchemaForOpenAI(schema, strict)
+      const normalizedParameters = normalizeSchemaForOpenAI(schema, strict)
+      const parameters = isGemini
+        ? normalizedParameters
+        : enforceNoAdditionalProperties(normalizedParameters)
 
       return {
         type: 'function' as const,
         function: {
           name: t.name,
           description: t.description ?? '',
-          // OpenAI strict mode requires additionalProperties:false on EVERY
-          // object schema in the tool's parameters (incl. nested objects in
-          // MCP tools like Gmail). normalizeSchemaForOpenAI only covers the
-          // top-level/properties path; this closes the remaining cases
-          // ($defs, bare-object nodes, items/combinator members).
-          parameters: strict ? enforceNoAdditionalProperties(parameters) : parameters,
+          // OpenAI requires additionalProperties:false on EVERY object schema
+          // in function parameters, including MCP tools like Gmail.
+          parameters,
         },
       }
     })

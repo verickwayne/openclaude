@@ -94,7 +94,7 @@ export function buildProviderManagerCompletion(result?: ProviderManagerResult): 
             result.activeProviderModel
               ? ` using model ${result.activeProviderModel}`
               : ''
-          }. Use this provider/model for subsequent requests unless the user activates another provider.</system-reminder>`,
+          }. Treat this as the default fallback provider/model; the user can still switch to any available model from another active provider.</system-reminder>`,
         ]
       : undefined
 

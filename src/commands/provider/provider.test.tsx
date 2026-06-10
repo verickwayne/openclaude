@@ -298,7 +298,7 @@ test('buildProviderManagerCompletion records provider activation event and model
     'Provider activated: Sadaf Provider (sadaf-model)',
   )
   expect(completion.metaMessages).toEqual([
-    '<system-reminder>Provider activated mid-session: Sadaf Provider using model sadaf-model. Use this provider/model for subsequent requests unless the user activates another provider.</system-reminder>',
+    '<system-reminder>Provider activated mid-session: Sadaf Provider using model sadaf-model. Treat this as the default fallback provider/model; the user can still switch to any available model from another active provider.</system-reminder>',
   ])
 })
 

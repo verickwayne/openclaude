@@ -1017,7 +1017,7 @@ describe('applyActiveProviderProfileFromConfig', () => {
 })
 
 describe('persistActiveProviderProfileModel', () => {
-  test('updates active profile model and current env for profile-managed sessions', async () => {
+  test('keeps active profile unchanged when selected model belongs elsewhere', async () => {
     const {
       applyProviderProfileToProcessEnv,
       getProviderProfiles,
@@ -1038,9 +1038,8 @@ describe('persistActiveProviderProfileModel', () => {
 
     const updated = persistActiveProviderProfileModel('minimax-m2.5:cloud')
 
-    expect(updated?.id).toBe(activeProfile.id)
-    expect(updated?.model).toBe('minimax-m2.5:cloud')
-    expect(process.env.OPENAI_MODEL).toBe('minimax-m2.5:cloud')
+    expect(updated).toBeNull()
+    expect(process.env.OPENAI_MODEL).toBe('kimi-k2.5:cloud')
     expect(process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID).toBe(
       activeProfile.id,
     )
@@ -1048,7 +1047,38 @@ describe('persistActiveProviderProfileModel', () => {
     const saved = getProviderProfiles().find(
       (profile: ProviderProfile) => profile.id === activeProfile.id,
     )
-    expect(saved?.model).toBe('minimax-m2.5:cloud')
+    expect(saved?.model).toBe('kimi-k2.5:cloud')
+  })
+
+  test('keeps active profile env aligned when selected model is already on that profile', async () => {
+    const {
+      applyProviderProfileToProcessEnv,
+      getProviderProfiles,
+      persistActiveProviderProfileModel,
+    } = await importFreshProviderProfileModules()
+    const activeProfile = buildProfile({
+      id: 'saved_openai',
+      baseUrl: 'http://192.168.33.108:11434/v1',
+      model: 'kimi-k2.5:cloud,minimax-m2.5:cloud',
+    })
+
+    saveMockGlobalConfig(current => ({
+      ...current,
+      providerProfiles: [activeProfile],
+      activeProviderProfileId: activeProfile.id,
+    }))
+    applyProviderProfileToProcessEnv(activeProfile)
+
+    const updated = persistActiveProviderProfileModel('minimax-m2.5:cloud')
+
+    expect(updated?.id).toBe(activeProfile.id)
+    expect(updated?.model).toBe('kimi-k2.5:cloud,minimax-m2.5:cloud')
+    expect(process.env.OPENAI_MODEL).toBe('kimi-k2.5:cloud')
+
+    const saved = getProviderProfiles().find(
+      (profile: ProviderProfile) => profile.id === activeProfile.id,
+    )
+    expect(saved?.model).toBe('kimi-k2.5:cloud,minimax-m2.5:cloud')
   })
 
   test('does not mutate process env when session is not profile-managed', async () => {
@@ -1078,7 +1108,7 @@ describe('persistActiveProviderProfileModel', () => {
     const saved = getProviderProfiles().find(
       (profile: ProviderProfile) => profile.id === activeProfile.id,
     )
-    expect(saved?.model).toBe('minimax-m2.5:cloud')
+    expect(saved?.model).toBe('kimi-k2.5:cloud')
   })
 })
 
