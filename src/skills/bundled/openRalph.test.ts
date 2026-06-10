@@ -661,16 +661,54 @@ test('adopt script updates active-session pointer to the new session', () => {
   expect(script).toContain('active-session.json')
 })
 
-test('adopt script liveness heuristic: blocks adoption when orphan is active AND enabled', () => {
+test('adopt script liveness heuristic: refuses only when orphan is active AND enabled AND bridge is fresh', () => {
   const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-adopt.sh']
   // Must check the active-session pointer.
   expect(script).toContain('ACTIVE_SESSION')
   // Must check the enabled marker.
   expect(script).toContain('ENABLED')
-  // Both conditions together trigger the block (AND logic).
+  // Both conditions together open the staleness branch (AND logic).
   expect(script).toContain('"$ACTIVE_SESSION" == "$ORPHAN_SID" && -f "$ENABLED"')
   // Error message must point to the disengage script.
   expect(script).toContain('openralph-disengage.sh')
+})
+
+test('adopt script staleness check: bridge heartbeat mtime with 600s default and env override', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-adopt.sh']
+  // The heartbeat is the per-session bridge file the hook overwrites on every event.
+  expect(script).toContain('bridges/$ORPHAN_SID.json')
+  // mtime read via portable python3 stdlib (matches script style, no stat -f/-c divergence).
+  expect(script).toContain('os.path.getmtime')
+  // Default threshold 600 seconds, overridable via OPENRALPH_ADOPT_STALE_SECONDS.
+  expect(script).toContain('OPENRALPH_ADOPT_STALE_SECONDS')
+  expect(script).toContain(':-600}')
+  // Missing bridge file must also count as crashed (getmtime failure -> -1 sentinel).
+  expect(script).toContain('"$BRIDGE_AGE" -lt 0')
+  // Stale comparison against the threshold.
+  expect(script).toContain('"$BRIDGE_AGE" -gt "$STALE_SECONDS"')
+  // Must explain why it proceeded ("treating as crashed").
+  expect(script).toContain('treating as crashed')
+})
+
+test('adopt script --force flag skips liveness refusal with a warning', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-adopt.sh']
+  // --force must be parsed as a flag.
+  expect(script).toContain('--force) FORCE="1"')
+  // Forced adoption must still warn that a live loop may be running.
+  expect(script).toContain('WARNING: --force')
+  expect(script).toMatch(/live loop may (still )?be running/)
+  // Usage line must document the flag.
+  expect(script).toContain('openralph-adopt.sh [--force] <orphan_session_id>')
+})
+
+test('adopt script refusal message mentions both the staleness rule and --force', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-adopt.sh']
+  // Only a FRESH bridge triggers refusal — the message must say the heartbeat is fresh.
+  expect(script).toContain('looks live')
+  expect(script).toContain('fresh')
+  // The refusal must offer the staleness escape (env var) and the --force escape.
+  expect(script).toMatch(/Cannot adopt[\s\S]*OPENRALPH_ADOPT_STALE_SECONDS/)
+  expect(script).toMatch(/Cannot adopt[\s\S]*--force/)
 })
 
 test('status script prints lineage chain when session has non-empty lineage', () => {

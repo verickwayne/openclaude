@@ -485,18 +485,33 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-openralph-adopt.sh <orphan_session_id>
+openralph-adopt.sh [--force] <orphan_session_id>
 
 Adopt an orphaned OpenRalph session into the current new session.
 The orphan's files are COPIED (not moved) so the ancestor's history
 is preserved unchanged.  The new session gets a fresh session_id,
 carries forward the orphan's lineage chain, and becomes the active session.
+
+Liveness: an orphan that still looks live (active-session pointer + enabled
+marker) is adopted anyway if its bridge heartbeat file is missing or older
+than OPENRALPH_ADOPT_STALE_SECONDS (default 600) — a crashed loop never
+clears those markers, so staleness is the crash signal.  Adoption is only
+refused when the bridge heartbeat is fresh.  --force skips the liveness
+refusal entirely.
 EOF
 }
 
-ORPHAN_SID="\${1:-}"
+FORCE="0"
+ORPHAN_SID=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --force) FORCE="1"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) ORPHAN_SID="$1"; shift ;;
+  esac
+done
 if [[ -z "$ORPHAN_SID" ]]; then
-  echo "Usage: openralph-adopt.sh <orphan_session_id>" >&2
+  echo "Usage: openralph-adopt.sh [--force] <orphan_session_id>" >&2
   usage >&2
   exit 2
 fi
@@ -511,17 +526,42 @@ if [[ ! -d "$ORPHAN_STATE_DIR" ]]; then
   exit 2
 fi
 
-# Liveness check: the orphan must not be the current active session of a live loop.
-# A loop is live when BOTH conditions hold:
+# Liveness check: the orphan must not be the current active session of a LIVE loop.
+# A loop LOOKS live when BOTH conditions hold:
 #   1. active-session points to this session id, AND
 #   2. the enabled marker exists (the disengager removes enabled when it matches active-session).
-# If either condition is missing the session is considered orphaned and safe to adopt.
+# But a CRASHED loop leaves exactly that state behind — the disengager never ran.
+# So when the live-looking condition holds, the deciding signal is the bridge
+# heartbeat: the hook overwrites bridges/<sid>.json on every event, so a fresh
+# mtime means a genuinely live loop while a missing or stale bridge means crash.
 ACTIVE_SESSION="$(cat "$RALPH_DIR/active-session" 2>/dev/null || true)"
 ENABLED="$RALPH_DIR/enabled"
+BRIDGE_FILE="$RALPH_DIR/bridges/$ORPHAN_SID.json"
+STALE_SECONDS="\${OPENRALPH_ADOPT_STALE_SECONDS:-600}"
 if [[ "$ACTIVE_SESSION" == "$ORPHAN_SID" && -f "$ENABLED" ]]; then
-  echo "Cannot adopt: session $ORPHAN_SID is the current active session of a live loop." >&2
-  echo "Disengage it first with: bash .openclaude/ralph/bin/openralph-disengage.sh" >&2
-  exit 2
+  if [[ "$FORCE" == "1" ]]; then
+    echo "WARNING: --force given; adopting $ORPHAN_SID even though it looks live (a live loop may still be running)." >&2
+  else
+    BRIDGE_AGE="$(python3 - "$BRIDGE_FILE" <<'PY'
+import os, sys, time
+try:
+  print(int(time.time() - os.path.getmtime(sys.argv[1])))
+except OSError:
+  print(-1)
+PY
+)"
+    if [[ "$BRIDGE_AGE" -lt 0 ]]; then
+      echo "orphan bridge missing; treating as crashed and adopting."
+    elif [[ "$BRIDGE_AGE" -gt "$STALE_SECONDS" ]]; then
+      echo "orphan bridge stale \${BRIDGE_AGE}s > \${STALE_SECONDS}s threshold; treating as crashed and adopting."
+    else
+      echo "Cannot adopt: session $ORPHAN_SID looks live — bridge heartbeat is \${BRIDGE_AGE}s old (fresh, <= \${STALE_SECONDS}s threshold)." >&2
+      echo "Options: wait until the bridge heartbeat exceeds OPENRALPH_ADOPT_STALE_SECONDS (default 600)," >&2
+      echo "rerun with --force to override, or disengage the loop first:" >&2
+      echo "  bash .openclaude/ralph/bin/openralph-disengage.sh" >&2
+      exit 2
+    fi
+  fi
 fi
 
 NEW_SESSION_ID="\${CLAUDE_CODE_SESSION_ID:-\${CLAUDE_SESSION_ID:-}}"
