@@ -10,6 +10,7 @@ This report is cumulative for the June 10 OpenClaude harness work. It covers:
 
 1. The internal agent-loop harness update that improves long-running autonomous work while reducing overhead for simple direct-answer prompts.
 2. The follow-up OpenRalph workstream: a Ralph-style skill and supporting process architecture for OpenClaude that lives outside the internal harness.
+3. The Ralph session-scoping follow-up: both OpenClaude OpenRalph and Claude Code CLI Ralph now bind mutable scheduler files to a specific session, not just a project folder.
 
 ## What Changed
 
@@ -68,6 +69,21 @@ This report is cumulative for the June 10 OpenClaude harness work. It covers:
 6. Architecture note
    - Added `docs/architecture/openralph.md` to explain how the skill/process layer maps Ralph, `/goal`, `/loop`, hooks, and provider routing onto OpenClaude.
 
+### Session-Scoped Ralph Follow-Up
+
+1. OpenClaude OpenRalph
+   - Moved mutable scheduler files to `.openclaude/ralph/sessions/<session_id>/`.
+   - Kept `.openclaude/ralph/active-session` and `.openclaude/ralph/active-session.json` as project-level indexes only.
+   - Updated `openralph-hook.sh` so hook events are written to both project-level `events.jsonl` and session-level `sessions/<session_id>/events.jsonl`.
+   - Updated Stop-hook blocking text, status, resume, disengage, persona prompts, docs, and tests to target the session directory.
+
+2. Claude Code CLI Ralph
+   - Added shared helpers in `~/.claude/scripts/ralph-lib.sh` for resolving and linking project-local session directories.
+   - Updated `~/.claude/scripts/ralph-scheduler-bootstrap.sh` to create `.ralph/sessions/<session_id>/` and symlink legacy `.ralph/progress.md`, `queue.md`, `current-task.md`, `persona-result.yml`, and related files into that session directory.
+   - Updated `~/.claude/ralph/scripts/setup-loop.sh` to re-run scheduler bootstrap with the resolved Claude session id after the session state file is created.
+   - Updated supporting scripts that write/read Ralph scheduler files: `ralph-subagent-log.sh`, `ralph-tool-failure-capture.sh`, `ralph-precompact-snapshot.sh`, `ralph-state-write-guard.sh`, `ralph-completion-detector.sh`, `ralph-mode-enforcer.sh`, `ralph-deny-watcher.sh`, `outcome-gate.sh`, and `ralph/hooks/stop-hook.sh`.
+   - Kept compatibility symlinks so existing Ralph prompts and older tooling keep working while the actual files are session-scoped.
+
 ## Why
 
 The existing loop-discipline system has useful long-running work primitives: phases, saturation redirect, forced plan, and verification ledger. The performance problem is that those primitives can be too heavy for simple questions when discipline is enabled.
@@ -118,4 +134,14 @@ Additional OpenRalph verification:
 
 ```bash
 bun test src/skills/bundled/openRalph.test.ts src/skills/bundled/longTask.test.ts
+```
+
+Additional Ralph session-scoping verification:
+
+```bash
+bash -n ~/.claude/scripts/ralph-lib.sh ~/.claude/scripts/ralph-scheduler-bootstrap.sh ~/.claude/ralph/scripts/setup-loop.sh ~/.claude/scripts/ralph-subagent-log.sh ~/.claude/scripts/ralph-tool-failure-capture.sh ~/.claude/scripts/ralph-precompact-snapshot.sh ~/.claude/scripts/ralph-state-write-guard.sh ~/.claude/scripts/ralph-completion-detector.sh ~/.claude/scripts/ralph-mode-enforcer.sh ~/.claude/scripts/ralph-deny-watcher.sh ~/.claude/scripts/outcome-gate.sh ~/.claude/ralph/hooks/stop-hook.sh
+```
+
+```bash
+tmp=$(mktemp -d); cd "$tmp"; git init -q; touch .gitignore; RALPH_SESSION_ID=test-session-123 bash ~/.claude/scripts/ralph-scheduler-bootstrap.sh --session-id test-session-123
 ```

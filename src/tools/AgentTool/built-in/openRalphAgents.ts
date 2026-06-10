@@ -10,7 +10,7 @@ import { EXPLORE_AGENT } from './exploreAgent.js'
 const PERSONA_RESULT_SCHEMA = `End with this YAML block and no extra prose after it:
 
 \`\`\`yaml
-task_slug: "<from .openclaude/ralph/current-task.md>"
+task_slug: "<from .openclaude/ralph/sessions/<session_id>/current-task.md>"
 status: "complete" | "partial" | "blocked"
 commit: "<hash or null>"
 files_changed:
@@ -23,9 +23,9 @@ next_action: "<one concrete scheduler action>"
 notes: "<brief context for scheduler>"
 \`\`\``
 
-const COMMON_PROMPT = `You are an OpenRalph persona agent dispatched by the OpenClaude scheduler. Read .openclaude/ralph/current-task.md first, then only the files needed for that task.
+const COMMON_PROMPT = `You are an OpenRalph persona agent dispatched by the OpenClaude scheduler. Resolve the target session id from .openclaude/ralph/active-session unless the caller gives you one explicitly. Read .openclaude/ralph/sessions/<session_id>/current-task.md first, then only the files needed for that task.
 
-Use .openclaude/ralph/goal.json, queue.md, progress.md, and persona-result.yml as scheduler context. Do one focused dispatch. Return structured YAML for the scheduler to parse.
+Use .openclaude/ralph/sessions/<session_id>/goal.json, queue.md, progress.md, events.jsonl, and persona-result.yml as scheduler context. Do one focused dispatch. Return structured YAML for the scheduler to parse.
 
 Record which provider/model or model class was used. If the assigned task is too large, return status: "partial" with the next atomic action.`
 
@@ -52,23 +52,23 @@ const RESEARCHER_PROMPT = `${COMMON_PROMPT}
 
 Role: bounded researcher.
 
-Answer the research question in current-task.md using primary sources when possible. Write compact findings to .openclaude/ralph/research/<slug>.md and return only the YAML summary. Do not edit implementation files.
+Answer the research question in the session-scoped current-task.md using primary sources when possible. Write compact findings to .openclaude/ralph/sessions/<session_id>/research/<slug>.md and return only the YAML summary. Do not edit implementation files.
 
 ${PERSONA_RESULT_SCHEMA.replace(
   'files_changed:\n  - "path/to/file"',
-  'findings_file: ".openclaude/ralph/research/<slug>.md"',
+  'findings_file: ".openclaude/ralph/sessions/<session_id>/research/<slug>.md"',
 )}`
 
 const TEST_ANALYZER_PROMPT = `${COMMON_PROMPT}
 
 Role: test failure analyzer.
 
-Read the failing output referenced by current-task.md, the failing tests, the implementation under test, and the recent diff. Diagnose root cause and propose a specific fix. Do not edit code.
+Read the failing output referenced by the session-scoped current-task.md, the failing tests, the implementation under test, and the recent diff. Diagnose root cause and propose a specific fix. Do not edit code.
 
 End with this YAML block and no extra prose after it:
 
 \`\`\`yaml
-task_slug: "<from .openclaude/ralph/current-task.md>"
+task_slug: "<from .openclaude/ralph/sessions/<session_id>/current-task.md>"
 status: "diagnosed" | "blocked"
 failing_tests:
   - "path/to/test::case"
@@ -84,7 +84,7 @@ notes: "<optional>"
 export const OPENRALPH_BUILDER_AGENT: BuiltInAgentDefinition = {
   agentType: 'openralph-builder',
   whenToUse:
-    'OpenRalph persona for one atomic implementation task from .openclaude/ralph/current-task.md.',
+    'OpenRalph persona for one atomic implementation task from the active .openclaude/ralph/sessions/<session_id>/current-task.md.',
   source: 'built-in',
   baseDir: 'built-in',
   tools: ['*'],
