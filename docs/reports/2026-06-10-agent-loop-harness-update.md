@@ -11,6 +11,7 @@ This report is cumulative for the June 10 OpenClaude harness work. It covers:
 1. The internal agent-loop harness update that improves long-running autonomous work while reducing overhead for simple direct-answer prompts.
 2. The follow-up OpenRalph workstream: a Ralph-style skill and supporting process architecture for OpenClaude that lives outside the internal harness.
 3. The Ralph session-scoping follow-up: both OpenClaude OpenRalph and Claude Code CLI Ralph now bind mutable scheduler files to a specific session, not just a project folder.
+4. The non-optional Ralph kick follow-up: both Claude Code CLI Ralph and OpenClaude OpenRalph now have an external session-targeted force path.
 
 ## What Changed
 
@@ -42,7 +43,7 @@ This report is cumulative for the June 10 OpenClaude harness work. It covers:
 
 1. Bundled OpenRalph skills
    - Added `/openralph` with aliases `/ralph`, `/ralph-engage`, and `/openralph-engage`.
-   - Added `/openralph-status`, `/openralph-resume`, and `/openralph-disengage`.
+   - Added `/openralph-status`, `/openralph-resume`, `/openralph-disengage`, and `/openralph-kick`.
    - These are skill/process commands, not internal loop changes.
 
 2. Project-local support files
@@ -83,6 +84,21 @@ This report is cumulative for the June 10 OpenClaude harness work. It covers:
    - Updated `~/.claude/ralph/scripts/setup-loop.sh` to re-run scheduler bootstrap with the resolved Claude session id after the session state file is created.
    - Updated supporting scripts that write/read Ralph scheduler files: `ralph-subagent-log.sh`, `ralph-tool-failure-capture.sh`, `ralph-precompact-snapshot.sh`, `ralph-state-write-guard.sh`, `ralph-completion-detector.sh`, `ralph-mode-enforcer.sh`, `ralph-deny-watcher.sh`, `outcome-gate.sh`, and `ralph/hooks/stop-hook.sh`.
    - Kept compatibility symlinks so existing Ralph prompts and older tooling keep working while the actual files are session-scoped.
+
+### Non-Optional Kick Follow-Up
+
+1. Claude Code CLI Ralph
+   - Added `~/.claude/scripts/ralph-kick.sh`.
+   - The script accepts `--session <id-or-prefix>` and optionally `--project`, `--prompt`, or `--prompt-file`.
+   - If state already exists, it resolves the exact session, runs `ralph-resume.sh`, refreshes session-scoped `.ralph/sessions/<session_id>/` links, writes kick/wake markers, and starts the daemon if needed.
+   - If state is missing, it requires a prompt and creates the loop for the explicitly supplied session id through `ralph-engage.sh`.
+   - Updated `~/.claude/ralph/scripts/setup-loop.sh` so external scripts can pass the target session through `RALPH_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` / `CLAUDE_SESSION_ID` rather than relying only on a hook bridge.
+
+2. OpenClaude OpenRalph
+   - Added bundled `bin/openralph-kick.sh` and the `/openralph-kick` slash command, with aliases `/ralph-kick` and `/openralph-force`.
+   - Existing sessions are reactivated by touching `.openclaude/ralph/enabled`, updating `active-session`, writing `sessions/<session_id>/kick.json`, and appending `kick-log.jsonl` and project `events.jsonl`.
+   - Missing sessions require `--prompt` or `--prompt-file`, then bootstrap the exact requested session id through `openralph-bootstrap.sh`.
+   - This gives an operator a separate-terminal command when a slash command is entered but the assistant fails to initiate the loop.
 
 ## Why
 
@@ -136,10 +152,16 @@ Additional OpenRalph verification:
 bun test src/skills/bundled/openRalph.test.ts src/skills/bundled/longTask.test.ts
 ```
 
+OpenRalph kick verification:
+
+```bash
+bun test src/skills/bundled/openRalph.test.ts
+```
+
 Additional Ralph session-scoping verification:
 
 ```bash
-bash -n ~/.claude/scripts/ralph-lib.sh ~/.claude/scripts/ralph-scheduler-bootstrap.sh ~/.claude/ralph/scripts/setup-loop.sh ~/.claude/scripts/ralph-subagent-log.sh ~/.claude/scripts/ralph-tool-failure-capture.sh ~/.claude/scripts/ralph-precompact-snapshot.sh ~/.claude/scripts/ralph-state-write-guard.sh ~/.claude/scripts/ralph-completion-detector.sh ~/.claude/scripts/ralph-mode-enforcer.sh ~/.claude/scripts/ralph-deny-watcher.sh ~/.claude/scripts/outcome-gate.sh ~/.claude/ralph/hooks/stop-hook.sh
+bash -n ~/.claude/scripts/ralph-lib.sh ~/.claude/scripts/ralph-scheduler-bootstrap.sh ~/.claude/ralph/scripts/setup-loop.sh ~/.claude/scripts/ralph-kick.sh ~/.claude/scripts/ralph-subagent-log.sh ~/.claude/scripts/ralph-tool-failure-capture.sh ~/.claude/scripts/ralph-precompact-snapshot.sh ~/.claude/scripts/ralph-state-write-guard.sh ~/.claude/scripts/ralph-completion-detector.sh ~/.claude/scripts/ralph-mode-enforcer.sh ~/.claude/scripts/ralph-deny-watcher.sh ~/.claude/scripts/outcome-gate.sh ~/.claude/ralph/hooks/stop-hook.sh
 ```
 
 ```bash

@@ -23,6 +23,7 @@ test('/openralph registers engage/status/resume/disengage skills', async () => {
   expect(names).toContain('openralph-status')
   expect(names).toContain('openralph-resume')
   expect(names).toContain('openralph-disengage')
+  expect(names).toContain('openralph-kick')
 
   const engage = getBundledSkills().find(command => command.name === 'openralph')
   expect(engage?.aliases).toContain('ralph-engage')
@@ -37,6 +38,22 @@ test('/openralph registers engage/status/resume/disengage skills', async () => {
   expect(text).toContain('.claude/settings.local.json')
   expect(text).toContain('goal.json')
   expect(text).toContain('openralph-builder')
+})
+
+test('/openralph-kick registers force command and installs kick script', async () => {
+  registerOpenRalphSkills()
+
+  const kick = getBundledSkills().find(command => command.name === 'openralph-kick')
+  expect(kick).toBeDefined()
+  expect(kick?.aliases).toContain('ralph-kick')
+  expect(kick?.aliases).toContain('openralph-force')
+
+  const blocks = await kick!.getPromptForCommand('--session 9ec404eb', {} as never)
+  const text = (blocks[0] as { text: string }).text
+  expect(text).toContain('# /openralph-kick')
+  expect(text).toContain('openralph-kick.sh --session 9ec404eb')
+  expect(text).toContain('kick.json')
+  expect(text).toContain('kick-log.jsonl')
 })
 
 test('OpenRalph built-in persona agents are available', () => {
@@ -185,6 +202,20 @@ test('route-stats script is registered in OPENRALPH_FILES', () => {
   expect(script).toContain('python3')
   expect(script).not.toContain('import pandas')
   expect(script).not.toContain('import numpy')
+})
+
+test('kick script is registered and targets session-scoped OpenRalph state', () => {
+  const key = 'bin/openralph-kick.sh'
+  expect(key in OPENRALPH_FILES).toBe(true)
+  const script = (OPENRALPH_FILES as Record<string, string>)[key]
+
+  expect(script).toContain('--session')
+  expect(script).toContain('active-session')
+  expect(script).toContain('enabled')
+  expect(script).toContain('openralph-bootstrap.sh')
+  expect(script).toContain('kick.json')
+  expect(script).toContain('kick-log.jsonl')
+  expect(script).toContain('CLAUDE_CODE_SESSION_ID="$SESSION_ARG"')
 })
 
 test('scheduler step 8 reads route-stats and uses success-rate model selection with exploration', async () => {

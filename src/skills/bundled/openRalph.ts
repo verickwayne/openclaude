@@ -748,6 +748,180 @@ for cell in sorted(stats, key=lambda c: (c.persona, c.workload, c.model)):
 PY
 `
 
+const OPENRALPH_KICK_SH = `#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+openralph-kick.sh --session <id-or-prefix> [--project <path>]
+openralph-kick.sh --session <id> --prompt "objective" [--project <path>] [bootstrap flags...]
+openralph-kick.sh --session <id> --prompt-file <path> [--project <path>] [bootstrap flags...]
+
+Options:
+  --session, -s <id>          Target OpenClaude session id or existing-session prefix.
+  --project, -C <path>        Project root. Defaults to current directory.
+  --prompt <text>             Create the target session when state is missing.
+  --prompt-file <path>        Read objective from file when state is missing.
+  --mode <mode>               Forwarded to openralph-bootstrap.sh.
+  --max-iterations <n>        Forwarded to openralph-bootstrap.sh.
+  --completion-condition <t>  Forwarded to openralph-bootstrap.sh.
+  --proof-command <command>   Forwarded to openralph-bootstrap.sh.
+  --force                    Do not refuse a live-looking target.
+
+Existing sessions are reactivated by filesystem markers. Missing sessions need
+--prompt or --prompt-file so the kick has a concrete objective to bootstrap.
+EOF
+}
+
+SESSION_ARG=""
+PROJECT_ROOT="$(pwd -P 2>/dev/null || pwd)"
+PROMPT=""
+PROMPT_FILE=""
+FORCE="0"
+FORWARD_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --session|-s) SESSION_ARG="\${2:-}"; shift 2 ;;
+    --project|-C) PROJECT_ROOT="\${2:-}"; shift 2 ;;
+    --prompt) PROMPT="\${2:-}"; shift 2 ;;
+    --prompt-file) PROMPT_FILE="\${2:-}"; shift 2 ;;
+    --force) FORCE="1"; shift ;;
+    --mode|--max-iterations|--completion-condition|--proof-command)
+      FORWARD_ARGS+=("$1" "\${2:-}")
+      shift 2
+      ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+SESSION_ARG="\${SESSION_ARG#sid:}"
+if [[ -z "$SESSION_ARG" ]]; then
+  echo "--session is required" >&2
+  usage >&2
+  exit 2
+fi
+
+PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
+RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
+SESSION_DIR="$RALPH_DIR/sessions"
+BOOTSTRAP="$RALPH_DIR/bin/openralph-bootstrap.sh"
+mkdir -p "$SESSION_DIR" "$RALPH_DIR/bridges" "$RALPH_DIR/logs"
+
+resolve_session() {
+  local arg="$1" d sid matches=()
+  for d in "$SESSION_DIR"/*; do
+    [[ -d "$d" ]] || continue
+    sid="$(basename "$d")"
+    if [[ "$sid" == "$arg" || "$sid" == "$arg"* ]]; then
+      matches+=("$sid")
+    fi
+  done
+  if [[ \${#matches[@]} -gt 1 ]]; then
+    echo "openralph-kick: ambiguous session prefix '$arg':" >&2
+    printf '  %s\\n' "\${matches[@]}" >&2
+    exit 2
+  fi
+  [[ \${#matches[@]} -eq 1 ]] && printf '%s\\n' "\${matches[0]}"
+}
+
+write_kick_state() {
+  local sid="$1"
+  local session_state_dir="$SESSION_DIR/$sid"
+  local now active bridge_age
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  mkdir -p "$session_state_dir"
+
+  active="$(cat "$RALPH_DIR/active-session" 2>/dev/null || true)"
+  if [[ "$FORCE" != "1" && "$active" == "$sid" && -f "$RALPH_DIR/enabled" ]]; then
+    bridge_age="$(python3 - "$RALPH_DIR/bridges/$sid.json" <<'PY'
+import os, sys, time
+try:
+  print(int(time.time() - os.path.getmtime(sys.argv[1])))
+except OSError:
+  print(-1)
+PY
+)"
+    if [[ "$bridge_age" -ge 0 && "$bridge_age" -lt "\${OPENRALPH_KICK_LIVE_SECONDS:-15}" ]]; then
+      echo "openralph-kick: session $sid already looks live (bridge age \${bridge_age}s). Use --force to rewrite kick markers anyway." >&2
+      exit 2
+    fi
+  fi
+
+  touch "$RALPH_DIR/enabled"
+  printf '%s\\n' "$sid" > "$RALPH_DIR/active-session"
+  if [[ -f "$session_state_dir/session.json" ]]; then
+    cp "$session_state_dir/session.json" "$RALPH_DIR/active-session.json" 2>/dev/null || true
+  fi
+
+  python3 - "$session_state_dir/kick.json" "$session_state_dir/kick-log.jsonl" "$RALPH_DIR/events.jsonl" <<'PY'
+import json, os, sys, time
+kick_path, kick_log, events_path = sys.argv[1:4]
+record = {
+  "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+  "event": "kick",
+  "session_id": os.environ["OPENRALPH_KICK_SESSION_ID"],
+  "session_state_dir": os.environ["OPENRALPH_KICK_SESSION_DIR"],
+  "project_root": os.environ["OPENRALPH_KICK_PROJECT_ROOT"],
+}
+with open(kick_path, "w", encoding="utf-8") as f:
+  json.dump(record, f, indent=2)
+  f.write("\\n")
+for path in (kick_log, events_path):
+  with open(path, "a", encoding="utf-8") as f:
+    f.write(json.dumps(record, separators=(",", ":")) + "\\n")
+PY
+}
+
+SESSION_ID="$(resolve_session "$SESSION_ARG" || true)"
+if [[ -n "$SESSION_ID" ]]; then
+  export OPENRALPH_KICK_SESSION_ID="$SESSION_ID"
+  export OPENRALPH_KICK_SESSION_DIR="$SESSION_DIR/$SESSION_ID"
+  export OPENRALPH_KICK_PROJECT_ROOT="$PROJECT_ROOT"
+  write_kick_state "$SESSION_ID"
+  echo "OpenRalph kicked"
+  echo "Session: $SESSION_ID"
+  echo "Project: $PROJECT_ROOT"
+  echo "Kick marker: $SESSION_DIR/$SESSION_ID/kick.json"
+  exit 0
+fi
+
+if [[ -z "$PROMPT" && -n "$PROMPT_FILE" ]]; then
+  if [[ ! -f "$PROMPT_FILE" ]]; then
+    echo "openralph-kick: --prompt-file not found: $PROMPT_FILE" >&2
+    exit 2
+  fi
+  PROMPT="$(cat "$PROMPT_FILE")"
+fi
+
+if [[ -z "$PROMPT" ]]; then
+  echo "openralph-kick: no session matched '$SESSION_ARG'. Pass --prompt or --prompt-file to create it." >&2
+  exit 2
+fi
+
+if [[ ! -x "$BOOTSTRAP" ]]; then
+  echo "openralph-kick: bootstrap script not executable at $BOOTSTRAP" >&2
+  exit 1
+fi
+
+TMP_PROMPT="$(mktemp "\${TMPDIR:-/tmp}/openralph-kick-prompt.XXXXXX")"
+printf '%s\\n' "$PROMPT" > "$TMP_PROMPT"
+(cd "$PROJECT_ROOT" && \
+  CLAUDE_CODE_SESSION_ID="$SESSION_ARG" \
+  CLAUDE_SESSION_ID="$SESSION_ARG" \
+  bash "$BOOTSTRAP" --prompt-file "$TMP_PROMPT" "\${FORWARD_ARGS[@]}")
+
+export OPENRALPH_KICK_SESSION_ID="$SESSION_ARG"
+export OPENRALPH_KICK_SESSION_DIR="$SESSION_DIR/$SESSION_ARG"
+export OPENRALPH_KICK_PROJECT_ROOT="$PROJECT_ROOT"
+write_kick_state "$SESSION_ARG"
+echo "OpenRalph kicked"
+echo "Session: $SESSION_ARG"
+echo "Project: $PROJECT_ROOT"
+echo "Kick marker: $SESSION_DIR/$SESSION_ARG/kick.json"
+`
+
 const OPENRALPH_README = `# OpenRalph Support Files
 
 OpenRalph is a project-local scheduler pattern for OpenClaude.
@@ -769,6 +943,7 @@ export const OPENRALPH_FILES = {
   'bin/openralph-disengage.sh': OPENRALPH_DISENGAGE_SH,
   'bin/openralph-adopt.sh': OPENRALPH_ADOPT_SH,
   'bin/openralph-route-stats.sh': OPENRALPH_ROUTE_STATS_SH,
+  'bin/openralph-kick.sh': OPENRALPH_KICK_SH,
   'README.md': OPENRALPH_README,
 }
 
@@ -901,6 +1076,23 @@ Then write a concise handoff into the target session's \`progress.md\` with:
 Do not delete OpenRalph state files.`
 }
 
+function buildKickPrompt(args: string): string {
+  const trimmed = args.trim()
+  const suffix = trimmed ? ` ${trimmed}` : ' --session <session_id_or_prefix>'
+
+  return `# /openralph-kick
+
+Force OpenRalph loop state for a specific session from the project-local support script.
+
+Run:
+
+\`\`\`bash
+bash .openclaude/ralph/bin/openralph-kick.sh${suffix}
+\`\`\`
+
+Use this when a slash command was typed but the loop did not actually engage, or when a separate terminal needs to reactivate a session by id. For existing state, the script sets \`.openclaude/ralph/active-session\`, touches \`.openclaude/ralph/enabled\`, writes \`kick.json\`, and appends \`kick-log.jsonl\`/project events. For missing state, rerun with \`--prompt\` or \`--prompt-file\` so \`openralph-bootstrap.sh\` can create a concrete session objective.`
+}
+
 export function registerOpenRalphSkills(): void {
   registerBundledSkill({
     name: 'openralph',
@@ -949,4 +1141,17 @@ export function registerOpenRalphSkills(): void {
       return [{ type: 'text', text: buildDisengagePrompt() }]
     },
   })
+  registerBundledSkill({
+    name: 'openralph-kick',
+    aliases: ['ralph-kick', 'openralph-force'],
+    description: 'Force or bootstrap OpenRalph scheduler state for a specific session id.',
+    whenToUse:
+      'When the user typed a Ralph/OpenRalph slash command but the loop did not engage, or wants a separate terminal to target a session id.',
+    argumentHint: '--session <id-or-prefix> [--prompt objective]',
+    userInvocable: true,
+    async getPromptForCommand(args) {
+      return [{ type: 'text', text: buildKickPrompt(args) }]
+    },
+  })
+
 }
