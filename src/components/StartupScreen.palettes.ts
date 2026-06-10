@@ -19,6 +19,20 @@ export type LogoPalette = {
 }
 
 export const LOGO_PALETTES = {
+  purple: {
+    gradient: [
+      [196, 181, 253],
+      [167, 139, 250],
+      [139, 92, 246],
+      [124, 58, 237],
+      [109, 40, 217],
+      [76, 29, 149],
+    ],
+    accent: [167, 139, 250],
+    cream: [221, 214, 254],
+    dim: [120, 100, 160],
+    border: [88, 70, 130],
+  },
   sunset: {
     gradient: [
       [255, 92, 92],
@@ -81,10 +95,11 @@ export type LogoPaletteName = keyof typeof LOGO_PALETTES
 
 export const LOGO_PALETTE_NAMES = Object.keys(LOGO_PALETTES) as LogoPaletteName[]
 
-export const DEFAULT_LOGO_PALETTE: LogoPaletteName = 'sunset'
+export const DEFAULT_LOGO_PALETTE: LogoPaletteName = 'purple'
 
 export const LOGO_PALETTE_LABELS: Record<LogoPaletteName, string> = {
-  sunset: 'Limitless red (default)',
+  purple: 'Limitless purple (default)',
+  sunset: 'Sunset red',
   forest: 'Forest green',
   ocean: 'Ocean blue',
   monochrome: 'Monochrome',

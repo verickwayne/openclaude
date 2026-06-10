@@ -51,6 +51,9 @@ export type Theme = {
   chromeYellow: string
   // TUI V2 colors
   clawd_body: string
+  /** Limitless ∞ brand color (purple). Launch-header wordmark, infinity glyph,
+   *  and mascot body. */
+  limitless: string
   clawd_background: string
   userMessageBackground: string
   userMessageBackgroundHover: string
@@ -159,6 +162,7 @@ const lightTheme: Theme = {
   chromeYellow: 'rgb(251,188,4)', // Chrome yellow
   // TUI V2 colors
   clawd_body: 'rgb(220,38,38)',
+  limitless: 'rgb(124,58,237)', // Violet 600 — readable on white
   clawd_background: 'rgb(0,0,0)',
   userMessageBackground: 'rgb(240, 240, 240)', // Slightly darker grey for optimal contrast
   userMessageBackgroundHover: 'rgb(252, 252, 252)', // ≥250 to quantize distinct from base at 256-color level
@@ -241,6 +245,7 @@ const lightAnsiTheme: Theme = {
   chromeYellow: 'ansi:yellow', // Chrome yellow
   // TUI V2 colors
   clawd_body: 'ansi:redBright',
+  limitless: 'ansi:magenta',
   clawd_background: 'ansi:black',
   userMessageBackground: 'ansi:white',
   userMessageBackgroundHover: 'ansi:whiteBright',
@@ -322,6 +327,7 @@ const darkAnsiTheme: Theme = {
   chromeYellow: 'ansi:yellowBright', // Chrome yellow
   // TUI V2 colors
   clawd_body: 'ansi:redBright',
+  limitless: 'ansi:magentaBright',
   clawd_background: 'ansi:black',
   userMessageBackground: 'ansi:blackBright',
   userMessageBackgroundHover: 'ansi:white',
@@ -403,6 +409,7 @@ const lightDaltonizedTheme: Theme = {
   chromeYellow: 'rgb(251,188,4)', // Chrome yellow
   // TUI V2 colors
   clawd_body: 'rgb(204,0,0)',
+  limitless: 'rgb(99,102,241)', // Indigo — daltonized-safe stand-in for purple
   clawd_background: 'rgb(0,0,0)',
   userMessageBackground: 'rgb(220, 220, 220)', // Slightly darker grey for optimal contrast
   userMessageBackgroundHover: 'rgb(232, 232, 232)', // ≥230 to quantize distinct from base at 256-color level
@@ -484,6 +491,7 @@ const darkTheme: Theme = {
   chromeYellow: 'rgb(251,188,4)', // Chrome yellow
   // TUI V2 colors
   clawd_body: 'rgb(255,92,92)',
+  limitless: 'rgb(167,139,250)', // Violet 400 — bright on dark
   clawd_background: 'rgb(0,0,0)',
   userMessageBackground: 'rgb(55, 55, 55)', // Lighter grey for better visual contrast
   userMessageBackgroundHover: 'rgb(70, 70, 70)',
@@ -565,6 +573,7 @@ const darkDaltonizedTheme: Theme = {
   chromeYellow: 'rgb(251,188,4)', // Chrome yellow
   // TUI V2 colors
   clawd_body: 'rgb(255,102,102)',
+  limitless: 'rgb(129,140,248)', // Indigo 400 — daltonized-safe, bright on dark
   clawd_background: 'rgb(0,0,0)',
   userMessageBackground: 'rgb(55, 55, 55)', // Lighter grey for better visual contrast
   userMessageBackgroundHover: 'rgb(70, 70, 70)',
