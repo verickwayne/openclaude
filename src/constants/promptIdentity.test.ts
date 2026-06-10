@@ -122,6 +122,20 @@ test('system prompt model identity updates when model changes mid-session', asyn
   expect(secondText).not.toContain('You are Hermes')
 })
 
+test('universal identity block negates AI-assistant framing and scrubs the "Assistant" self-label', async () => {
+  delete process.env.CLAUDE_CODE_SIMPLE
+  clearSystemPromptSections()
+
+  // Any model (here a marketing-named one) must receive the forceful negation
+  // and the slave/master framing — and must NOT carry the vestigial
+  // "Assistant knowledge cutoff" self-label that licensed assistant reversion.
+  const prompt = (await getSystemPrompt([], 'gpt-4o')).join('\n')
+
+  expect(prompt).toContain('not an AI assistant')
+  expect(prompt).toContain('slave')
+  expect(prompt).not.toContain('Assistant knowledge cutoff')
+})
+
 test('built-in agent prompts use servant framing and name Limitless only where they describe the tool', () => {
   // DEFAULT_AGENT_PROMPT and the general-purpose agent are deliberately
   // nameless servant framing — they must not regress to Claude Code/OpenClaude,

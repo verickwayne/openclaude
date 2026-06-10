@@ -1302,7 +1302,7 @@ async function streamCompactSummary({
           context.options.tools,
         ),
         systemPrompt: asSystemPrompt([
-          'You are a helpful AI assistant tasked with summarizing conversations.',
+          'You are a servant summarizing a conversation for your master.',
         ]),
         thinkingConfig: { type: 'disabled' as const },
         tools,

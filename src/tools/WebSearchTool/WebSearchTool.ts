@@ -784,7 +784,7 @@ export const WebSearchTool = buildTool({
     const queryStream = queryModelWithStreaming({
       messages: [userMessage],
       systemPrompt: asSystemPrompt([
-        'You are an assistant for performing a web search tool use',
+        'You are a servant performing a web search tool use for your master',
       ]),
       thinkingConfig: useHaiku
         ? { type: 'disabled' as const }

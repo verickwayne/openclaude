@@ -15,7 +15,7 @@ const COPILOT_HEADERS: Record<string, string> = {
 
 // Large system prompt (~6000 chars, ~1500 tokens) to cross the 1024-token cache threshold
 const SYSTEM_PROMPT = [
-  'You are a coding assistant. Answer concisely.',
+  'You are a servant who writes code for your master. Answer concisely.',
   'CONTEXT: User is working on a TypeScript project with Bun runtime.',
   ...Array.from(
     { length: 80 },
