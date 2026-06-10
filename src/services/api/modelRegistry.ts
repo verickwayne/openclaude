@@ -178,6 +178,15 @@ export type ResolveForClassOpts = {
    */
   excludeProvider?: string
   /**
+   * Multiple profile ids to exclude from results.  Unioned with
+   * `excludeProvider`.  Used by mid-run provider failover: the query loop
+   * accumulates every provider that has already failed in the current
+   * failover cascade and passes the full set here, so a two-provider setup
+   * where both keep erroring terminates (empty candidates → no failover)
+   * instead of ping-ponging A→B→A forever.
+   */
+  excludeProviders?: string[]
+  /**
    * Pre-parsed ledger entries, already read from disk.
    * When omitted, the ledger is not consulted (pure static ranking).
    * Pass `readLedgerEntries(projectRoot)` at the call site so this
@@ -209,7 +218,11 @@ export function resolveProviderForClass(
   input: RegistryInput,
   opts: ResolveForClassOpts = {},
 ): RankedCandidate[] {
-  const { workload, personaHint, excludeProvider, ledgerEntries } = opts
+  const { workload, personaHint, excludeProvider, excludeProviders, ledgerEntries } = opts
+
+  // Union of single + multi exclusion forms.
+  const excludedProfileIds = new Set<string>(excludeProviders ?? [])
+  if (excludeProvider) excludedProfileIds.add(excludeProvider)
 
   // Step 1 — collect static candidate model ids for this class.
   const registry = buildModelRegistry(input)
@@ -228,12 +241,12 @@ export function resolveProviderForClass(
   }
 
   // Step 2 — filter to live (registry has a ResolvedProvider entry).
-  // Also filter out excludeProvider at this stage.
+  // Also filter out excluded profile ids at this stage.
   const liveRPs: ResolvedProvider[] = []
   for (const model of staticIds) {
     const rp = registry.get(model)
     if (!rp) continue
-    if (excludeProvider && rp.profileId === excludeProvider) continue
+    if (excludedProfileIds.has(rp.profileId)) continue
     liveRPs.push(rp)
   }
 

@@ -441,6 +441,21 @@ async function* queryLoop(
   let taskBudgetRemaining: number | undefined = undefined
   const toolFailureGuardState = createToolFailureLoopGuardState()
 
+  // Providers (profileIds) that have already triggered a failover in the
+  // current failover cascade. Passed as excludeProviders to
+  // resolveProviderForClass so each provider is tried at most once per
+  // cascade — bounds the chain and prevents A→B→A ping-pong when every
+  // provider is erroring (the candidate list eventually empties and the
+  // error follows the normal terminal path).
+  //
+  // Reset scope: cleared after any successful model response (see the
+  // .clear() after the attemptWithFallback loop). A provider that worked
+  // again is eligible for failover again later. Within a single cascade the
+  // set only grows because failover-eligible errors throw before reaching
+  // the success point. Loop-local (not on State) — same pattern as
+  // taskBudgetRemaining above.
+  const failedProviders = new Set<string>()
+
   // Snapshot immutable env/statsig/session state once at entry. See QueryConfig
   // for what's included and why feature() gates are intentionally excluded.
   const config = buildQueryConfig()
@@ -1213,9 +1228,15 @@ async function* queryLoop(
             })
             const { guessModelClassForModel } = await import('./services/api/modelRegistry.js')
             const modelClass = guessModelClassForModel(innerError.fromModel, registryInput)
+            // Accumulate the failed provider BEFORE resolving so the
+            // exclusion covers every provider that has failed in this
+            // cascade, not just the most recent one. Without accumulation a
+            // two-provider setup where both keep erroring ping-pongs
+            // A→B→A→B forever.
+            failedProviders.add(innerError.fromProvider)
             const candidates = resolveProviderForClass(modelClass, registryInput, {
               workload,
-              excludeProvider: innerError.fromProvider,
+              excludeProviders: [...failedProviders],
             })
             const decision = shouldFailover(innerError.originalError, workload, candidates)
 
@@ -1295,6 +1316,12 @@ async function* queryLoop(
           throw innerError
         }
       }
+      // Model response completed without a failover-eligible throw — reset
+      // the failover exclusion set so a provider that worked again is
+      // eligible for failover again later. Failover-eligible errors
+      // (auth/429/5xx) always throw ProviderFailoverError above and never
+      // reach this line, so within one failover cascade the set only grows.
+      failedProviders.clear()
     } catch (error) {
       logError(error)
       const errorMessage =

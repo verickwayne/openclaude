@@ -160,6 +160,48 @@ describe('resolveProviderForClass — excludeProvider', () => {
   })
 })
 
+describe('resolveProviderForClass — excludeProviders (accumulated set)', () => {
+  const input = {
+    firstPartyModels: ['haiku'],
+    profiles: [
+      { id: 'openai-p', name: 'OpenAI', provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.5-mini' },
+      { id: 'mini-p', name: 'Mini Gateway', provider: 'openai', baseUrl: 'https://mini.example/v1', model: 'gpt-5.4-mini' },
+    ] as any[],
+  }
+
+  test('excludes every profileId in the array', () => {
+    const all = resolveProviderForClass('fast', input)
+    expect(all.length).toBe(3) // haiku + gpt-5.5-mini + gpt-5.4-mini
+
+    const result = resolveProviderForClass('fast', input, {
+      excludeProviders: ['first-party', 'openai-p'],
+    })
+    expect(result.length).toBe(1)
+    expect(result[0]?.profileId).toBe('mini-p')
+  })
+
+  test('returns empty when all providers are excluded', () => {
+    const result = resolveProviderForClass('fast', input, {
+      excludeProviders: ['first-party', 'openai-p', 'mini-p'],
+    })
+    expect(result).toEqual([])
+  })
+
+  test('excludeProviders unions with the single excludeProvider param', () => {
+    const result = resolveProviderForClass('fast', input, {
+      excludeProvider: 'first-party',
+      excludeProviders: ['openai-p'],
+    })
+    expect(result.length).toBe(1)
+    expect(result[0]?.profileId).toBe('mini-p')
+  })
+
+  test('empty excludeProviders array excludes nothing (back-compat)', () => {
+    const result = resolveProviderForClass('fast', input, { excludeProviders: [] })
+    expect(result.length).toBe(3)
+  })
+})
+
 describe('resolveProviderForClass — ledger ranking', () => {
   test('no ledger → static order, ledgerN=0, ledgerSuccessRate=null', () => {
     const result = resolveProviderForClass('fast', {

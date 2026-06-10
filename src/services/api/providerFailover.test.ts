@@ -14,7 +14,7 @@ import {
   type ProviderFailoverRecord,
   shouldFailover,
 } from './providerFailover.js'
-import type { RankedCandidate } from './modelRegistry.js'
+import { resolveProviderForClass, type RankedCandidate } from './modelRegistry.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -285,6 +285,88 @@ describe('appendFailoverRecord', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.error).toContain('disk full')
+    }
+  })
+})
+
+// ─── Bounded failover cascade (no A→B→A ping-pong) ───────────────────────────
+//
+// Simulates the exact wiring in query.ts: a per-queryLoop `failedProviders`
+// set is unioned with each failed provider and passed as `excludeProviders`
+// to resolveProviderForClass. Asserts that a two-provider setup where both
+// providers keep erroring terminates (empty candidates → no failover) instead
+// of ping-ponging forever, and that clearing the set (the reset-on-success
+// path) re-enables failover.
+
+describe('bounded failover cascade', () => {
+  // Two openai-compatible profiles serving mid-class models from the static
+  // candidate list. No first-party models — the only candidates are A and B.
+  const TWO_PROVIDER_INPUT = {
+    firstPartyModels: [],
+    profiles: [
+      { id: 'provA', name: 'Provider A', provider: 'openai', baseUrl: 'https://a.example/v1', model: 'gpt-5.4' },
+      { id: 'provB', name: 'Provider B', provider: 'openai', baseUrl: 'https://b.example/v1', model: 'gpt-5.5' },
+    ] as any[],
+  }
+
+  function resolveExcluding(failed: Set<string>) {
+    return resolveProviderForClass('mid', TWO_PROVIDER_INPUT, {
+      workload: 'long-running',
+      excludeProviders: [...failed],
+    })
+  }
+
+  test('A fails → failover to B; B fails → cascade refused (no ping-pong back to A)', () => {
+    const failedProviders = new Set<string>()
+    const err429 = makeApiError(429)
+
+    // Failover 1: provider A fails.
+    failedProviders.add('provA')
+    const candidates1 = resolveExcluding(failedProviders)
+    const decision1 = shouldFailover(err429, 'long-running', candidates1)
+    expect(decision1.failover).toBe(true)
+    if (decision1.failover) {
+      expect(decision1.candidate.profileId).toBe('provB')
+    }
+
+    // Failover 2: provider B (the failover target) also fails. With the
+    // accumulated set, A is STILL excluded — candidates are empty and the
+    // cascade is refused. (Single-exclusion behavior would have returned A
+    // here and ping-ponged forever.)
+    failedProviders.add('provB')
+    const candidates2 = resolveExcluding(failedProviders)
+    expect(candidates2).toHaveLength(0)
+    const decision2 = shouldFailover(err429, 'long-running', candidates2)
+    expect(decision2.failover).toBe(false)
+  })
+
+  test('empty candidates after exclusion → no-failover → error follows the old path', () => {
+    // Both providers already failed in this cascade. The decision must be
+    // no-failover, which in query.ts means `throw innerError.originalError`
+    // — the same terminal error path that existed before failover shipped.
+    const failedProviders = new Set<string>(['provA', 'provB'])
+    const candidates = resolveExcluding(failedProviders)
+    expect(candidates).toHaveLength(0)
+    const decision = shouldFailover(makeApiError(503), 'long-running', candidates)
+    expect(decision.failover).toBe(false)
+  })
+
+  test('reset-on-success: cleared exclusion set re-enables failover to a previously-failed provider', () => {
+    const failedProviders = new Set<string>(['provA', 'provB'])
+    // Cascade exhausted...
+    expect(resolveExcluding(failedProviders)).toHaveLength(0)
+
+    // ...then a model response succeeds → query.ts clears the set.
+    failedProviders.clear()
+
+    // Later, provider B fails again. A (which failed in the PREVIOUS
+    // cascade) is eligible again.
+    failedProviders.add('provB')
+    const candidates = resolveExcluding(failedProviders)
+    const decision = shouldFailover(makeApiError(429), 'long-running', candidates)
+    expect(decision.failover).toBe(true)
+    if (decision.failover) {
+      expect(decision.candidate.profileId).toBe('provA')
     }
   })
 })
