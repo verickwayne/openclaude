@@ -478,6 +478,56 @@ test('adjudicated dispatch step records BOTH outcomes to the ledger', async () =
   expect(text).toMatch(/both.*ledger|ledger.*both|all.*outcomes.*ledger|loser.*ledger|ledger.*loser/i)
 })
 
+test('adjudicated dispatch both-fail branch discards both, queues gaps, merges nothing', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // The contract must state all three verdict branches explicitly: both pass,
+  // exactly one passes, neither passes.
+  expect(text).toMatch(/both pass/i)
+  expect(text).toMatch(/exactly one passes/i)
+  expect(text).toMatch(/neither passes/i)
+
+  // Neither-passes: discard BOTH worktrees.
+  expect(text).toMatch(/discard both worktrees/i)
+
+  // Neither-passes: push the union of both checkers' gaps lists as new queue
+  // items, deduplicating identical gap text.
+  expect(text).toContain('union')
+  expect(text).toMatch(/dedupe|de-dupe|deduplicat/i)
+
+  // Neither-passes: nothing merges — the failing candidates must never flow
+  // into the merge step (that would contradict the outer checker gate).
+  expect(text).toMatch(/merge nothing|do not merge either/i)
+})
+
+test('adjudication sub-list does not collide with outer step numbering (exactly one outer "9.")', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // A model reading the contract sequentially must see exactly ONE line that
+  // starts with "9." — the outer checker gate. The adjudication procedure's
+  // items must be lettered (a., b., ...) so they never render as a competing
+  // outer step.
+  const outerNines = text.match(/^9\./gm) ?? []
+  expect(outerNines).toHaveLength(1)
+
+  // Same guarantee for scheduler-contract steps 4-10 (1-3 also appear in the
+  // unrelated install section, so they are excluded from this check).
+  for (const n of [4, 5, 6, 7, 8, 10]) {
+    const matches = text.match(new RegExp(`^${n}\\.`, 'gm')) ?? []
+    expect(matches.length).toBeLessThanOrEqual(1)
+  }
+
+  // The adjudication procedure must use lettered items, visibly nested under
+  // the adjudication section rather than bare outer numbers.
+  expect(text).toMatch(/^a\. /m)
+})
+
 test('adjudicated dispatch verdict comparison uses gaps count and tests_passed', async () => {
   registerOpenRalphSkills()
   const engage = getBundledSkills().find(command => command.name === 'openralph')!
