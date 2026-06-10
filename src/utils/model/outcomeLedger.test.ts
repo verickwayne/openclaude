@@ -9,9 +9,12 @@ import {
   getLedgerStats,
   isSuccessEntry,
   joinCheckerVerdicts,
+  decayWeight,
   LEDGER_RELATIVE_PATH,
   MIN_RELIABLE_N,
+  DEFAULT_HALF_LIFE_DAYS,
   type LedgerEntry,
+  type RecencyOptions,
 } from './outcomeLedger.js'
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
@@ -540,5 +543,146 @@ describe('aggregateLedgerStats — checker-verified successDefinition', () => {
     expect(stats[0]?.successes).toBe(1)
     expect(stats[0]?.successRate).toBe(1)
     expect(stats[0]?.persona).toBe('openralph-builder')
+  })
+})
+
+// ─── decayWeight ──────────────────────────────────────────────────────────────
+
+describe('decayWeight', () => {
+  const HALF_LIFE = 14
+  // Fixed reference "now" for deterministic tests.
+  const now = new Date('2026-06-10T00:00:00Z').getTime()
+  const opts: RecencyOptions = { halfLifeDays: HALF_LIFE, now }
+
+  test('age=0 → weight=1.0', () => {
+    // Entry timestamped exactly at "now" → no decay.
+    const ts = new Date(now).toISOString()
+    expect(decayWeight(ts, opts)).toBeCloseTo(1.0, 9)
+  })
+
+  test('age=halfLifeDays → weight=0.5', () => {
+    const halfLifeAgo = new Date(now - HALF_LIFE * 86_400_000).toISOString()
+    expect(decayWeight(halfLifeAgo, opts)).toBeCloseTo(0.5, 6)
+  })
+
+  test('age=2×halfLifeDays → weight=0.25', () => {
+    const twoHalfLivesAgo = new Date(now - 2 * HALF_LIFE * 86_400_000).toISOString()
+    expect(decayWeight(twoHalfLivesAgo, opts)).toBeCloseTo(0.25, 6)
+  })
+
+  test('age=3×halfLifeDays → weight=0.125', () => {
+    const threeHalfLivesAgo = new Date(now - 3 * HALF_LIFE * 86_400_000).toISOString()
+    expect(decayWeight(threeHalfLivesAgo, opts)).toBeCloseTo(0.125, 6)
+  })
+
+  test('missing ts → weight=1.0 (conservative: no punishment for absent timestamp)', () => {
+    expect(decayWeight(undefined, opts)).toBeCloseTo(1.0, 9)
+    expect(decayWeight(null, opts)).toBeCloseTo(1.0, 9)
+  })
+
+  test('unparseable ts → weight=1.0', () => {
+    expect(decayWeight('not-a-date', opts)).toBeCloseTo(1.0, 9)
+  })
+
+  test('weight is monotonically decreasing with age', () => {
+    const ages = [0, 1, 7, 14, 28, 60, 90]
+    const weights = ages.map(d => {
+      const ts = new Date(now - d * 86_400_000).toISOString()
+      return decayWeight(ts, opts)
+    })
+    for (let i = 1; i < weights.length; i++) {
+      expect(weights[i]!).toBeLessThan(weights[i - 1]!)
+    }
+  })
+})
+
+// ─── aggregateLedgerStats — recency options ──────────────────────────────────
+
+describe('aggregateLedgerStats — recency decay', () => {
+  const now = new Date('2026-06-10T00:00:00Z').getTime()
+  const HALF_LIFE = 14
+  const opts: RecencyOptions = { halfLifeDays: HALF_LIFE, now }
+
+  function makeEntry(daysAgo: number, isSuccess: boolean): LedgerEntry {
+    const ts = new Date(now - daysAgo * 86_400_000).toISOString()
+    return {
+      ts,
+      persona: 'openralph-builder',
+      workload: 'long-running',
+      provider_model_used: 'model-a',
+      status: isSuccess ? 'complete' : 'partial',
+      tests_passed: isSuccess ? true : false,
+    }
+  }
+
+  test('absent recency → effectiveN and effectiveSuccesses are null', () => {
+    const entries = [makeEntry(0, true), makeEntry(7, true)]
+    const [stat] = aggregateLedgerStats(entries)
+    expect(stat?.effectiveN).toBeNull()
+    expect(stat?.effectiveSuccesses).toBeNull()
+    // Raw counts unaffected
+    expect(stat?.n).toBe(2)
+    expect(stat?.successes).toBe(2)
+  })
+
+  test('recency present → effectiveN and effectiveSuccesses are numbers', () => {
+    const entries = [makeEntry(0, true)]
+    const [stat] = aggregateLedgerStats(entries, { recency: opts })
+    expect(stat?.effectiveN).not.toBeNull()
+    expect(stat?.effectiveSuccesses).not.toBeNull()
+  })
+
+  test('all-fresh entries → effectiveN ≈ raw n', () => {
+    const entries = [makeEntry(0, true), makeEntry(0, true), makeEntry(0, false)]
+    const [stat] = aggregateLedgerStats(entries, { recency: opts })
+    expect(stat?.effectiveN).toBeCloseTo(3.0, 5)
+    expect(stat?.effectiveSuccesses).toBeCloseTo(2.0, 5)
+    // Raw counts preserved
+    expect(stat?.n).toBe(3)
+    expect(stat?.successes).toBe(2)
+  })
+
+  test('entry at exactly one half-life → contributes 0.5 to effectiveN', () => {
+    const entries = [makeEntry(HALF_LIFE, true)]
+    const [stat] = aggregateLedgerStats(entries, { recency: opts })
+    expect(stat?.effectiveN).toBeCloseTo(0.5, 5)
+    expect(stat?.effectiveSuccesses).toBeCloseTo(0.5, 5)
+    // Raw still 1
+    expect(stat?.n).toBe(1)
+    expect(stat?.successes).toBe(1)
+  })
+
+  test('old entries decay: 10 successes from 60 days → effectiveN < 1 with half-life=14', () => {
+    // This is the §6.3 'confidence expiry' scenario:
+    // 10 successes from 60 days ago decay toward MIN_RELIABLE_N threshold.
+    // w = 0.5^(60/14) ≈ 0.050, so effectiveN ≈ 0.50, well below MIN_RELIABLE_N=3.
+    const entries = Array.from({ length: 10 }, () => makeEntry(60, true))
+    const [stat] = aggregateLedgerStats(entries, { recency: opts })
+    expect(stat?.effectiveN).toBeLessThan(MIN_RELIABLE_N)
+    expect(stat?.effectiveN).toBeGreaterThan(0)
+    expect(stat?.n).toBe(10) // raw unchanged
+  })
+
+  test('effectiveN is monotonically non-increasing as entries get older', () => {
+    const ages = [0, 7, 14, 28, 60]
+    const effectiveNs = ages.map(d => {
+      const [stat] = aggregateLedgerStats([makeEntry(d, true)], { recency: opts })
+      return stat?.effectiveN ?? 0
+    })
+    for (let i = 1; i < effectiveNs.length; i++) {
+      expect(effectiveNs[i]!).toBeLessThanOrEqual(effectiveNs[i - 1]!)
+    }
+  })
+
+  test('DEFAULT_HALF_LIFE_DAYS is 14', () => {
+    expect(DEFAULT_HALF_LIFE_DAYS).toBe(14)
+  })
+
+  test('recency does not affect raw n or successes fields', () => {
+    const entries = [makeEntry(0, true), makeEntry(30, true), makeEntry(30, false)]
+    const [withRecency] = aggregateLedgerStats(entries, { recency: opts })
+    const [withoutRecency] = aggregateLedgerStats(entries)
+    expect(withRecency?.n).toBe(withoutRecency?.n)
+    expect(withRecency?.successes).toBe(withoutRecency?.successes)
   })
 })

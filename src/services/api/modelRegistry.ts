@@ -5,6 +5,7 @@ import {
   aggregateLedgerStats,
   wilsonLower,
   type LedgerEntry,
+  type RecencyOptions,
   MIN_RELIABLE_N,
 } from '../../utils/model/outcomeLedger.js'
 import {
@@ -249,6 +250,23 @@ export type ResolveForClassOpts = {
    * Ignored when OPENCLAUDE_BILLING_AWARE=0 (kill-switch).
    */
   preferBilling?: BillingModel
+  /**
+   * When provided, the Wilson LCB ranking and the MIN_RELIABLE_N group
+   * boundary use EFFECTIVE n and successes rather than raw counts.
+   *
+   * Each entry's weight decays as:  w = 0.5 ^ (age_days / halfLifeDays)
+   *
+   * This implements §6.3 'confidence expiry': a cell with many old successes
+   * decays toward effectiveN < MIN_RELIABLE_N, which drops it from group 0
+   * into the exploration path — forcing re-validation of stale knowledge.
+   * Example: 10 successes from 60 days ago at halfLifeDays=14 →
+   *   effectiveN ≈ 10 × 0.5^(60/14) ≈ 0.5 → group 1 → re-exploration.
+   *
+   * ABSENT (default) → exactly current behavior, byte-zero change.
+   * Pass `now` as Date.now() at the call site; never call Date.now() here
+   * so this function stays pure and testable.
+   */
+  recency?: RecencyOptions
 }
 
 /**
@@ -275,7 +293,7 @@ export function resolveProviderForClass(
   opts: ResolveForClassOpts = {},
   env: NodeJS.ProcessEnv = process.env,
 ): RankedCandidate[] {
-  const { workload, personaHint, excludeProvider, excludeProviders, ledgerEntries, preferBilling } = opts
+  const { workload, personaHint, excludeProvider, excludeProviders, ledgerEntries, preferBilling, recency } = opts
 
   // Union of single + multi exclusion forms.
   const excludedProfileIds = new Set<string>(excludeProviders ?? [])
@@ -310,23 +328,37 @@ export function resolveProviderForClass(
   if (liveRPs.length === 0) return []
 
   // Step 3 — build ledger lookup: provider_model_used → { successRate, successes, n }.
+  //
+  // When recency options are present, ranking uses EFFECTIVE n / successes (decay-weighted)
+  // so that stale cells fall below MIN_RELIABLE_N and re-enter the exploration path.
+  // This implements §6.3 'confidence expiry': a cell with 10 old successes from 60 days
+  // ago (halfLife=14) decays to effectiveN ≈ 0.5 → drops below MIN_RELIABLE_N → group 1
+  // → forced re-validation of stale knowledge. Raw n / successes are unchanged for display.
   type LedgerKey = string
   const ledgerLookup = new Map<LedgerKey, { successRate: number; successes: number; n: number }>()
 
+  // allStats is computed once and reused for both the reliable-lookup and the
+  // under-sampled check below, to avoid a second aggregation pass.
+  let allStats: ReturnType<typeof aggregateLedgerStats> = []
+
   if (ledgerEntries && ledgerEntries.length > 0) {
-    const stats = aggregateLedgerStats(
-      ledgerEntries.filter(e => {
-        if (personaHint && e.persona && e.persona !== personaHint) return false
-        if (workload && e.workload && e.workload !== workload) return false
-        return true
-      }),
-    )
-    for (const s of stats) {
-      if (s.n >= MIN_RELIABLE_N) {
+    const filtered = ledgerEntries.filter(e => {
+      if (personaHint && e.persona && e.persona !== personaHint) return false
+      if (workload && e.workload && e.workload !== workload) return false
+      return true
+    })
+    allStats = aggregateLedgerStats(filtered, recency ? { recency } : undefined)
+
+    for (const s of allStats) {
+      // Use effective counts when recency is active; raw counts otherwise.
+      const effectiveN = recency ? (s.effectiveN ?? 0) : s.n
+      const effectiveSuccesses = recency ? (s.effectiveSuccesses ?? 0) : s.successes
+      if (effectiveN >= MIN_RELIABLE_N) {
         ledgerLookup.set(s.provider_model_used, {
-          successRate: s.successRate ?? 0,
-          successes: s.successes,
-          n: s.n,
+          // successRate is used only for display on RankedCandidate; ranking uses wilson floats directly.
+          successRate: effectiveN > 0 ? effectiveSuccesses / effectiveN : 0,
+          successes: effectiveSuccesses,
+          n: effectiveN,
         })
       }
     }
@@ -334,11 +366,11 @@ export function resolveProviderForClass(
 
   // Step 4 — rank.
   // Groups (lower = higher priority in sort):
-  //   0: ledger-reliable (n >= MIN_RELIABLE_N), sorted by confidence-adjusted
+  //   0: ledger-reliable (effective n >= MIN_RELIABLE_N), sorted by confidence-adjusted
   //      success rate (Wilson lower confidence bound) descending — prevents
   //      early-luck lock-in from a handful of draws permanently burying
   //      under-sampled candidates; as n grows, LCB converges to the true rate.
-  //   1: under-sampled (0 < n < MIN_RELIABLE_N) — exploration preferred
+  //   1: under-sampled (0 < effective n < MIN_RELIABLE_N) — exploration preferred
   //   2: no ledger data — static order preserved within group
   type Ranked = { rp: ResolvedProvider; successRate: number | null; successes: number; n: number; group: 0 | 1 | 2; staticIdx: number }
 
@@ -347,18 +379,21 @@ export function resolveProviderForClass(
     if (ledgerData) {
       return { rp, successRate: ledgerData.successRate, successes: ledgerData.successes, n: ledgerData.n, group: 0, staticIdx }
     }
-    // Check under-sampled: exists in stats but n < MIN_RELIABLE_N
-    const rawStats = ledgerEntries
-      ? aggregateLedgerStats(
-          ledgerEntries.filter(e => {
-            if (personaHint && e.persona && e.persona !== personaHint) return false
-            if (workload && e.workload && e.workload !== workload) return false
-            return true
-          }),
-        ).find(s => s.provider_model_used === rp.model)
-      : undefined
-    if (rawStats && rawStats.n > 0) {
-      return { rp, successRate: rawStats.successRate, successes: rawStats.successes, n: rawStats.n, group: 1, staticIdx }
+    // Check under-sampled: exists in allStats but effective n < MIN_RELIABLE_N
+    const rawStat = allStats.find(s => s.provider_model_used === rp.model)
+    if (rawStat) {
+      const effectiveN = recency ? (rawStat.effectiveN ?? 0) : rawStat.n
+      const effectiveSuccesses = recency ? (rawStat.effectiveSuccesses ?? 0) : rawStat.successes
+      if (effectiveN > 0) {
+        return {
+          rp,
+          successRate: effectiveN > 0 ? effectiveSuccesses / effectiveN : rawStat.successRate,
+          successes: effectiveSuccesses,
+          n: effectiveN,
+          group: 1,
+          staticIdx,
+        }
+      }
     }
     return { rp, successRate: null, successes: 0, n: 0, group: 2, staticIdx }
   })

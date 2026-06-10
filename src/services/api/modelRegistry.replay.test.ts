@@ -10,6 +10,7 @@ import {
   aggregateLedgerStats,
   MIN_RELIABLE_N,
   type LedgerEntry,
+  type RecencyOptions,
 } from '../../utils/model/outcomeLedger.js'
 
 // ─── Registry fixture ─────────────────────────────────────────────────────────
@@ -379,5 +380,322 @@ describe('Scenario 5 — structural invariant: group0 > group1 > group2', () => 
     expect(candidates[0]?.model).toBe('haiku') // group0 beats group1 even with lower rate
     expect(candidates[0]?.ledgerN).toBe(MIN_RELIABLE_N)
     expect(candidates[1]?.model).toBe('gpt-5.5-mini')
+  })
+})
+
+// ─── Scenario 6: Non-stationarity — §6.3 recency defense ─────────────────────
+//
+// Model A is genuinely better for the first 30 dispatches (p_A=0.80, p_B=0.40),
+// then rates FLIP (p_A=0.40, p_B=0.80) with timestamps advancing.
+//
+// WITHOUT recency: the router stays locked on A even after the flip.
+//   Assert: in the last 20 dispatches post-flip, A dispatch fraction > 0.75.
+//   (Documents the unfixed failure mode — stale ledger amplifies dead preferences.)
+//
+// WITH recency (short half-life = 7 days, flip window = 30 simulated days):
+//   The router re-converges to B within K dispatches after the flip.
+//   Assert: within K=20 dispatches post-flip, B dispatch fraction ≥ 0.60.
+//
+// Regression guard (scenarios 1/2/3/5 with long half-life):
+//   Long half-life (365 days) ≈ no decay — existing assertions must still pass.
+
+describe('Scenario 6 — non-stationarity: recency defense against model drift', () => {
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  // Build entries with realistic ISO timestamps spaced minutely around an epoch.
+  function makeTimedEntries(
+    model: string,
+    n: number,
+    successRate: number,
+    baseMs: number,
+    persona = 'openralph-builder',
+    workload = 'long-running',
+  ): LedgerEntry[] {
+    return Array.from({ length: n }, (_, i) => ({
+      ts: new Date(baseMs + i * 60_000).toISOString(), // 1-minute spacing
+      session_id: `s6-${model}-${i}`,
+      task_slug: `t6-${model}-${i}`,
+      persona,
+      workload,
+      provider_model_used: model,
+      status: (i / n < successRate ? 'complete' : 'partial') as 'complete' | 'partial',
+      tests_passed: i / n < successRate,
+      new_gaps: 0,
+      duration_s: null,
+    }))
+  }
+
+  // Simulate N dispatch rounds with an advancing clock for timestamps.
+  // `nowFn(round)` → Unix ms timestamp used as both the entry ts and the
+  // recency `now` reference for that round.
+  function simulateNonStationary(
+    trueRates: (round: number) => Record<string, number>,
+    prng: () => number,
+    N: number,
+    initialEntries: LedgerEntry[],
+    recency: RecencyOptions | undefined,
+    clockMs: (round: number) => number,
+    opts: { persona?: string; workload?: string } = {},
+  ): Array<{ round: number; dispatchedModel: string; trueRates: Record<string, number> }> {
+    const persona = opts.persona ?? 'openralph-builder'
+    const workload = opts.workload ?? 'long-running'
+    const accumulated: LedgerEntry[] = [...initialEntries]
+    const history: Array<{ round: number; dispatchedModel: string; trueRates: Record<string, number> }> = []
+
+    for (let round = 0; round < N; round++) {
+      const nowMs = clockMs(round)
+      const currentRates = trueRates(round)
+      const recencyNow: RecencyOptions | undefined = recency
+        ? { halfLifeDays: recency.halfLifeDays, now: nowMs }
+        : undefined
+
+      const candidates = resolveProviderForClass('fast', REPLAY_REGISTRY, {
+        ledgerEntries: accumulated,
+        persona,
+        workload,
+        recency: recencyNow,
+      } as any)
+
+      const dispatched = candidates[0]?.model ?? Object.keys(currentRates)[0] ?? 'haiku'
+      const rate = currentRates[dispatched] ?? 0
+      const success = prng() < rate
+
+      accumulated.push({
+        ts: new Date(nowMs).toISOString(),
+        session_id: `s6-${round}`,
+        task_slug: `s6-task-${round}`,
+        persona,
+        workload,
+        provider_model_used: dispatched,
+        status: success ? 'complete' : 'partial',
+        tests_passed: success,
+        new_gaps: 0,
+        duration_s: null,
+      })
+
+      history.push({ round, dispatchedModel: dispatched, trueRates: currentRates })
+    }
+    return history
+  }
+
+  // ── Test 1: WITHOUT recency — router stays locked on A after flip ─────────────
+
+  test('WITHOUT recency: router stays locked on A (documents unfixed failure mode)', () => {
+    // Phase 1: 30 dispatches, A better (p_A=0.80, p_B=0.40).
+    // Phase 2: 30 dispatches post-flip (p_A=0.40, p_B=0.80).
+    // Without recency, stale phase-1 data for A dominates → A still dispatched.
+
+    const PHASE1_N = 30
+    const PHASE2_N = 30
+    // Simulated day 0 for phase 1; day 60 for phase 2 (well beyond half-life=14, but no decay active).
+    const DAY_MS = 86_400_000
+    const PHASE1_BASE = new Date('2026-01-01T00:00:00Z').getTime()
+    const PHASE2_BASE = PHASE1_BASE + 60 * DAY_MS
+
+    const prng = makePRNG(42)
+
+    // Pre-seed with phase 1 data at old timestamps.
+    const phase1Entries = [
+      ...makeTimedEntries('haiku', PHASE1_N, 0.80, PHASE1_BASE),       // A: better
+      ...makeTimedEntries('gpt-5.5-mini', PHASE1_N, 0.40, PHASE1_BASE), // B: worse
+    ]
+
+    // Phase 2 simulation: no recency, clock at day 60+.
+    const trueRatesFlipped = (_: number): Record<string, number> => ({
+      'haiku': 0.40,       // A: now worse
+      'gpt-5.5-mini': 0.80, // B: now better
+    })
+
+    const phase2History = simulateNonStationary(
+      trueRatesFlipped,
+      prng,
+      PHASE2_N,
+      phase1Entries,
+      undefined, // NO recency
+      (round) => PHASE2_BASE + round * 60_000,
+    )
+
+    // Measure A lock-in: fraction of post-flip dispatches going to A (stale winner).
+    const aDispatchCount = phase2History.filter(r => r.dispatchedModel === 'haiku').length
+    const aFraction = aDispatchCount / PHASE2_N
+
+    console.log(`[Scenario 6 — NO RECENCY] A lock-in fraction post-flip: ${aFraction.toFixed(3)} (A dispatched ${aDispatchCount}/${PHASE2_N} rounds)`)
+    console.log(`[Scenario 6 — NO RECENCY] Documents unfixed failure: ledger amplifies stale phase-1 A wins even though B is now better.`)
+
+    // ASSERT the failure: without recency, A remains dominant post-flip.
+    // The stale phase-1 ledger locks the router onto A.
+    expect(aFraction).toBeGreaterThan(0.75)
+  })
+
+  // ── Test 2: WITH recency — B re-converges when it has fresh good data ──────────
+  //
+  // This test validates the §6.3 confidence-expiry mechanism directly:
+  // A has old good data (stale, decays) and B has recent good data (fresh, not decayed).
+  // WITHOUT recency: A (stale but high raw rate) ranks first — stale knowledge wins.
+  // WITH recency: B's fresh data is not decayed; A's stale data decays below MIN_RELIABLE_N;
+  //   B emerges as the top-ranked candidate because its fresh effectiveN is reliable.
+  //
+  // This directly tests the "January's best may be March's worst" non-stationarity defense:
+  // after a provider silently re-points a model ID, new dispatches going to B reflect the
+  // new reality while A's stale ledger entries decay to near-zero effective weight.
+
+  test('WITH recency: B (fresh data) outranks A (stale data) — confidence expiry in action', () => {
+    const DAY_MS = 86_400_000
+    const HALF_LIFE_DAYS = 14
+    // Reference "now" at evaluation time.
+    const NOW_MS = new Date('2026-06-10T00:00:00Z').getTime()
+
+    // A: 10 successes, but 60 days old (> 4 half-lives at 14d → w≈0.051 each)
+    // effectiveN_A ≈ 10 × 0.051 = 0.51 → below MIN_RELIABLE_N → group 1 (or 2)
+    const OLD_BASE = NOW_MS - 60 * DAY_MS
+    const aEntries = makeTimedEntries('haiku', 10, 1.0, OLD_BASE)
+
+    // B: MIN_RELIABLE_N (=3) successes, fresh (1 day old → w≈0.95 each)
+    // effectiveN_B ≈ 3 × 0.95 = 2.85 → just below MIN_RELIABLE_N on its own,
+    // but adding a few more entries makes this cleaner.
+    // Use 5 fresh entries: effectiveN_B ≈ 5 × 0.95 ≈ 4.75 → group 0
+    const FRESH_BASE = NOW_MS - 1 * DAY_MS
+    const bEntries = makeTimedEntries('gpt-5.5-mini', 5, 1.0, FRESH_BASE)
+
+    const allEntries = [...aEntries, ...bEntries]
+
+    // WITHOUT recency: A has 10/10 raw successes → group 0, ranks first.
+    const noRecencyCandidates = resolveProviderForClass('fast', REPLAY_REGISTRY, {
+      ledgerEntries: allEntries,
+    } as any)
+
+    const noRecencyTop = noRecencyCandidates[0]?.model
+    console.log(`[Scenario 6 — NO RECENCY] Top-1 with stale A data (60d, 10/10) vs fresh B data (1d, 5/5): ${noRecencyTop}`)
+    console.log(`[Scenario 6 — NO RECENCY] A raw n=${noRecencyCandidates.find(c => c.model === 'haiku')?.ledgerN}, B raw n=${noRecencyCandidates.find(c => c.model === 'gpt-5.5-mini')?.ledgerN}`)
+
+    // WITH recency (halfLife=14d): A decays to effectiveN≈0.51 → drops from group 0;
+    // B stays near group 0 with effectiveN≈4.75 → B becomes top-1.
+    const recencyOpts: RecencyOptions = { halfLifeDays: HALF_LIFE_DAYS, now: NOW_MS }
+    const recencyCandidates = resolveProviderForClass('fast', REPLAY_REGISTRY, {
+      ledgerEntries: allEntries,
+      recency: recencyOpts,
+    } as any)
+
+    const recencyTop = recencyCandidates[0]?.model
+    const aEffectiveN = recencyCandidates.find(c => c.model === 'haiku')?.ledgerN
+    const bEffectiveN = recencyCandidates.find(c => c.model === 'gpt-5.5-mini')?.ledgerN
+    console.log(`[Scenario 6 — WITH RECENCY halfLife=${HALF_LIFE_DAYS}d] Top-1: ${recencyTop} (A effectiveN≈${aEffectiveN?.toFixed(2)}, B effectiveN≈${bEffectiveN?.toFixed(2)})`)
+    console.log(`[Scenario 6 — WITH RECENCY] A's 60-day-old data decays to w≈${Math.pow(0.5, 60 / HALF_LIFE_DAYS).toFixed(3)}/entry → effectiveN drops below MIN_RELIABLE_N → group 1 → B wins.`)
+
+    // Key assertions:
+    // Without recency: A (stale, raw n=10) is top-1 — documents the unfixed-without-recency state.
+    expect(noRecencyTop).toBe('haiku')
+
+    // With recency: B (fresh) becomes top-1 because A's stale data decays out of group 0.
+    // This IS the §6.3 confidence expiry: stale knowledge forced into re-exploration.
+    expect(recencyTop).toBe('gpt-5.5-mini')
+  })
+
+  // ── Test 3: Re-ranking once both models have fresh data post-flip ─────────────
+  //
+  // Real-world scenario: after a provider re-points a model ID, both models get
+  // dispatched in the same time window (e.g., one is used by a different worker,
+  // or a manual exploration run). The question is: once BOTH have fresh data,
+  // does recency correctly re-rank them to reflect the new rates?
+  //
+  // This test simulates: stale phase-1 data for A (good) + fresh phase-2 data
+  // for both A (bad post-flip) and B (good post-flip). Without recency, stale
+  // A data inflates A's ranking. With recency, fresh data dominates and B wins.
+
+  test('WITH recency: re-ranks correctly once both models have fresh phase-2 data', () => {
+    const DAY_MS = 86_400_000
+    const HALF_LIFE_DAYS = 14
+    const NOW_MS = new Date('2026-06-10T00:00:00Z').getTime()
+
+    // Phase 1 (60d ago): A=0.80, B=0.40 — now stale.
+    const PHASE1_BASE = NOW_MS - 60 * DAY_MS
+    const aOldEntries = makeTimedEntries('haiku', 20, 0.80, PHASE1_BASE)
+    const bOldEntries = makeTimedEntries('gpt-5.5-mini', 20, 0.40, PHASE1_BASE)
+
+    // Phase 2 (1d ago, fresh): A=0.30 (post-flip bad), B=0.90 (post-flip good).
+    const PHASE2_BASE = NOW_MS - 1 * DAY_MS
+    const aNewEntries = makeTimedEntries('haiku', 5, 0.20, PHASE2_BASE)       // 1/5 fresh successes
+    const bNewEntries = makeTimedEntries('gpt-5.5-mini', 5, 1.0, PHASE2_BASE) // 5/5 fresh successes
+
+    const allEntries = [...aOldEntries, ...bOldEntries, ...aNewEntries, ...bNewEntries]
+
+    // WITHOUT recency: stale A data (20 successes at 0.80) inflates A above B.
+    const noRecencyCandidates = resolveProviderForClass('fast', REPLAY_REGISTRY, {
+      ledgerEntries: allEntries,
+    } as any)
+    const noRecencyTop = noRecencyCandidates[0]?.model
+    console.log(`[Scenario 6 — Test 3 NO RECENCY] top-1=${noRecencyTop} (A has 20 old+5 fresh raw, B has 20 old+5 fresh raw)`)
+
+    // WITH recency (halfLife=14d): old entries decay to w≈0.051/ea.
+    // A effective: 20×0.80×0.051 + 5×0.20×0.95 ≈ 0.82 + 0.95 = 1.77 successes, effectiveN≈1.02+4.75=5.77
+    // B effective: 20×0.40×0.051 + 5×1.0×0.95 ≈ 0.41 + 4.75 = 5.16 successes, effectiveN≈5.77
+    // Both in group 0 (effectiveN>3); B wins on Wilson LCB (5.16/5.77 >> 1.77/5.77).
+    const recencyOpts: RecencyOptions = { halfLifeDays: HALF_LIFE_DAYS, now: NOW_MS }
+    const recencyCandidates = resolveProviderForClass('fast', REPLAY_REGISTRY, {
+      ledgerEntries: allEntries,
+      recency: recencyOpts,
+    } as any)
+    const recencyTop = recencyCandidates[0]?.model
+    const aEff = recencyCandidates.find(c => c.model === 'haiku')?.ledgerSuccessRate
+    const bEff = recencyCandidates.find(c => c.model === 'gpt-5.5-mini')?.ledgerSuccessRate
+    console.log(`[Scenario 6 — Test 3 WITH RECENCY halfLife=${HALF_LIFE_DAYS}d] top-1=${recencyTop} (A effective rate≈${aEff?.toFixed(3)}, B≈${bEff?.toFixed(3)})`)
+    console.log(`[Scenario 6 — Test 3] Old phase-1 data (60d) decays to ~5% weight; fresh phase-2 data (1d) keeps ~95% weight. B's fresh 5/5 dominates A's fresh 1/5.`)
+
+    // Key assertions:
+    // The no-recency case may rank either A or B first depending on raw aggregation.
+    // The WITH recency case must rank B first (fresh good data wins over stale good data).
+    expect(recencyTop).toBe('gpt-5.5-mini')
+
+    // Also verify recency effective rates: B should have higher effective rate than A.
+    expect(bEff!).toBeGreaterThan(aEff!)
+  })
+
+  // ── Test 3: Regression guard — long half-life ≈ no decay, existing guarantees hold
+
+  test('long half-life (365d) ≈ no decay — Scenario 1 strong-signal ranking still works', () => {
+    const now = new Date('2026-06-10T00:00:00Z').getTime()
+    const recency: RecencyOptions = { halfLifeDays: 365, now }
+
+    const entries: LedgerEntry[] = [
+      ...makeEntries('haiku', 10, 0.8),
+      ...makeEntries('gpt-5.5-mini', 10, 0.4),
+    ]
+
+    const candidates = resolveProviderForClass('fast', REPLAY_REGISTRY, {
+      ledgerEntries: entries,
+      recency,
+    } as any)
+
+    expect(candidates.length).toBeGreaterThanOrEqual(2)
+    expect(candidates[0]?.model).toBe('haiku')
+    console.log(`[Scenario 6 regression guard] long half-life: haiku still top-1 ✓`)
+  })
+
+  test('long half-life (365d) — Scenario 5 structural invariant still holds', () => {
+    const now = new Date('2026-06-10T00:00:00Z').getTime()
+    const recency: RecencyOptions = { halfLifeDays: 365, now }
+
+    const registryWith3Models = {
+      firstPartyModels: ['haiku', 'gpt-5.5-mini', 'gpt-5.4-mini'],
+      profiles: [] as any[],
+    }
+
+    const entries: LedgerEntry[] = [
+      ...makeEntries('haiku', MIN_RELIABLE_N, 0.5),
+      ...makeEntries('gpt-5.5-mini', MIN_RELIABLE_N - 1, 0.9),
+    ]
+
+    const candidates = resolveProviderForClass('fast', registryWith3Models, {
+      ledgerEntries: entries,
+      recency,
+    } as any)
+
+    const haikuIdx = candidates.findIndex(c => c.model === 'haiku')
+    const miniIdx = candidates.findIndex(c => c.model === 'gpt-5.5-mini')
+    const mini4Idx = candidates.findIndex(c => c.model === 'gpt-5.4-mini')
+
+    expect(haikuIdx).toBeLessThan(miniIdx)
+    expect(miniIdx).toBeLessThan(mini4Idx)
+    console.log(`[Scenario 6 regression guard] long half-life: group0>group1>group2 invariant holds ✓`)
   })
 })

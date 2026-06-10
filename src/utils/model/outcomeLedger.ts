@@ -45,12 +45,27 @@ export type LedgerStats = {
   persona: string
   workload: string
   provider_model_used: string
+  /** Raw count of entries in this cell. Retained for display / back-compat. */
   n: number
+  /** Raw count of successes in this cell. Retained for display / back-compat. */
   successes: number
   /** successes / n, or null when n === 0. */
   successRate: number | null
   /** mean of non-null duration_s values, or null when none recorded. */
   avgDurationS: number | null
+  /**
+   * Recency-weighted effective sample count, produced when RecencyOptions are
+   * passed to aggregateLedgerStats.  Each entry's weight is
+   *   w = 0.5 ^ (age_days / halfLifeDays)
+   * so entries older than halfLifeDays contribute < 50% of full weight.
+   * Null when no RecencyOptions were supplied (absent ≠ zero).
+   */
+  effectiveN: number | null
+  /**
+   * Recency-weighted effective success count (same decay applied to each
+   * success indicator).  Null when no RecencyOptions were supplied.
+   */
+  effectiveSuccesses: number | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -179,6 +194,31 @@ export function readLedgerEntries(projectRoot: string): LedgerEntry[] {
   return entries
 }
 
+/**
+ * Recency decay options for aggregateLedgerStats.
+ *
+ * Each entry's contribution is weighted by:
+ *   w = 0.5 ^ (age_days / halfLifeDays)
+ * where age_days = (now - entry.ts) in days.  Entries without a parseable `ts`
+ * field are treated as age = 0 (i.e. weight = 1.0) — conservative, not punitive.
+ *
+ * Pass `now` as a Unix-epoch millisecond timestamp (Date.now() at the call site)
+ * so this function remains pure and testable without internal clock calls.
+ */
+export type RecencyOptions = {
+  /** Half-life in days.  Default 14.  A cell entry that is exactly halfLifeDays
+   *  old contributes weight 0.5; at 2× halfLifeDays it contributes 0.25, etc. */
+  halfLifeDays: number
+  /** Reference "now" as milliseconds since Unix epoch (e.g. Date.now()).
+   *  Passed in by the caller so this function stays pure. */
+  now: number
+}
+
+/** The default half-life used when RecencyOptions is constructed without
+ *  an explicit halfLifeDays.  14 days balances responsiveness to provider
+ *  weight changes against false positives from short-run variance. */
+export const DEFAULT_HALF_LIFE_DAYS = 14
+
 /** Options for aggregateLedgerStats. */
 export type AggregateLedgerOptions = {
   /**
@@ -194,6 +234,33 @@ export type AggregateLedgerOptions = {
    *   when using this mode.
    */
   successDefinition?: 'self' | 'checker-verified'
+  /**
+   * When provided, each entry's contribution to n and successes is multiplied
+   * by an exponential decay weight based on its age relative to `now`.
+   *
+   * The aggregated LedgerStats rows will have non-null `effectiveN` and
+   * `effectiveSuccesses` fields alongside the unchanged raw `n` / `successes`.
+   * Absent → effectiveN and effectiveSuccesses are null (raw counts only).
+   */
+  recency?: RecencyOptions
+}
+
+/**
+ * Compute the exponential decay weight for a single ledger entry.
+ *
+ * w = 0.5 ^ (age_days / halfLifeDays)
+ *
+ * Entries with a missing or unparseable `ts` are treated as age=0 (w=1.0) —
+ * conservative: we don't punish entries that simply lack a timestamp.
+ *
+ * @internal Exported for unit tests only; not part of the public API.
+ */
+export function decayWeight(entryTs: string | undefined | null, opts: RecencyOptions): number {
+  const MS_PER_DAY = 86_400_000
+  const ts = entryTs ? Date.parse(entryTs) : NaN
+  if (isNaN(ts)) return 1.0
+  const ageDays = Math.max(0, (opts.now - ts) / MS_PER_DAY)
+  return Math.pow(0.5, ageDays / opts.halfLifeDays)
 }
 
 /**
@@ -211,16 +278,28 @@ export type AggregateLedgerOptions = {
  * @param entries  Raw LedgerEntry array, or AnnotatedLedgerEntry array (from
  *                 joinCheckerVerdicts) when using successDefinition: 'checker-verified'.
  * @param options  Aggregation options.  Defaults: successDefinition='self'.
+ *                 Pass `recency` to get exponential-decay-weighted effectiveN /
+ *                 effectiveSuccesses alongside the unchanged raw n / successes.
  */
 export function aggregateLedgerStats(
   entries: LedgerEntry[],
   options?: AggregateLedgerOptions,
 ): LedgerStats[] {
   const successDef = options?.successDefinition ?? 'self'
+  const recencyOpts = options?.recency
   type CellKey = string
   const cells = new Map<
     CellKey,
-    { persona: string; workload: string; model: string; n: number; successes: number; durations: number[] }
+    {
+      persona: string
+      workload: string
+      model: string
+      n: number
+      successes: number
+      durations: number[]
+      effectiveN: number
+      effectiveSuccesses: number
+    }
   >()
 
   for (const entry of entries) {
@@ -241,20 +320,26 @@ export function aggregateLedgerStats(
     const key = `${persona}\0${workload}\0${model}`
     let cell = cells.get(key)
     if (!cell) {
-      cell = { persona, workload, model, n: 0, successes: 0, durations: [] }
+      cell = { persona, workload, model, n: 0, successes: 0, durations: [], effectiveN: 0, effectiveSuccesses: 0 }
       cells.set(key, cell)
     }
     cell.n++
 
-    if (successDef === 'checker-verified') {
-      const annotated = entry as AnnotatedLedgerEntry
-      if (isSuccessEntry(entry) && annotated.checker_goal_met === true) cell.successes++
-    } else {
-      if (isSuccessEntry(entry)) cell.successes++
-    }
+    const isSuccess = successDef === 'checker-verified'
+      ? isSuccessEntry(entry) && (entry as AnnotatedLedgerEntry).checker_goal_met === true
+      : isSuccessEntry(entry)
+
+    if (isSuccess) cell.successes++
 
     if (typeof entry.duration_s === 'number' && entry.duration_s !== null) {
       cell.durations.push(entry.duration_s)
+    }
+
+    // Recency-weighted effective counts.
+    if (recencyOpts) {
+      const w = decayWeight(entry.ts, recencyOpts)
+      cell.effectiveN += w
+      if (isSuccess) cell.effectiveSuccesses += w
     }
   }
 
@@ -272,6 +357,8 @@ export function aggregateLedgerStats(
       successes: cell.successes,
       successRate: cell.n > 0 ? cell.successes / cell.n : null,
       avgDurationS,
+      effectiveN: recencyOpts ? cell.effectiveN : null,
+      effectiveSuccesses: recencyOpts ? cell.effectiveSuccesses : null,
     })
   }
   return result
