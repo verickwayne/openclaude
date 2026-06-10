@@ -12,7 +12,9 @@ beforeEach(async () => {
   await acquireSharedMutationLock('utils/sideQuery.test.ts')
   ;(globalThis as Record<string, unknown>).MACRO = { VERSION: '0.0.0' }
   capturedArgs = []
+  const realClient = await import('../services/api/client.js')
   mock.module('../services/api/client.js', () => ({
+    ...realClient,
     getAnthropicClient: async () => ({
       beta: {
         messages: {
@@ -39,33 +41,53 @@ beforeEach(async () => {
       },
     }),
   }))
+  // Spread the real module so all exports (e.g. addSlowOperation) remain
+  // visible to later test files in a combined run.  Only the two functions
+  // that sideQuery.ts actually reads are overridden; everything else falls
+  // through to the real implementation.
+  const realState = await import('../bootstrap/state.js')
   mock.module('../bootstrap/state.js', () => ({
+    ...realState,
     getLastApiCompletionTimestamp: () => null,
     setLastApiCompletionTimestamp: () => {},
   }))
+  const realSystem = await import('../constants/system.js')
   mock.module('../constants/system.js', () => ({
+    ...realSystem,
     getAttributionHeader: () => null,
     getCLISyspromptPrefix: () => '',
   }))
+  const realAnalytics = await import('../services/analytics/index.js')
   mock.module('../services/analytics/index.js', () => ({
+    ...realAnalytics,
     logEvent: () => {},
   }))
+  const realClaude = await import('../services/api/claude.js')
   mock.module('../services/api/claude.js', () => ({
+    ...realClaude,
     getAPIMetadata: () => ({}),
   }))
+  const realBetas = await import('./betas.js')
   mock.module('./betas.js', () => ({
+    ...realBetas,
     getModelBetas: () => [],
     modelSupportsStructuredOutputs: () => false,
   }))
+  const realFingerprint = await import('./fingerprint.js')
   mock.module('./fingerprint.js', () => ({
+    ...realFingerprint,
     computeFingerprint: () => 'fp',
   }))
+  const realModel = await import('./model/model.js')
   mock.module('./model/model.js', () => ({
+    ...realModel,
     normalizeModelStringForAPI: (m: string) => m,
   }))
+  const realSideQueryRegistry = await import('./sideQueryRegistry.js')
   // Default: routing disabled (no modelClass passed in existing tests).
   // Tests in the 'modelClass routing' suite override this mock per-test.
   mock.module('./sideQueryRegistry.js', () => ({
+    ...realSideQueryRegistry,
     resolveTopCandidateForClass: () => null,
   }))
 })
