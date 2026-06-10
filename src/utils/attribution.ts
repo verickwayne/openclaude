@@ -2,7 +2,7 @@ import { feature } from 'bun:bundle'
 import { stat } from 'fs/promises'
 import { getClientType } from '../bootstrap/state.js'
 import { getRemoteSessionUrl, isRemoteSessionLocal } from '../constants/product.js'
-import { isEnvTruthy } from './envUtils.js'
+import { isEnvTruthy, readBrandedEnv } from './envUtils.js'
 import { TERMINAL_OUTPUT_TAGS } from '../constants/xml.js'
 import type { AppState } from '../state/AppState.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
@@ -135,9 +135,7 @@ export function getAttributionTexts(): AttributionTexts {
   const defaultAttribution =
     '🤖 Generated with [OpenClaude](https://github.com/Gitlawb/openclaude)'
   const coAuthorEmail = getDefaultCommitCoAuthorEmail(apiProvider)
-  const defaultCommit = isEnvTruthy(
-    process.env.OPENCLAUDE_DISABLE_CO_AUTHORED_BY,
-  )
+  const defaultCommit = isEnvTruthy(readBrandedEnv('DISABLE_CO_AUTHORED_BY'))
     ? ''
     : `Co-Authored-By: ${modelName} <${coAuthorEmail}>`
 

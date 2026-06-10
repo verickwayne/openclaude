@@ -22,16 +22,16 @@ describe('readDisciplineLevel', () => {
   })
 
   it('returns 1 for advisory', () => {
-    expect(readDisciplineLevel({ OPENCLAUDE_IN_LOOP_DISCIPLINE: '1' })).toBe(1)
+    expect(readDisciplineLevel({ LIMITLESS_IN_LOOP_DISCIPLINE: '1' })).toBe(1)
   })
 
   it('returns 2 for enforcement', () => {
-    expect(readDisciplineLevel({ OPENCLAUDE_IN_LOOP_DISCIPLINE: '2' })).toBe(2)
+    expect(readDisciplineLevel({ LIMITLESS_IN_LOOP_DISCIPLINE: '2' })).toBe(2)
   })
 
   it('treats unrecognized values as 0 (fail safe to legacy)', () => {
-    expect(readDisciplineLevel({ OPENCLAUDE_IN_LOOP_DISCIPLINE: 'yes' })).toBe(0)
-    expect(readDisciplineLevel({ OPENCLAUDE_IN_LOOP_DISCIPLINE: '3' })).toBe(0)
+    expect(readDisciplineLevel({ LIMITLESS_IN_LOOP_DISCIPLINE: 'yes' })).toBe(0)
+    expect(readDisciplineLevel({ LIMITLESS_IN_LOOP_DISCIPLINE: '3' })).toBe(0)
   })
 })
 
@@ -43,22 +43,22 @@ describe('readInitialPhase', () => {
 
   it('honors each valid phase', () => {
     for (const p of ['explore', 'research', 'plan', 'build', 'verify', 'refine'] as const) {
-      expect(readInitialPhase({ OPENCLAUDE_INITIAL_PHASE: p })).toBe(p)
+      expect(readInitialPhase({ LIMITLESS_INITIAL_PHASE: p })).toBe(p)
     }
   })
 
   it('falls back silently on typo', () => {
-    expect(readInitialPhase({ OPENCLAUDE_INITIAL_PHASE: 'explor' })).toBe('build')
+    expect(readInitialPhase({ LIMITLESS_INITIAL_PHASE: 'explor' })).toBe('build')
   })
 })
 
 describe('adaptive discipline workload policy', () => {
   it('defaults to adaptive profile and allows an always override', () => {
     expect(readDisciplineProfile({})).toBe('adaptive')
-    expect(readDisciplineProfile({ OPENCLAUDE_DISCIPLINE_PROFILE: 'always' })).toBe(
+    expect(readDisciplineProfile({ LIMITLESS_DISCIPLINE_PROFILE: 'always' })).toBe(
       'always',
     )
-    expect(readDisciplineProfile({ OPENCLAUDE_DISCIPLINE_PROFILE: 'other' })).toBe(
+    expect(readDisciplineProfile({ LIMITLESS_DISCIPLINE_PROFILE: 'other' })).toBe(
       'adaptive',
     )
   })
@@ -1347,18 +1347,18 @@ describe('isDisciplineDebugEnabled', () => {
     expect(isDisciplineDebugEnabled({})).toBe(false)
   })
 
-  it('returns true when OPENCLAUDE_DEBUG_DISCIPLINE=1', () => {
+  it('returns true when LIMITLESS_DEBUG_DISCIPLINE=1', () => {
     expect(
-      isDisciplineDebugEnabled({ OPENCLAUDE_DEBUG_DISCIPLINE: '1' }),
+      isDisciplineDebugEnabled({ LIMITLESS_DEBUG_DISCIPLINE: '1' }),
     ).toBe(true)
   })
 
   it('returns false for any other value (only "1" enables)', () => {
     expect(
-      isDisciplineDebugEnabled({ OPENCLAUDE_DEBUG_DISCIPLINE: 'true' }),
+      isDisciplineDebugEnabled({ LIMITLESS_DEBUG_DISCIPLINE: 'true' }),
     ).toBe(false)
     expect(
-      isDisciplineDebugEnabled({ OPENCLAUDE_DEBUG_DISCIPLINE: 'yes' }),
+      isDisciplineDebugEnabled({ LIMITLESS_DEBUG_DISCIPLINE: 'yes' }),
     ).toBe(false)
   })
 })
@@ -1371,7 +1371,7 @@ describe('readDisciplineEventLogPath', () => {
   it('returns the path when env points to one', () => {
     expect(
       readDisciplineEventLogPath({
-        OPENCLAUDE_DISCIPLINE_EVENT_LOG: '/tmp/foo.jsonl',
+        LIMITLESS_DISCIPLINE_EVENT_LOG: '/tmp/foo.jsonl',
       }),
     ).toBe('/tmp/foo.jsonl')
   })
@@ -1379,17 +1379,17 @@ describe('readDisciplineEventLogPath', () => {
   it('trims whitespace', () => {
     expect(
       readDisciplineEventLogPath({
-        OPENCLAUDE_DISCIPLINE_EVENT_LOG: '  /tmp/x.jsonl  ',
+        LIMITLESS_DISCIPLINE_EVENT_LOG: '  /tmp/x.jsonl  ',
       }),
     ).toBe('/tmp/x.jsonl')
   })
 
   it('returns null on an empty / whitespace-only value', () => {
     expect(
-      readDisciplineEventLogPath({ OPENCLAUDE_DISCIPLINE_EVENT_LOG: '' }),
+      readDisciplineEventLogPath({ LIMITLESS_DISCIPLINE_EVENT_LOG: '' }),
     ).toBeNull()
     expect(
-      readDisciplineEventLogPath({ OPENCLAUDE_DISCIPLINE_EVENT_LOG: '   ' }),
+      readDisciplineEventLogPath({ LIMITLESS_DISCIPLINE_EVENT_LOG: '   ' }),
     ).toBeNull()
   })
 })
@@ -1402,7 +1402,7 @@ describe('isDisciplineStatusAtExitEnabled', () => {
   it('returns true when env is "1"', () => {
     expect(
       isDisciplineStatusAtExitEnabled({
-        OPENCLAUDE_DISCIPLINE_STATUS_AT_EXIT: '1',
+        LIMITLESS_DISCIPLINE_STATUS_AT_EXIT: '1',
       }),
     ).toBe(true)
   })
@@ -1410,7 +1410,7 @@ describe('isDisciplineStatusAtExitEnabled', () => {
   it('only "1" enables (other values are ignored)', () => {
     expect(
       isDisciplineStatusAtExitEnabled({
-        OPENCLAUDE_DISCIPLINE_STATUS_AT_EXIT: 'true',
+        LIMITLESS_DISCIPLINE_STATUS_AT_EXIT: 'true',
       }),
     ).toBe(false)
   })
@@ -1499,8 +1499,8 @@ describe('formatDisciplineExitSummary', () => {
   })
 
   it('mentions the JSONL log path when one is set', () => {
-    const prev = process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
-    process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG = '/tmp/test-disc.jsonl'
+    const prev = process.env.LIMITLESS_DISCIPLINE_EVENT_LOG
+    process.env.LIMITLESS_DISCIPLINE_EVENT_LOG = '/tmp/test-disc.jsonl'
     try {
       const out = formatDisciplineExitSummary(
         createInitialLoopDisciplineState(2, 'build'),
@@ -1509,16 +1509,16 @@ describe('formatDisciplineExitSummary', () => {
       expect(out).toContain('jq')
     } finally {
       if (prev === undefined) {
-        delete process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
+        delete process.env.LIMITLESS_DISCIPLINE_EVENT_LOG
       } else {
-        process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG = prev
+        process.env.LIMITLESS_DISCIPLINE_EVENT_LOG = prev
       }
     }
   })
 
   it('omits the JSONL hint when no log path is set', () => {
-    const prev = process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
-    delete process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
+    const prev = process.env.LIMITLESS_DISCIPLINE_EVENT_LOG
+    delete process.env.LIMITLESS_DISCIPLINE_EVENT_LOG
     try {
       const out = formatDisciplineExitSummary(
         createInitialLoopDisciplineState(2, 'build'),
@@ -1527,7 +1527,7 @@ describe('formatDisciplineExitSummary', () => {
       expect(out).not.toContain('full event stream')
     } finally {
       if (prev !== undefined) {
-        process.env.OPENCLAUDE_DISCIPLINE_EVENT_LOG = prev
+        process.env.LIMITLESS_DISCIPLINE_EVENT_LOG = prev
       }
     }
   })
@@ -1936,11 +1936,42 @@ describe('isDirectFastPath', () => {
 
   it('returns false for direct workload when profile=always', () => {
     const s = createInitialLoopDisciplineState(1, 'build', 'direct')
-    expect(isDirectFastPath(s, { OPENCLAUDE_DISCIPLINE_PROFILE: 'always' })).toBe(false)
+    expect(isDirectFastPath(s, { LIMITLESS_DISCIPLINE_PROFILE: 'always' })).toBe(false)
   })
 
   it('returns false for bounded workload when profile=always', () => {
     const s = createInitialLoopDisciplineState(1, 'build', 'bounded')
-    expect(isDirectFastPath(s, { OPENCLAUDE_DISCIPLINE_PROFILE: 'always' })).toBe(false)
+    expect(isDirectFastPath(s, { LIMITLESS_DISCIPLINE_PROFILE: 'always' })).toBe(false)
+  })
+})
+
+describe('legacy OPENCLAUDE_ env-var fallback', () => {
+  it('resolves the legacy OPENCLAUDE_ name when LIMITLESS_ is absent', () => {
+    expect(readDisciplineLevel({ OPENCLAUDE_IN_LOOP_DISCIPLINE: '2' })).toBe(2)
+    expect(readInitialPhase({ OPENCLAUDE_INITIAL_PHASE: 'plan' })).toBe('plan')
+    expect(
+      readDisciplineProfile({ OPENCLAUDE_DISCIPLINE_PROFILE: 'always' }),
+    ).toBe('always')
+    expect(isDisciplineDebugEnabled({ OPENCLAUDE_DEBUG_DISCIPLINE: '1' })).toBe(
+      true,
+    )
+    expect(
+      readDisciplineEventLogPath({ OPENCLAUDE_DISCIPLINE_EVENT_LOG: '/tmp/x.jsonl' }),
+    ).toBe('/tmp/x.jsonl')
+  })
+
+  it('lets the new LIMITLESS_ name win when both are set', () => {
+    expect(
+      readDisciplineLevel({
+        LIMITLESS_IN_LOOP_DISCIPLINE: '2',
+        OPENCLAUDE_IN_LOOP_DISCIPLINE: '1',
+      }),
+    ).toBe(2)
+    expect(
+      readInitialPhase({
+        LIMITLESS_INITIAL_PHASE: 'verify',
+        OPENCLAUDE_INITIAL_PHASE: 'plan',
+      }),
+    ).toBe('verify')
   })
 })

@@ -14,7 +14,7 @@
 //
 // Returns a compact summary, NOT the full state. The verbatim event
 // stream lives in state.events; for post-session forensics, consult
-// OPENCLAUDE_DISCIPLINE_EVENT_LOG.
+// LIMITLESS_DISCIPLINE_EVENT_LOG.
 
 import { z } from 'zod/v4'
 import { buildTool } from '../../Tool.js'
@@ -136,7 +136,7 @@ export const GetLoopDisciplineStatusTool = buildTool({
       return {
         data: {
           available: false,
-          note: 'Loop-discipline accessor unavailable in this context (legacy caller). Set OPENCLAUDE_IN_LOOP_DISCIPLINE=1 or higher to enable the discipline harness.',
+          note: 'Loop-discipline accessor unavailable in this context (legacy caller). Set LIMITLESS_IN_LOOP_DISCIPLINE=1 or higher to enable the discipline harness.',
         },
       }
     }
@@ -182,7 +182,7 @@ export const GetLoopDisciplineStatusTool = buildTool({
           : null,
         ledger_counts: ledgerCounts,
         recent_events: recent,
-        note: 'Snapshot of current loop-discipline state. For full event history use OPENCLAUDE_DISCIPLINE_EVENT_LOG.',
+        note: 'Snapshot of current loop-discipline state. For full event history use LIMITLESS_DISCIPLINE_EVENT_LOG.',
       },
     }
   },

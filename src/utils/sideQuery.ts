@@ -17,6 +17,7 @@ import { getAnthropicClient } from '../services/api/client.js'
 import type { ModelClass } from '../services/api/modelRegistry.js'
 import { resolveTopCandidateForClass } from './sideQueryRegistry.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
+import { readBrandedEnv } from './envUtils.js'
 import { modelSupportsAdaptiveThinking } from './thinking.js'
 import { computeFingerprint } from './fingerprint.js'
 import { normalizeModelStringForAPI } from './model/model.js'
@@ -33,7 +34,7 @@ export type SideQueryOptions = {
   /** Model to use for the query */
   model: string
   /**
-   * When present (and OPENCLAUDE_SIDEQUERY_ROUTING != "0"), resolve the actual
+   * When present (and LIMITLESS_SIDEQUERY_ROUTING != "0"), resolve the actual
    * provider/model via the multi-provider registry before sending the request.
    * Absent → current first-party behavior, byte-for-byte.
    *
@@ -144,7 +145,7 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
 
   if (
     modelClass !== undefined &&
-    process.env.OPENCLAUDE_SIDEQUERY_ROUTING !== '0'
+    readBrandedEnv('SIDEQUERY_ROUTING') !== '0'
   ) {
     try {
       const top = resolveTopCandidateForClass(modelClass)

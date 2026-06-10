@@ -517,12 +517,12 @@ describe('resolveProviderForClass — billing-aware preference', () => {
     expect(haikuIdx).toBeLessThan(subIdx)
   })
 
-  test('kill-switch OPENCLAUDE_BILLING_AWARE=0 disables preference', () => {
+  test('kill-switch LIMITLESS_BILLING_AWARE=0 disables preference', () => {
     const withKillSwitch = resolveProviderForClass(
       'fast',
       billingInput,
       { preferBilling: 'subscription' },
-      { OPENCLAUDE_BILLING_AWARE: '0' },
+      { LIMITLESS_BILLING_AWARE: '0' },
     )
     const withoutKillSwitch = resolveProviderForClass(
       'fast',

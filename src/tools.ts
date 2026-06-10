@@ -215,7 +215,7 @@ export function getAllBaseTools(): Tools {
     ...(TerminalCaptureTool ? [TerminalCaptureTool] : []),
     LSPTool,
     // Phase E3 — register the loop-discipline tools when
-    // OPENCLAUDE_IN_LOOP_DISCIPLINE >= 1. At level 0 (default) the
+    // LIMITLESS_IN_LOOP_DISCIPLINE >= 1. At level 0 (default) the
     // tools are absent from the surface so legacy installs see zero
     // behavior change; at level 1+ the model can call EmitPlan and
     // EmitPhaseTransition to interact with the phase/plan machinery

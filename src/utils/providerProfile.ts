@@ -1622,7 +1622,9 @@ export async function buildStartupEnvFromProfile(options?: {
     persisted,
     goal:
       options?.goal ??
-      normalizeRecommendationGoal(processEnv.OPENCLAUDE_PROFILE_GOAL),
+      normalizeRecommendationGoal(
+        processEnv.LIMITLESS_PROFILE_GOAL ?? processEnv.OPENCLAUDE_PROFILE_GOAL,
+      ),
     processEnv,
     getOllamaChatBaseUrl:
       options?.getOllamaChatBaseUrl ?? getOllamaChatBaseUrl,
@@ -1662,7 +1664,9 @@ export async function applySavedProfileToCurrentSession(options: {
     const explicitEnv = await buildLaunchEnv({
       profile: options.profileFile.profile,
       persisted: options.profileFile,
-      goal: normalizeRecommendationGoal(processEnv.OPENCLAUDE_PROFILE_GOAL),
+      goal: normalizeRecommendationGoal(
+        processEnv.LIMITLESS_PROFILE_GOAL ?? processEnv.OPENCLAUDE_PROFILE_GOAL,
+      ),
       processEnv: buildEnvSource,
       getOllamaChatBaseUrl,
       readGeminiAccessToken,
@@ -1711,7 +1715,9 @@ export async function applySavedProfileToCurrentSession(options: {
   const nextEnv = await buildLaunchEnv({
     profile: options.profileFile.profile,
     persisted: options.profileFile,
-    goal: normalizeRecommendationGoal(processEnv.OPENCLAUDE_PROFILE_GOAL),
+    goal: normalizeRecommendationGoal(
+        processEnv.LIMITLESS_PROFILE_GOAL ?? processEnv.OPENCLAUDE_PROFILE_GOAL,
+      ),
     processEnv: baseEnv,
     getOllamaChatBaseUrl,
     readGeminiAccessToken,

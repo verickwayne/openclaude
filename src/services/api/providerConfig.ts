@@ -396,12 +396,13 @@ export function isLocalProviderUrl(baseUrl: string | undefined): boolean {
 // API the layers are invisible, but against multi-second local round-trips
 // they multiply per-call.
 //
-// Set `OPENCLAUDE_LOCAL_FAST_PATH=1` to force it on, `=0` to force off, or
+// Set `LIMITLESS_LOCAL_FAST_PATH=1` to force it on, `=0` to force off, or
 // leave it unset to let `isLocalProviderUrl` decide. The opt-out is intended
 // to be conservative: if the env var is set explicitly, callers can audit
 // regressions; if not, behaviour only changes for hosts already classified
 // as local by the existing detector (loopback, RFC1918, .local, ULA/LL).
-const LOCAL_FAST_PATH_ENV = 'OPENCLAUDE_LOCAL_FAST_PATH'
+const LOCAL_FAST_PATH_ENV = 'LIMITLESS_LOCAL_FAST_PATH'
+const LOCAL_FAST_PATH_ENV_LEGACY = 'OPENCLAUDE_LOCAL_FAST_PATH'
 
 export type LocalFastPathConfig = {
   enabled: boolean
@@ -437,7 +438,9 @@ export function getLocalFastPathConfig(
   baseUrl: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): LocalFastPathConfig {
-  const override = parseLocalFastPathOverride(env[LOCAL_FAST_PATH_ENV])
+  const override = parseLocalFastPathOverride(
+    env[LOCAL_FAST_PATH_ENV] ?? env[LOCAL_FAST_PATH_ENV_LEGACY],
+  )
   const enabled = override ?? isLocalProviderUrl(baseUrl)
   return enabled ? LOCAL_FAST_PATH_ON : LOCAL_FAST_PATH_OFF
 }

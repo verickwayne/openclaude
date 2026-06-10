@@ -255,9 +255,9 @@ describe('sideQuery modelClass routing', () => {
     expect((capturedArgs[0] as Record<string, unknown>).model).toBe(NON_ADAPTIVE_MODEL)
   })
 
-  test('kill switch OPENCLAUDE_SIDEQUERY_ROUTING=0 → ignores modelClass, uses requested model', async () => {
-    const originalEnv = process.env.OPENCLAUDE_SIDEQUERY_ROUTING
-    process.env.OPENCLAUDE_SIDEQUERY_ROUTING = '0'
+  test('kill switch LIMITLESS_SIDEQUERY_ROUTING=0 → ignores modelClass, uses requested model', async () => {
+    const originalEnv = process.env.LIMITLESS_SIDEQUERY_ROUTING
+    process.env.LIMITLESS_SIDEQUERY_ROUTING = '0'
 
     let registryCalled = false
     mock.module('./sideQueryRegistry.js', () => ({
@@ -278,9 +278,9 @@ describe('sideQuery modelClass routing', () => {
       expect((capturedArgs[0] as Record<string, unknown>).model).toBe(NON_ADAPTIVE_MODEL)
     } finally {
       if (originalEnv === undefined) {
-        delete process.env.OPENCLAUDE_SIDEQUERY_ROUTING
+        delete process.env.LIMITLESS_SIDEQUERY_ROUTING
       } else {
-        process.env.OPENCLAUDE_SIDEQUERY_ROUTING = originalEnv
+        process.env.LIMITLESS_SIDEQUERY_ROUTING = originalEnv
       }
     }
   })

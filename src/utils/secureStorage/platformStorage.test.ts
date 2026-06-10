@@ -128,14 +128,14 @@ describe("Secure Storage Platform Implementations", () => {
     });
 
     test("delete() includes legacy assembly load when explicitly enabled", () => {
-      process.env.OPENCLAUDE_ENABLE_LEGACY_WINDOWS_PASSWORDVAULT = "1";
+      process.env.LIMITLESS_ENABLE_LEGACY_WINDOWS_PASSWORDVAULT = "1";
       windowsCredentialStorage.delete();
       const script = mockExecaSync.mock.calls[1][1][1];
       expect(script).toContain("Add-Type -AssemblyName System.Runtime.WindowsRuntime");
     });
 
     test("escapes double quotes in username", () => {
-      process.env.OPENCLAUDE_ENABLE_LEGACY_WINDOWS_PASSWORDVAULT = "1";
+      process.env.LIMITLESS_ENABLE_LEGACY_WINDOWS_PASSWORDVAULT = "1";
       process.env.USER = 'user"name';
       windowsCredentialStorage.read();
       const script = mockExecaSync.mock.calls[1][1][1];
@@ -153,7 +153,7 @@ describe("Secure Storage Platform Implementations", () => {
     });
 
     test("read() falls back to legacy PasswordVault when explicitly enabled", () => {
-      process.env.OPENCLAUDE_ENABLE_LEGACY_WINDOWS_PASSWORDVAULT = "1";
+      process.env.LIMITLESS_ENABLE_LEGACY_WINDOWS_PASSWORDVAULT = "1";
       mockExecaSync
         .mockImplementationOnce(() => ({ exitCode: 0, stdout: "{not-json" }))
         .mockImplementationOnce(() => ({
@@ -168,7 +168,7 @@ describe("Secure Storage Platform Implementations", () => {
     });
 
     test("read() fails closed when the legacy PasswordVault payload is invalid JSON", () => {
-      process.env.OPENCLAUDE_ENABLE_LEGACY_WINDOWS_PASSWORDVAULT = "1";
+      process.env.LIMITLESS_ENABLE_LEGACY_WINDOWS_PASSWORDVAULT = "1";
       mockExecaSync
         .mockImplementationOnce(() => ({ exitCode: 1, stdout: "" }))
         .mockImplementationOnce(() => ({ exitCode: 0, stdout: "{not-json" }));

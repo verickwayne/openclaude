@@ -3,7 +3,7 @@
 // Compensations land across Phase A-G of
 // docs/plans/20260606224012_in-loop-discipline.md. Phase A (this file +
 // State extension in query.ts) is no-behavior-change: the fields exist and
-// can be observed, but no gates enforce until OPENCLAUDE_IN_LOOP_DISCIPLINE
+// can be observed, but no gates enforce until LIMITLESS_IN_LOOP_DISCIPLINE
 // is set to 1 (advisory) or 2 (enforced) and the per-pattern hooks land.
 
 /**
@@ -121,7 +121,7 @@ export const PHASE_TOOL_ALLOWLIST: Record<Phase, ToolPolicy> = {
 
 /**
  * Phase-keyed default loop start. Querysessions begin in `'build'` to keep
- * legacy users unaffected when OPENCLAUDE_IN_LOOP_DISCIPLINE is 0.
+ * legacy users unaffected when LIMITLESS_IN_LOOP_DISCIPLINE is 0.
  */
 export const DEFAULT_INITIAL_PHASE: Phase = 'build'
 
@@ -384,7 +384,8 @@ export function applyPhaseTransitionReset(
 export function readDisciplineLevel(
   env: NodeJS.ProcessEnv = process.env,
 ): DisciplineLevel {
-  const raw = env.OPENCLAUDE_IN_LOOP_DISCIPLINE
+  const raw =
+    env.LIMITLESS_IN_LOOP_DISCIPLINE ?? env.OPENCLAUDE_IN_LOOP_DISCIPLINE
   if (raw === '1') return 1
   if (raw === '2') return 2
   return 0
@@ -393,13 +394,16 @@ export function readDisciplineLevel(
 /**
  * Workload profile. adaptive is the default because strict discipline is
  * valuable for implementation loops but wasteful for a one-turn explanation.
- * Set OPENCLAUDE_DISCIPLINE_PROFILE=always to apply the configured level to
+ * Set LIMITLESS_DISCIPLINE_PROFILE=always to apply the configured level to
  * every prompt.
  */
 export function readDisciplineProfile(
   env: NodeJS.ProcessEnv = process.env,
 ): DisciplineProfile {
-  return env.OPENCLAUDE_DISCIPLINE_PROFILE === 'always' ? 'always' : 'adaptive'
+  return (env.LIMITLESS_DISCIPLINE_PROFILE ?? env.OPENCLAUDE_DISCIPLINE_PROFILE) ===
+    'always'
+    ? 'always'
+    : 'adaptive'
 }
 
 /**
@@ -505,7 +509,7 @@ export const TAMPER_GUARDED_TOOL_NAMES = new Set([
 
 /**
  * Read tamper-guard state from env. Returns false ONLY when the operator
- * explicitly sets OPENCLAUDE_TAMPER_GUARD=off at process launch — the env
+ * explicitly sets LIMITLESS_TAMPER_GUARD=off at process launch — the env
  * read happens once per loop start so an in-loop tool call can't toggle
  * the gate.
  *
@@ -518,7 +522,7 @@ export function readTamperGuardEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   if (level === 0) return false
-  return env.OPENCLAUDE_TAMPER_GUARD !== 'off'
+  return (env.LIMITLESS_TAMPER_GUARD ?? env.OPENCLAUDE_TAMPER_GUARD) !== 'off'
 }
 
 /**
@@ -1016,14 +1020,14 @@ export function formatDisciplineEvent(e: DisciplineEvent): string {
 
 /**
  * Read the --debug-discipline flag state from env. The CLI plumbing
- * sets OPENCLAUDE_DEBUG_DISCIPLINE=1 when the flag is present. Env-var
+ * sets LIMITLESS_DEBUG_DISCIPLINE=1 when the flag is present. Env-var
  * fallback so the discipline observability can be enabled outside the
  * full CLI flag pipeline (e.g. SDK consumers).
  */
 export function isDisciplineDebugEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.OPENCLAUDE_DEBUG_DISCIPLINE === '1'
+  return (env.LIMITLESS_DEBUG_DISCIPLINE ?? env.OPENCLAUDE_DEBUG_DISCIPLINE) === '1'
 }
 
 /**
@@ -1048,7 +1052,10 @@ export function emitDisciplineEventToStderr(
 export function isDisciplineStatusAtExitEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.OPENCLAUDE_DISCIPLINE_STATUS_AT_EXIT === '1'
+  return (
+    (env.LIMITLESS_DISCIPLINE_STATUS_AT_EXIT ??
+      env.OPENCLAUDE_DISCIPLINE_STATUS_AT_EXIT) === '1'
+  )
 }
 
 /**
@@ -1122,7 +1129,8 @@ export function formatDisciplineExitSummary(
 export function readDisciplineEventLogPath(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
-  const raw = env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
+  const raw =
+    env.LIMITLESS_DISCIPLINE_EVENT_LOG ?? env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
   if (typeof raw !== 'string') return null
   const trimmed = raw.trim()
   return trimmed.length > 0 ? trimmed : null
@@ -1243,7 +1251,7 @@ export function evaluateVerificationLiveness(args: {
 export function readInitialPhase(
   env: NodeJS.ProcessEnv = process.env,
 ): Phase {
-  const raw = env.OPENCLAUDE_INITIAL_PHASE
+  const raw = env.LIMITLESS_INITIAL_PHASE ?? env.OPENCLAUDE_INITIAL_PHASE
   if (
     raw === 'explore' ||
     raw === 'research' ||

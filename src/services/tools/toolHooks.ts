@@ -584,7 +584,7 @@ export async function* runPreToolUseHooks(
     // Self-tamper guard (Phase C). Runs after phaseGate so a phase deny
     // takes priority. Blocks Edit/Write/MultiEdit/NotebookEdit on paths
     // that resolve into OpenClaude's enforcement code. Bypass: env var
-    // OPENCLAUDE_TAMPER_GUARD=off set at process launch — read once at
+    // LIMITLESS_TAMPER_GUARD=off set at process launch — read once at
     // queryLoop init, cached in disciplineState.tamperGuardEnabled.
     const tamperEnabled =
       disciplineState?.tamperGuardEnabled ??

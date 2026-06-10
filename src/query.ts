@@ -17,6 +17,7 @@ import {
 } from './services/api/modelRegistry.js'
 import { getFirstPartyModelIds } from './utils/model/modelOptions.js'
 import { getProviderProfiles } from './utils/providerProfiles.js'
+import { readBrandedEnv } from './utils/envUtils.js'
 import {
   calculateTokenWarningState,
   isAutoCompactEnabled,
@@ -301,7 +302,7 @@ type State = {
   // Lets tests assert recovery paths fired without inspecting message contents.
   transition: Continue | undefined
   // Loop-discipline bag. Phase A: present with safe defaults, no gates
-  // enforce until OPENCLAUDE_IN_LOOP_DISCIPLINE >= 1 and the per-pattern
+  // enforce until LIMITLESS_IN_LOOP_DISCIPLINE >= 1 and the per-pattern
   // hooks land (Phases B-G). See docs/plans/20260606224012_in-loop-discipline.md.
   loopDiscipline: LoopDisciplineState
 }
@@ -404,7 +405,7 @@ async function* queryLoop(
 
   // Workstream 3 v2 — Mnemo auto-recall at queryLoop entry. Closes the
   // 2026-05-14 diagnosis ("knowledge that fires automatically at decision
-  // points") at runtime. When OPENCLAUDE_MNEMO_AUTO_RECALL=1, query the
+  // points") at runtime. When LIMITLESS_MNEMO_AUTO_RECALL=1, query the
   // Mnemo MCP server for memories relevant to the user's first prompt
   // and stash the result for injection into the system prompt on every
   // iteration of this loop. Best-effort — any failure (no Mnemo server
@@ -607,12 +608,12 @@ async function* queryLoop(
       : undefined
     queryCheckpoint('query_microcompact_end')
 
-    // Opt-in observation masking (OPENCLAUDE_OBSERVATION_MASKING=1).
+    // Opt-in observation masking (LIMITLESS_OBSERVATION_MASKING=1).
     // Replaces stale tool_result content with one-line summaries without an
     // LLM call. Runs after microcompact (so already-cleared blocks are
     // skipped) and before autocompact (so token savings count toward the
     // autocompact threshold). Default OFF — context-fidelity sensitive.
-    if (process.env.OPENCLAUDE_OBSERVATION_MASKING === '1') {
+    if (readBrandedEnv('OBSERVATION_MASKING') === '1') {
       const { maskStaleObservations } = await import(
         './services/api/maskStaleObservations.js'
       )
@@ -1229,7 +1230,7 @@ async function* queryLoop(
           // interrupting the run.
           //
           // Gates checked here (gates in shouldFailover):
-          //   1. OPENCLAUDE_PROVIDER_FAILOVER !== '0'   (kill-switch)
+          //   1. LIMITLESS_PROVIDER_FAILOVER !== '0'   (kill-switch)
           //   2. workload === 'long-running'             (only pay the switch cost here)
           //   3. alternative candidates exist            (resolveProviderForClass returned >= 1)
           if (innerError instanceof ProviderFailoverError) {
@@ -2338,7 +2339,7 @@ async function* queryLoop(
     }
 
     // Phase G — stream newly recorded events to stderr when
-    // OPENCLAUDE_DEBUG_DISCIPLINE=1 is set. Compare event arrays by
+    // LIMITLESS_DEBUG_DISCIPLINE=1 is set. Compare event arrays by
     // length only since events are append-only via recordDisciplineEvent
     // — a longer next array means new events were appended.
     const debugStderr = isDisciplineDebugEnabled()

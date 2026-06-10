@@ -45,8 +45,8 @@ import {
 describe('End-to-end discipline lifecycle: a level-2 session', () => {
   it('runs the canonical plan-then-edit-with-verification flow', () => {
     // ── T0: session start. Discipline is at enforcement level (2).
-    // The operator launches with OPENCLAUDE_IN_LOOP_DISCIPLINE=2 and
-    // OPENCLAUDE_INITIAL_PHASE=build (default).
+    // The operator launches with LIMITLESS_IN_LOOP_DISCIPLINE=2 and
+    // LIMITLESS_INITIAL_PHASE=build (default).
     let s = createInitialLoopDisciplineState(2, 'build')
     expect(s.level).toBe(2)
     expect(s.phase).toBe('build')

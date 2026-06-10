@@ -127,16 +127,16 @@ test('isObservationMaskingEnabled: false when unset', () => {
   expect(isObservationMaskingEnabled({})).toBe(false)
 })
 
-test('isObservationMaskingEnabled: true when OPENCLAUDE_OBSERVATION_MASKING=1', () => {
-  expect(isObservationMaskingEnabled({ OPENCLAUDE_OBSERVATION_MASKING: '1' })).toBe(
+test('isObservationMaskingEnabled: true when LIMITLESS_OBSERVATION_MASKING=1', () => {
+  expect(isObservationMaskingEnabled({ LIMITLESS_OBSERVATION_MASKING: '1' })).toBe(
     true,
   )
 })
 
 test('isObservationMaskingEnabled: false for other values', () => {
-  expect(isObservationMaskingEnabled({ OPENCLAUDE_OBSERVATION_MASKING: 'true' })).toBe(false)
-  expect(isObservationMaskingEnabled({ OPENCLAUDE_OBSERVATION_MASKING: '0' })).toBe(false)
-  expect(isObservationMaskingEnabled({ OPENCLAUDE_OBSERVATION_MASKING: 'yes' })).toBe(false)
+  expect(isObservationMaskingEnabled({ LIMITLESS_OBSERVATION_MASKING: 'true' })).toBe(false)
+  expect(isObservationMaskingEnabled({ LIMITLESS_OBSERVATION_MASKING: '0' })).toBe(false)
+  expect(isObservationMaskingEnabled({ LIMITLESS_OBSERVATION_MASKING: 'yes' })).toBe(false)
 })
 
 // ---------------------------------------------------------------------------

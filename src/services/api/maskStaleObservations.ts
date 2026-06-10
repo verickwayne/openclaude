@@ -9,7 +9,7 @@
  * stopping signals." (02-sota-harness-practices.md §5.2)
  *
  * Gated DARK by default — only active when
- * OPENCLAUDE_OBSERVATION_MASKING=1. Unlike the night's other kill switches
+ * LIMITLESS_OBSERVATION_MASKING=1. Unlike the night's other kill switches
  * this is opt-IN because it touches context fidelity.
  *
  * Safety guarantees:
@@ -76,7 +76,9 @@ type ToolUseBlock = {
 export function isObservationMaskingEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.OPENCLAUDE_OBSERVATION_MASKING === '1'
+  return (
+    (env.LIMITLESS_OBSERVATION_MASKING ?? env.OPENCLAUDE_OBSERVATION_MASKING) === '1'
+  )
 }
 
 // ---------------------------------------------------------------------------

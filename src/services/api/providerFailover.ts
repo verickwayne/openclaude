@@ -11,7 +11,7 @@
 // run outlives any single provider.
 //
 // Gates (all must pass to throw ProviderFailoverError):
-//   1. OPENCLAUDE_PROVIDER_FAILOVER !== '0'  (kill-switch)
+//   1. LIMITLESS_PROVIDER_FAILOVER !== '0'  (kill-switch; legacy OPENCLAUDE_ ok)
 //   2. workload === 'long-running'            (only pay the switch cost for long runs)
 //   3. at least one alternative candidate exists (resolveProviderForClass returns >= 2 items)
 //   4. error is auth / rate-limit / server (see classifyFailoverReason)
@@ -120,8 +120,12 @@ export function shouldFailover(
   candidates: RankedCandidate[],
   env: NodeJS.ProcessEnv = process.env,
 ): FailoverDecision {
-  // Kill-switch: OPENCLAUDE_PROVIDER_FAILOVER=0 disables entirely.
-  if (env.OPENCLAUDE_PROVIDER_FAILOVER === '0') return { failover: false }
+  // Kill-switch: LIMITLESS_PROVIDER_FAILOVER=0 disables entirely (legacy
+  // OPENCLAUDE_PROVIDER_FAILOVER still honored as fallback).
+  if (
+    (env.LIMITLESS_PROVIDER_FAILOVER ?? env.OPENCLAUDE_PROVIDER_FAILOVER) === '0'
+  )
+    return { failover: false }
 
   // Only fire on long-running workloads — direct/bounded callers should see the
   // error immediately rather than silently switching providers.
@@ -207,5 +211,5 @@ export function getFailoverLogPath(
 export function isProviderFailoverEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.OPENCLAUDE_PROVIDER_FAILOVER !== '0'
+  return (env.LIMITLESS_PROVIDER_FAILOVER ?? env.OPENCLAUDE_PROVIDER_FAILOVER) !== '0'
 }

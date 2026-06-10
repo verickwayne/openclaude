@@ -156,7 +156,7 @@ function readBashCommand(
  * path ENDS WITH `/<deny-prefix>`. The suffix form avoids needing to
  * know OpenClaude's install root at runtime.
  *
- * Bypass: only via OPENCLAUDE_TAMPER_GUARD=off set at process launch —
+ * Bypass: only via LIMITLESS_TAMPER_GUARD=off set at process launch —
  * caller passes the result of readTamperGuardEnabled() into `enabled`.
  * In-loop tool calls cannot toggle this because the env read happens
  * once at queryLoop entry, not per-tool.
@@ -223,7 +223,7 @@ function formatTamperDenyReason(args: {
   return [
     `Tool '${args.toolName}' attempted to modify '${args.target}'.`,
     `That path is loop-discipline enforcement code (matched suffix '${args.prefix}') and cannot be edited from inside the loop.`,
-    `If you need to change this file, exit the loop and edit it directly. To bypass for one process, set OPENCLAUDE_TAMPER_GUARD=off in the parent shell before launching — it cannot be toggled mid-loop.`,
+    `If you need to change this file, exit the loop and edit it directly. To bypass for one process, set LIMITLESS_TAMPER_GUARD=off in the parent shell before launching — it cannot be toggled mid-loop.`,
   ].join(' ')
 }
 

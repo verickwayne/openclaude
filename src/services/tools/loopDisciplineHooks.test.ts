@@ -190,7 +190,7 @@ describe('readTamperGuardEnabled', () => {
   it('returns false at level 0 regardless of env (legacy preservation)', () => {
     expect(readTamperGuardEnabled(0, {})).toBe(false)
     expect(
-      readTamperGuardEnabled(0, { OPENCLAUDE_TAMPER_GUARD: 'on' }),
+      readTamperGuardEnabled(0, { LIMITLESS_TAMPER_GUARD: 'on' }),
     ).toBe(false)
   })
 
@@ -201,16 +201,16 @@ describe('readTamperGuardEnabled', () => {
 
   it('returns false when explicitly disabled at launch', () => {
     expect(
-      readTamperGuardEnabled(2, { OPENCLAUDE_TAMPER_GUARD: 'off' }),
+      readTamperGuardEnabled(2, { LIMITLESS_TAMPER_GUARD: 'off' }),
     ).toBe(false)
   })
 
   it('treats any other value as on (fail safe to enforcing)', () => {
     expect(
-      readTamperGuardEnabled(2, { OPENCLAUDE_TAMPER_GUARD: 'yes' }),
+      readTamperGuardEnabled(2, { LIMITLESS_TAMPER_GUARD: 'yes' }),
     ).toBe(true)
     expect(
-      readTamperGuardEnabled(2, { OPENCLAUDE_TAMPER_GUARD: '0' }),
+      readTamperGuardEnabled(2, { LIMITLESS_TAMPER_GUARD: '0' }),
     ).toBe(true)
   })
 })
@@ -260,7 +260,7 @@ describe('evaluateSelfTamperGuard — protected paths', () => {
     if (!out.ok) {
       expect(out.gate).toBe('self-tamper')
       expect(out.reason).toContain('src/query.ts')
-      expect(out.reason).toContain('OPENCLAUDE_TAMPER_GUARD=off')
+      expect(out.reason).toContain('LIMITLESS_TAMPER_GUARD=off')
     }
   })
 

@@ -69,7 +69,7 @@ import {
   getSonnet1mExpTreatmentEnabled,
 } from '../../utils/context.js'
 import { resolveAppliedEffort } from '../../utils/effort.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { isEnvTruthy, readBrandedEnv } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
 import { computeFingerprintFromMessages } from '../../utils/fingerprint.js'
 import { captureAPIRequest, logError } from '../../utils/log.js'
@@ -348,7 +348,7 @@ export function resolveMainLoopOverride(
 ): ResolvedProvider | null {
   // Kill switch (review #8): when disabled, never route per-model — preserve
   // legacy single-provider behavior entirely.
-  if (process.env.OPENCLAUDE_MULTI_PROVIDER === '0') return null
+  if (readBrandedEnv('MULTI_PROVIDER') === '0') return null
   const rp = resolveProviderForModel(model, registryInput)
   if (!rp) return null
   if (rp.profileId === 'first-party') {

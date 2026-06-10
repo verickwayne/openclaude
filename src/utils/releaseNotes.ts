@@ -11,7 +11,7 @@ import { isEssentialTrafficOnly } from './privacyLevel.js'
 import { gt } from './semver.js'
 import {
   normalizePublicVersion,
-  OPENCLAUDE_RELEASES_URL,
+  LIMITLESS_RELEASES_URL,
   publicBuildVersion,
 } from './version.js'
 
@@ -41,7 +41,7 @@ type GitHubRelease = {
  * 2. We fetch GitHub release notes in the background and store them in config
  * 3. Next startup, the cached release notes are available immediately
  */
-export const RELEASES_URL = OPENCLAUDE_RELEASES_URL
+export const RELEASES_URL = LIMITLESS_RELEASES_URL
 
 /**
  * Get the path for the cached changelog file.

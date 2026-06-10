@@ -17,6 +17,7 @@ import type { ToolUseContext } from '../../Tool.js'
 import type { InProcessTeammateTaskState } from '../../tasks/InProcessTeammateTask/types.js'
 import { formatAgentId } from '../../utils/agentId.js'
 import { quote } from '../../utils/bash/shellQuote.js'
+import { readBrandedEnv } from '../../utils/envUtils.js'
 import { isInBundledMode } from '../../utils/bundledMode.js'
 import { getGlobalConfig } from '../../utils/config.js'
 import { getProviderProfiles } from '../../utils/providerProfiles.js'
@@ -122,7 +123,7 @@ export function resolveTeammateModel(
 export function resolveTeammateProviderOverride(
   model: string | undefined,
 ): ResolvedProvider | undefined {
-  if (!model || process.env.OPENCLAUDE_MULTI_PROVIDER === '0') return undefined
+  if (!model || readBrandedEnv('MULTI_PROVIDER') === '0') return undefined
   const rp = resolveProviderForModel(
     model,
     buildLiveRegistryInput({

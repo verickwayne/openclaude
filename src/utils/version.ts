@@ -3,7 +3,7 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { coerce } from 'semver'
 
-export const OPENCLAUDE_RELEASES_URL =
+export const LIMITLESS_RELEASES_URL =
   'https://github.com/Gitlawb/openclaude/releases'
 
 export function normalizePublicVersion(version: string): string {
@@ -52,7 +52,7 @@ export const publicBuildVersion = normalizePublicVersion(
 )
 
 export function getReleaseTagUrl(version: string = publicBuildVersion): string {
-  return `${OPENCLAUDE_RELEASES_URL}/tag/v${normalizePublicVersion(version)}`
+  return `${LIMITLESS_RELEASES_URL}/tag/v${normalizePublicVersion(version)}`
 }
 
 export function getPublicBuildVersion(): string {

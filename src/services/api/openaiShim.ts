@@ -31,7 +31,11 @@ import {
   refreshCodexAccessTokenIfNeeded,
 } from '../../utils/codexCredentials.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { isBareMode, isEnvTruthy } from '../../utils/envUtils.js'
+import {
+  isBareMode,
+  isEnvTruthy,
+  readBrandedEnv,
+} from '../../utils/envUtils.js'
 import { resolveGeminiCredential } from '../../utils/geminiAuth.js'
 import { hydrateGeminiAccessTokenFromSecureStorage } from '../../utils/geminiCredentials.js'
 import { hydrateGithubModelsTokenFromSecureStorage } from '../../utils/githubModelsCredentials.js'
@@ -924,7 +928,7 @@ function convertTools(
   const isGemini = isGeminiMode()
   const strict =
     !isGemini &&
-    !isEnvTruthy(process.env.OPENCLAUDE_DISABLE_STRICT_TOOLS) &&
+    !isEnvTruthy(readBrandedEnv('DISABLE_STRICT_TOOLS')) &&
     !options.skipStrict
 
   return tools

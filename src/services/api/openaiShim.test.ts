@@ -35,7 +35,7 @@ const originalEnv = {
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
   MIMO_API_KEY: process.env.MIMO_API_KEY,
-  OPENCLAUDE_DISABLE_STRICT_TOOLS: process.env.OPENCLAUDE_DISABLE_STRICT_TOOLS,
+  LIMITLESS_DISABLE_STRICT_TOOLS: process.env.LIMITLESS_DISABLE_STRICT_TOOLS,
 }
 
 const originalFetch = globalThis.fetch
@@ -118,7 +118,7 @@ beforeEach(async () => {
   delete process.env.OPENROUTER_API_KEY
   delete process.env.DEEPSEEK_API_KEY
   delete process.env.MIMO_API_KEY
-  delete process.env.OPENCLAUDE_DISABLE_STRICT_TOOLS
+  delete process.env.LIMITLESS_DISABLE_STRICT_TOOLS
 })
 
 afterEach(() => {
@@ -153,8 +153,8 @@ afterEach(() => {
     restoreEnv('DEEPSEEK_API_KEY', originalEnv.DEEPSEEK_API_KEY)
     restoreEnv('MIMO_API_KEY', originalEnv.MIMO_API_KEY)
     restoreEnv(
-      'OPENCLAUDE_DISABLE_STRICT_TOOLS',
-      originalEnv.OPENCLAUDE_DISABLE_STRICT_TOOLS,
+      'LIMITLESS_DISABLE_STRICT_TOOLS',
+      originalEnv.LIMITLESS_DISABLE_STRICT_TOOLS,
     )
     globalThis.fetch = originalFetch
     _clearRegistryForTesting()
@@ -3850,7 +3850,7 @@ test('optional tool properties are not added to required[] — fixes Groq/Azure 
 })
 
 test('OpenAI MCP tool parameters are closed even when strict tools are disabled', async () => {
-  process.env.OPENCLAUDE_DISABLE_STRICT_TOOLS = '1'
+  process.env.LIMITLESS_DISABLE_STRICT_TOOLS = '1'
   let requestBody: Record<string, unknown> | undefined
 
   globalThis.fetch = (async (_input, init) => {

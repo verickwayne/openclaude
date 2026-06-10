@@ -17,16 +17,16 @@ describe('isMnemoAutoRecallEnabled', () => {
 
   it('returns true when env explicitly enables', () => {
     expect(
-      isMnemoAutoRecallEnabled({ OPENCLAUDE_MNEMO_AUTO_RECALL: '1' }),
+      isMnemoAutoRecallEnabled({ LIMITLESS_MNEMO_AUTO_RECALL: '1' }),
     ).toBe(true)
   })
 
   it('only "1" enables (other truthy values are ignored)', () => {
     expect(
-      isMnemoAutoRecallEnabled({ OPENCLAUDE_MNEMO_AUTO_RECALL: 'true' }),
+      isMnemoAutoRecallEnabled({ LIMITLESS_MNEMO_AUTO_RECALL: 'true' }),
     ).toBe(false)
     expect(
-      isMnemoAutoRecallEnabled({ OPENCLAUDE_MNEMO_AUTO_RECALL: 'yes' }),
+      isMnemoAutoRecallEnabled({ LIMITLESS_MNEMO_AUTO_RECALL: 'yes' }),
     ).toBe(false)
   })
 })
@@ -71,7 +71,7 @@ describe('performAutoRecall', () => {
       firstUserPrompt: '   ',
       recall: stubRecall,
       now: 0,
-      env: { OPENCLAUDE_MNEMO_AUTO_RECALL: '1' },
+      env: { LIMITLESS_MNEMO_AUTO_RECALL: '1' },
     })
     expect(ctx).toBeNull()
   })
@@ -81,7 +81,7 @@ describe('performAutoRecall', () => {
       firstUserPrompt: 'something',
       recall: async () => [],
       now: 0,
-      env: { OPENCLAUDE_MNEMO_AUTO_RECALL: '1' },
+      env: { LIMITLESS_MNEMO_AUTO_RECALL: '1' },
     })
     expect(ctx).toBeNull()
   })
@@ -91,7 +91,7 @@ describe('performAutoRecall', () => {
       firstUserPrompt: 'refactor auth',
       recall: stubRecall,
       now: 1700000000,
-      env: { OPENCLAUDE_MNEMO_AUTO_RECALL: '1' },
+      env: { LIMITLESS_MNEMO_AUTO_RECALL: '1' },
     })
     expect(ctx).not.toBeNull()
     if (ctx) {
@@ -119,7 +119,7 @@ describe('performAutoRecall', () => {
       },
       limit: 7,
       now: 0,
-      env: { OPENCLAUDE_MNEMO_AUTO_RECALL: '1' },
+      env: { LIMITLESS_MNEMO_AUTO_RECALL: '1' },
     })
     expect(capturedLimit).toBe(7)
   })
@@ -141,7 +141,7 @@ describe('performAutoRecall', () => {
         ]
       },
       now: 0,
-      env: { OPENCLAUDE_MNEMO_AUTO_RECALL: '1' },
+      env: { LIMITLESS_MNEMO_AUTO_RECALL: '1' },
     })
     expect(capturedLimit).toBe(DEFAULT_AUTO_RECALL_LIMIT)
   })
@@ -153,7 +153,7 @@ describe('performAutoRecall', () => {
         throw new Error('mcp connection refused')
       },
       now: 0,
-      env: { OPENCLAUDE_MNEMO_AUTO_RECALL: '1' },
+      env: { LIMITLESS_MNEMO_AUTO_RECALL: '1' },
     })
     expect(ctx).toBeNull()
   })

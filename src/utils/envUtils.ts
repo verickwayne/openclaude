@@ -218,6 +218,27 @@ export function hasNodeOption(flag: string): boolean {
   return nodeOptions.split(/\s+/).includes(flag)
 }
 
+/**
+ * Reads a product environment variable under the LIMITLESS_ brand, falling
+ * back to the legacy OPENCLAUDE_ name so existing users' env settings keep
+ * working. LIMITLESS_ wins when both are defined.
+ *
+ * `suffix` is the bare variable name without the brand prefix, e.g.
+ * readBrandedEnv('MULTI_PROVIDER') reads LIMITLESS_MULTI_PROVIDER ??
+ * OPENCLAUDE_MULTI_PROVIDER. Pass a custom `env` to read from a specific
+ * environment object (e.g. a child-process env or test fixture).
+ *
+ * Only for the product's OWN env vars. Do NOT use for host-environment vars
+ * (CLAUDE_CODE_*, CLAUDE_*, ANTHROPIC_*) — those are read verbatim from the
+ * runtime environment and must not be rebranded.
+ */
+export function readBrandedEnv(
+  suffix: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  return env[`LIMITLESS_${suffix}`] ?? env[`OPENCLAUDE_${suffix}`]
+}
+
 export function isEnvTruthy(envVar: string | boolean | undefined): boolean {
   if (!envVar) return false
   if (typeof envVar === 'boolean') return envVar

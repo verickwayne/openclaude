@@ -49,7 +49,7 @@ describe('GetLoopDisciplineStatusTool — unavailable cases', () => {
       undefined,
     )
     expect(out.data.available).toBe(false)
-    expect(out.data.note).toContain('OPENCLAUDE_IN_LOOP_DISCIPLINE')
+    expect(out.data.note).toContain('LIMITLESS_IN_LOOP_DISCIPLINE')
   })
 
   it('reports unavailable when accessor returns undefined', async () => {

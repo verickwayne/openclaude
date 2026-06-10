@@ -218,8 +218,10 @@ export OPENAI_MODEL=gpt-4o
 | `CHATGPT_ACCOUNT_ID` / `CODEX_ACCOUNT_ID` | Codex only | Required for manual Codex env setup when the account id is not coming from `auth.json` or stored OAuth credentials |
 | `CODEX_AUTH_JSON_PATH` | Codex only | Path to a Codex CLI `auth.json` file |
 | `CODEX_HOME` | Codex only | Alternative Codex home directory |
-| `OPENCLAUDE_DISABLE_CO_AUTHORED_BY` | No | Suppress the default `Co-Authored-By` trailer in generated git commits |
-| `OPENCLAUDE_LOG_TOKEN_USAGE` | No | When truthy (e.g. `verbose`), emits one JSON line on stderr per API request with input/output/cache tokens and the resolved provider. **User-facing debug output** — complements the REPL display controlled by `/config showCacheStats`. Distinct from `CLAUDE_CODE_ENABLE_TOKEN_USAGE_ATTACHMENT`, which is **model-facing** (injects context usage info into the prompt itself). Both can run together. |
+| `LIMITLESS_DISABLE_CO_AUTHORED_BY` | No | Suppress the default `Co-Authored-By` trailer in generated git commits. Legacy `OPENCLAUDE_DISABLE_CO_AUTHORED_BY` still works as a fallback. |
+| `LIMITLESS_LOG_TOKEN_USAGE` | No | When truthy (e.g. `verbose`), emits one JSON line on stderr per API request with input/output/cache tokens and the resolved provider. **User-facing debug output** — complements the REPL display controlled by `/config showCacheStats`. Distinct from `CLAUDE_CODE_ENABLE_TOKEN_USAGE_ATTACHMENT`, which is **model-facing** (injects context usage info into the prompt itself). Both can run together. Legacy `OPENCLAUDE_LOG_TOKEN_USAGE` still works as a fallback. |
+
+> OpenClaude's own env vars use the `LIMITLESS_` prefix. The legacy `OPENCLAUDE_` prefix is still honored as a fallback for every `LIMITLESS_*` var — `LIMITLESS_` wins when both are set. Host-environment vars (`CLAUDE_CODE_*`, `CLAUDE_*`, `ANTHROPIC_*`) are unchanged.
 
 Model env vars are provider-scoped: Anthropic-native sessions read
 `ANTHROPIC_MODEL`, OpenAI-compatible sessions read `OPENAI_MODEL`, Gemini reads

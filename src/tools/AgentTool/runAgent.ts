@@ -41,6 +41,7 @@ import type {
   UserMessage,
 } from '../../types/message.js'
 import { createAttachmentMessage } from '../../utils/attachments.js'
+import { readBrandedEnv } from '../../utils/envUtils.js'
 import { AbortError } from '../../utils/errors.js'
 import { getDisplayPath } from '../../utils/file.js'
 import {
@@ -94,7 +95,7 @@ const TIER_ALIASES = new Set(['sonnet', 'opus', 'haiku', 'inherit'])
  * Resolve a registry-backed provider override for a Task tool `model` value.
  *
  * Returns null when:
- * - the kill switch is active (OPENCLAUDE_MULTI_PROVIDER=0)
+ * - the kill switch is active (LIMITLESS_MULTI_PROVIDER=0)
  * - `model` is a tier alias ('sonnet', 'opus', 'haiku', 'inherit') — those
  *   are handled by the existing getAgentModel path
  * - `model` resolves to a first-party Anthropic model
@@ -104,7 +105,7 @@ export function resolveDispatchOverride(
   model: string | undefined,
   registryInput: RegistryInput,
 ): ResolvedProvider | null {
-  if (process.env.OPENCLAUDE_MULTI_PROVIDER === '0') return null // kill switch (constraint #6)
+  if (readBrandedEnv('MULTI_PROVIDER') === '0') return null // kill switch (constraint #6)
   if (!model || TIER_ALIASES.has(model)) return null
   const rp = resolveProviderForModel(model, registryInput)
   if (!rp || rp.profileId === 'first-party') return null

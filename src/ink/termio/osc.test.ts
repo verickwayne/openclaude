@@ -97,7 +97,7 @@ describe('Windows clipboard fallback', () => {
     expect(windowsCall?.[2]).not.toMatchObject({ input: 'Привет мир' })
     expect(windowsCall?.[2]).not.toMatchObject({
       env: expect.objectContaining({
-        OPENCLAUDE_CLIPBOARD_TEXT_B64: expect.any(String),
+        LIMITLESS_CLIPBOARD_TEXT_B64: expect.any(String),
       }),
     })
     expect(windowsCall?.[1]).toContain(

@@ -154,8 +154,8 @@ describe('shouldFailover', () => {
     expect(decision.failover).toBe(false)
   })
 
-  test('kill-switch: OPENCLAUDE_PROVIDER_FAILOVER=0 disables', () => {
-    const env = { OPENCLAUDE_PROVIDER_FAILOVER: '0' } as NodeJS.ProcessEnv
+  test('kill-switch: LIMITLESS_PROVIDER_FAILOVER=0 disables', () => {
+    const env = { LIMITLESS_PROVIDER_FAILOVER: '0' } as NodeJS.ProcessEnv
     const decision = shouldFailover(
       makeApiError(401),
       'long-running',
@@ -176,8 +176,8 @@ describe('shouldFailover', () => {
     expect(decision.failover).toBe(true)
   })
 
-  test('kill-switch: OPENCLAUDE_PROVIDER_FAILOVER=1 allows failover', () => {
-    const env = { OPENCLAUDE_PROVIDER_FAILOVER: '1' } as NodeJS.ProcessEnv
+  test('kill-switch: LIMITLESS_PROVIDER_FAILOVER=1 allows failover', () => {
+    const env = { LIMITLESS_PROVIDER_FAILOVER: '1' } as NodeJS.ProcessEnv
     const decision = shouldFailover(
       makeApiError(401),
       'long-running',
@@ -224,12 +224,12 @@ describe('isProviderFailoverEnabled', () => {
     expect(isProviderFailoverEnabled({})).toBe(true)
   })
 
-  test('false when OPENCLAUDE_PROVIDER_FAILOVER=0', () => {
-    expect(isProviderFailoverEnabled({ OPENCLAUDE_PROVIDER_FAILOVER: '0' })).toBe(false)
+  test('false when LIMITLESS_PROVIDER_FAILOVER=0', () => {
+    expect(isProviderFailoverEnabled({ LIMITLESS_PROVIDER_FAILOVER: '0' })).toBe(false)
   })
 
-  test('true when OPENCLAUDE_PROVIDER_FAILOVER=1', () => {
-    expect(isProviderFailoverEnabled({ OPENCLAUDE_PROVIDER_FAILOVER: '1' })).toBe(true)
+  test('true when LIMITLESS_PROVIDER_FAILOVER=1', () => {
+    expect(isProviderFailoverEnabled({ LIMITLESS_PROVIDER_FAILOVER: '1' })).toBe(true)
   })
 })
 

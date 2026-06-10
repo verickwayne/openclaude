@@ -9,6 +9,7 @@ import {
   resetSessionCacheStats,
 } from './services/api/cacheStatsTracker.js'
 import { getAPIProvider, isGithubNativeAnthropicMode } from './utils/model/providers.js'
+import { readBrandedEnv } from './utils/envUtils.js'
 import {
   addToTotalCostState,
   addToTotalLinesChanged,
@@ -271,9 +272,9 @@ function round(number: number, precision: number): number {
 // Env-gated verbose token usage log. Treated as a boolean regardless of
 // value specifics — any truthy-ish string switches it on. `verbose` is the
 // documented keyword but we accept `1`/`true` for ergonomic parity with
-// other OPENCLAUDE_* flags.
+// other LIMITLESS_* flags.
 function shouldLogTokenUsageVerbose(): boolean {
-  const v = (process.env.OPENCLAUDE_LOG_TOKEN_USAGE ?? '').trim().toLowerCase()
+  const v = (readBrandedEnv('LOG_TOKEN_USAGE') ?? '').trim().toLowerCase()
   if (!v) return false
   return v !== '0' && v !== 'false' && v !== 'off'
 }

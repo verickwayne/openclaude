@@ -247,7 +247,7 @@ export type ResolveForClassOpts = {
    * IMPORTANT: within-group only — a preferred-billing candidate never
    * jumps across groups; a proven metered provider still beats an unproven
    * subscription provider.
-   * Ignored when OPENCLAUDE_BILLING_AWARE=0 (kill-switch).
+   * Ignored when LIMITLESS_BILLING_AWARE=0 (kill-switch).
    */
   preferBilling?: BillingModel
   /**
@@ -421,11 +421,15 @@ export function resolveProviderForClass(
   }))
 
   // ── Billing-aware within-group re-sort ──────────────────────────────────────
-  // When preferBilling is set and OPENCLAUDE_BILLING_AWARE !== '0', move
+  // When preferBilling is set and LIMITLESS_BILLING_AWARE !== '0' (legacy
+  // LIMITLESS_BILLING_AWARE still honored), move
   // candidates whose billingModel matches preferBilling to the front of their
   // ranking group (proven/explorers/unknown). Within-group only: a preferred-
   // billing candidate never crosses a group boundary.
-  if (preferBilling && env.OPENCLAUDE_BILLING_AWARE !== '0') {
+  if (
+    preferBilling &&
+    (env.LIMITLESS_BILLING_AWARE ?? env.OPENCLAUDE_BILLING_AWARE) !== '0'
+  ) {
     // Build the group lookup once (O(n)) so the comparator is O(1) per pair,
     // not O(n) per pair. Keyed on profileId so two profiles exposing the same
     // model string are distinguished correctly.
