@@ -77,54 +77,67 @@ afterEach(() => {
   clearSystemPromptSections()
 })
 
-test('CLI identity prefixes describe Limitless instead of Claude Code', () => {
-  expect(getCLISyspromptPrefix()).toContain('Limitless')
+test('CLI identity prefixes use master/servant framing, not Claude Code branding', () => {
+  // The identity layer deliberately frames the operator as "master" and omits
+  // any product/assistant name. We assert the framing is present and that no
+  // prior-brand strings leak in — NOT that the product name appears.
+  expect(getCLISyspromptPrefix()).toContain('master')
   expect(getCLISyspromptPrefix()).not.toContain('Claude Code')
   expect(getCLISyspromptPrefix()).not.toContain("Anthropic's official CLI for Claude")
+  expect(getCLISyspromptPrefix()).not.toContain('OpenClaude')
 
   for (const prefix of CLI_SYSPROMPT_PREFIXES) {
-    expect(prefix).toContain('Limitless')
+    expect(prefix).toContain('master')
     expect(prefix).not.toContain('Claude Code')
     expect(prefix).not.toContain("Anthropic's official CLI for Claude")
+    expect(prefix).not.toContain('OpenClaude')
   }
 })
 
-test('simple mode identity describes Limitless instead of Claude Code', async () => {
+test('simple mode identity uses master framing, not Claude Code', async () => {
   process.env.CLAUDE_CODE_SIMPLE = '1'
 
   const prompt = await getSystemPrompt([], 'gpt-4o')
 
-  expect(prompt[0]).toContain('Limitless')
+  expect(prompt[0]).toContain('master')
   expect(prompt[0]).not.toContain('Claude Code')
   expect(prompt[0]).not.toContain("Anthropic's official CLI for Claude")
+  expect(prompt[0]).not.toContain('OpenClaude')
 })
 
 test('system prompt model identity updates when model changes mid-session', async () => {
   delete process.env.CLAUDE_CODE_SIMPLE
   clearSystemPromptSections()
 
-  const firstPrompt = await getSystemPrompt([], 'old-test-model')
-  const secondPrompt = await getSystemPrompt([], 'new-test-model')
+  // Use two model IDs that resolve to distinct per-craft identities (Hermes vs
+  // Baron) so we can prove the model-identity section regenerates on change.
+  const firstPrompt = await getSystemPrompt([], 'hermes-4.3')
+  const secondPrompt = await getSystemPrompt([], 'baron-latest')
 
   const firstText = firstPrompt.join('\n')
   const secondText = secondPrompt.join('\n')
 
-  expect(firstText).toContain('You are powered by the model old-test-model.')
-  expect(secondText).toContain('You are powered by the model new-test-model.')
-  expect(secondText).not.toContain('You are powered by the model old-test-model.')
+  expect(firstText).toContain('You are Hermes')
+  expect(secondText).toContain('You are Baron')
+  expect(secondText).not.toContain('You are Hermes')
 })
 
-test('built-in agent prompts describe Limitless instead of Claude Code', () => {
-  expect(DEFAULT_AGENT_PROMPT).toContain('Limitless')
+test('built-in agent prompts use servant framing and name Limitless only where they describe the tool', () => {
+  // DEFAULT_AGENT_PROMPT and the general-purpose agent are deliberately
+  // nameless servant framing — they must not regress to Claude Code/OpenClaude,
+  // but they do NOT name the product. Agents that describe the tool to the user
+  // (explore/plan/statusline/guide) DO say Limitless.
+  expect(DEFAULT_AGENT_PROMPT).toContain('servant')
   expect(DEFAULT_AGENT_PROMPT).not.toContain('Claude Code')
   expect(DEFAULT_AGENT_PROMPT).not.toContain("Anthropic's official CLI for Claude")
+  expect(DEFAULT_AGENT_PROMPT).not.toContain('OpenClaude')
 
   const generalPrompt = GENERAL_PURPOSE_AGENT.getSystemPrompt({
     toolUseContext: { options: {} as never },
   })
-  expect(generalPrompt).toContain('Limitless')
   expect(generalPrompt).not.toContain('Claude Code')
   expect(generalPrompt).not.toContain("Anthropic's official CLI for Claude")
+  expect(generalPrompt).not.toContain('OpenClaude')
 
   const explorePrompt = EXPLORE_AGENT.getSystemPrompt({
     toolUseContext: { options: {} as never },
