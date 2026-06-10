@@ -189,6 +189,26 @@ test('scheduler step 8 reads route-stats and uses success-rate model selection w
   expect(text).toContain('n < 3')
 })
 
+test('scheduler step 8 instructs billing-aware candidate preference for long-running work', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Step 8 must mention subscription-billed candidates for long-running/overnight dispatches.
+  expect(text).toContain('subscription')
+
+  // Must name the concrete subscription-billed providers so the scheduler can act on it.
+  expect(text).toContain('Claude Max proxy')
+  expect(text).toContain('Codex OAuth')
+
+  // Must mention the perishable-quota rationale.
+  expect(text).toContain('perishable')
+
+  // Must contrast long-running (subscription) with interactive/short (metered).
+  expect(text).toContain('metered')
+})
+
 test('bootstrap creates ledger dir and ledger is NOT gitignored by default', () => {
   const bootstrap = OPENRALPH_FILES['bin/openralph-bootstrap.sh']
 

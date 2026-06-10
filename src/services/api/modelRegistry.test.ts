@@ -4,6 +4,7 @@ import {
   resolveProviderForModel,
   buildLiveRegistryInput,
   resolveProviderForClass,
+  billingModel,
 } from './modelRegistry.js'
 import type { LedgerEntry } from '../../utils/model/outcomeLedger.js'
 import { MIN_RELIABLE_N } from '../../utils/model/outcomeLedger.js'
@@ -394,5 +395,161 @@ describe('resolveProviderForClass — model classes map to expected vocab', () =
       profiles: [],
     })
     expect(result.some(c => c.model === 'claude-opus-4-8')).toBe(true)
+  })
+})
+
+// ─── billingModel mapping ─────────────────────────────────────────────────────
+
+describe('billingModel — kind→billing mapping', () => {
+  test('anthropic-native → metered', () => {
+    expect(billingModel({ kind: 'anthropic-native' })).toBe('metered')
+  })
+
+  test('anthropic-proxy → subscription (Claude Max OAuth proxy)', () => {
+    expect(billingModel({ kind: 'anthropic-proxy', baseURL: 'http://localhost:5001/v1' })).toBe('subscription')
+  })
+
+  test('openai-compatible + Codex baseURL → subscription', () => {
+    expect(billingModel({ kind: 'openai-compatible', baseURL: 'https://chatgpt.com/backend-api/codex' })).toBe('subscription')
+  })
+
+  test('openai-compatible + localhost baseURL → free', () => {
+    expect(billingModel({ kind: 'openai-compatible', baseURL: 'http://localhost:11434/v1' })).toBe('free')
+  })
+
+  test('openai-compatible + 127.0.0.1 baseURL → free', () => {
+    expect(billingModel({ kind: 'openai-compatible', baseURL: 'http://127.0.0.1:1234/v1' })).toBe('free')
+  })
+
+  test('openai-compatible + remote URL → metered', () => {
+    expect(billingModel({ kind: 'openai-compatible', baseURL: 'https://openrouter.ai/api/v1' })).toBe('metered')
+  })
+
+  test('gemini → metered', () => {
+    expect(billingModel({ kind: 'gemini' })).toBe('metered')
+  })
+
+  test('bedrock → metered', () => {
+    expect(billingModel({ kind: 'bedrock' })).toBe('metered')
+  })
+
+  test('vertex → metered', () => {
+    expect(billingModel({ kind: 'vertex' })).toBe('metered')
+  })
+})
+
+// ─── billing-aware candidate preference ──────────────────────────────────────
+
+describe('resolveProviderForClass — billing-aware preference', () => {
+  // Registry with:
+  //   haiku          → first-party anthropic-native (metered)
+  //   gpt-5.5-mini   → openai-compatible remote (metered)
+  //   max-proxy-fast → anthropic-proxy localhost (subscription)
+  const billingInput = {
+    firstPartyModels: ['haiku'],
+    profiles: [
+      {
+        id: 'openai-p',
+        name: 'OpenAI',
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.5-mini',
+      },
+      {
+        id: 'max-proxy',
+        name: 'Max Proxy',
+        provider: 'anthropic',
+        // lowercase 'localhost' triggers anthropic-proxy kind in resolvedProvider.ts
+        baseUrl: 'http://localhost:9090/v1',
+        model: 'claude-haiku-4-5',
+      },
+    ] as any[],
+  }
+
+  test('RankedCandidate carries billingModel field', () => {
+    const results = resolveProviderForClass('fast', {
+      firstPartyModels: ['haiku'],
+      profiles: [],
+    })
+    expect(results[0]?.billingModel).toBe('metered') // anthropic-native
+  })
+
+  test('preferBilling:subscription moves subscription candidate to front within its group', () => {
+    // Without preferBilling: static order is haiku first (index 0 in STATIC_CLASS_CANDIDATES.fast)
+    const withoutPref = resolveProviderForClass('fast', billingInput)
+    // haiku is first in static list — should appear first without preference
+    expect(withoutPref[0]?.model).toBe('haiku')
+
+    // With preferBilling:subscription — claude-haiku-4-5 (subscription) should sort before haiku
+    const withPref = resolveProviderForClass('fast', billingInput, { preferBilling: 'subscription' })
+    const subscriptionFirst = withPref.find(c => c.billingModel === 'subscription')
+    const firstNonSub = withPref.find(c => c.billingModel !== 'subscription')
+    // Subscription candidate must appear before the first non-subscription in the same group
+    expect(withPref.indexOf(subscriptionFirst!)).toBeLessThan(withPref.indexOf(firstNonSub!))
+  })
+
+  test('proven metered candidate beats unproven subscription across groups', () => {
+    // haiku gets MIN_RELIABLE_N proven ledger entries (group 0), making it reliable
+    // claude-haiku-4-5 (subscription) has no ledger data (group 2)
+    // preferBilling:subscription must NOT promote group-2 subscription over group-0 metered
+    const entries: LedgerEntry[] = Array.from({ length: MIN_RELIABLE_N }, (_, i) => ({
+      ts: `2026-06-10T01:${String(i).padStart(2, '0')}:00Z`,
+      session_id: `sess-${i}`,
+      task_slug: 'test',
+      persona: 'openralph-builder',
+      workload: 'long-running',
+      provider_model_used: 'haiku',
+      status: 'complete' as const,
+      tests_passed: true,
+      new_gaps: 0,
+      duration_s: 60,
+    }))
+
+    const result = resolveProviderForClass('fast', billingInput, {
+      preferBilling: 'subscription',
+      ledgerEntries: entries,
+      workload: 'long-running',
+    })
+
+    const haikuIdx = result.findIndex(c => c.model === 'haiku')
+    const subIdx = result.findIndex(c => c.billingModel === 'subscription')
+    // haiku (group 0, proven) must still sort before claude-haiku-4-5 (group 2, unproven)
+    expect(haikuIdx).toBeLessThan(subIdx)
+  })
+
+  test('kill-switch OPENCLAUDE_BILLING_AWARE=0 disables preference', () => {
+    const withKillSwitch = resolveProviderForClass(
+      'fast',
+      billingInput,
+      { preferBilling: 'subscription' },
+      { OPENCLAUDE_BILLING_AWARE: '0' },
+    )
+    const withoutKillSwitch = resolveProviderForClass(
+      'fast',
+      billingInput,
+      { preferBilling: 'subscription' },
+    )
+
+    // With kill-switch: order should be static (haiku first, as in default)
+    // Without kill-switch: subscription should be preferred
+    const killSwitchFirst = withKillSwitch[0]?.model
+    const preferenceFirst = withoutKillSwitch[0]?.model
+
+    // kill-switch active → preference ignored → static order (haiku first)
+    expect(killSwitchFirst).toBe('haiku')
+    // preference active → subscription candidate moves up
+    expect(withoutKillSwitch.find(c => c.billingModel === 'subscription')).toBeDefined()
+    const subIdx = withoutKillSwitch.findIndex(c => c.billingModel === 'subscription')
+    const nonSubIdx = withoutKillSwitch.findIndex(c => c.billingModel !== 'subscription')
+    expect(subIdx).toBeLessThan(nonSubIdx)
+  })
+
+  test('preferBilling absent → no billing re-sort (zero behavior change)', () => {
+    const noPref = resolveProviderForClass('fast', billingInput)
+    const explicitNoPref = resolveProviderForClass('fast', billingInput, {})
+    // Both should produce same order as static
+    expect(noPref.map(c => c.model)).toEqual(explicitNoPref.map(c => c.model))
+    // And haiku (static-order first) should still be first
+    expect(noPref[0]?.model).toBe('haiku')
   })
 })

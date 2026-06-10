@@ -10,11 +10,54 @@ import {
   firstPartyResolvedProvider,
   resolvedProviderFromProfile,
   type ResolvedProvider,
+  type ResolvedProviderKind,
 } from './resolvedProvider.js'
+import { isCodexBaseUrl } from './providerConfig.js'
 
 export type RegistryInput = {
   firstPartyModels: string[]
   profiles: ProviderProfile[]
+}
+
+// ─── Billing-model classification ────────────────────────────────────────────
+
+/**
+ * Billing model for a resolved provider candidate.
+ *
+ *   subscription — flat-rate OAuth quota that expires if unspent
+ *                  (Claude Max proxy via anthropic-proxy; Codex OAuth via
+ *                  openai-compatible with a Codex baseURL).
+ *   metered       — pay-per-token API key (anthropic-native, gemini, bedrock,
+ *                  vertex, generic openai-compatible).
+ *   free          — $0 / local execution (localhost/127.0.0.1 profiles).
+ */
+export type BillingModel = 'subscription' | 'metered' | 'free'
+
+/**
+ * Derive the billing model for a ResolvedProvider.
+ *
+ * Mapping table:
+ *   anthropic-proxy   → subscription  (localhost Anthropic = Claude Max OAuth proxy)
+ *   openai-compatible → subscription  if baseURL is a Codex endpoint
+ *                     → free          if baseURL is localhost/127.0.0.1
+ *                     → metered       otherwise
+ *   anthropic-native  → metered
+ *   gemini            → metered
+ *   bedrock           → metered
+ *   vertex            → metered
+ */
+export function billingModel(rp: { kind: ResolvedProviderKind; baseURL?: string }): BillingModel {
+  if (rp.kind === 'anthropic-proxy') return 'subscription'
+
+  if (rp.kind === 'openai-compatible') {
+    if (isCodexBaseUrl(rp.baseURL)) return 'subscription'
+    const lower = (rp.baseURL ?? '').toLowerCase()
+    if (lower.includes('localhost') || lower.includes('127.0.0.1')) return 'free'
+    return 'metered'
+  }
+
+  // anthropic-native, gemini, bedrock, vertex are all pay-per-token
+  return 'metered'
 }
 
 // ─── Model-class types ────────────────────────────────────────────────────────
@@ -55,6 +98,8 @@ export type RankedCandidate = ResolvedProvider & {
    * 0 means static-order fallback.
    */
   ledgerN: number
+  /** Billing model for this candidate (subscription | metered | free). */
+  billingModel: BillingModel
 }
 
 // ─── Static class→model map ───────────────────────────────────────────────────
@@ -193,6 +238,16 @@ export type ResolveForClassOpts = {
    * function stays pure and testable without filesystem access.
    */
   ledgerEntries?: LedgerEntry[]
+  /**
+   * Preferred billing model for this dispatch.
+   * When set, candidates whose billingModel matches are sorted to the front
+   * of their existing ranking group (proven/explorers/unknown).
+   * IMPORTANT: within-group only — a preferred-billing candidate never
+   * jumps across groups; a proven metered provider still beats an unproven
+   * subscription provider.
+   * Ignored when OPENCLAUDE_BILLING_AWARE=0 (kill-switch).
+   */
+  preferBilling?: BillingModel
 }
 
 /**
@@ -217,8 +272,9 @@ export function resolveProviderForClass(
   modelClass: ModelClass,
   input: RegistryInput,
   opts: ResolveForClassOpts = {},
+  env: NodeJS.ProcessEnv = process.env,
 ): RankedCandidate[] {
-  const { workload, personaHint, excludeProvider, excludeProviders, ledgerEntries } = opts
+  const { workload, personaHint, excludeProvider, excludeProviders, ledgerEntries, preferBilling } = opts
 
   // Union of single + multi exclusion forms.
   const excludedProfileIds = new Set<string>(excludeProviders ?? [])
@@ -312,10 +368,31 @@ export function resolveProviderForClass(
     return a.staticIdx - b.staticIdx
   })
 
-  return ranked.map(({ rp, successRate, n }) => ({
+  const candidates: RankedCandidate[] = ranked.map(({ rp, successRate, n }) => ({
     ...rp,
     modelClass,
     ledgerSuccessRate: successRate,
     ledgerN: n,
+    billingModel: billingModel(rp),
   }))
+
+  // ── Billing-aware within-group re-sort ──────────────────────────────────────
+  // When preferBilling is set and OPENCLAUDE_BILLING_AWARE !== '0', move
+  // candidates whose billingModel matches preferBilling to the front of their
+  // ranking group (proven/explorers/unknown). Within-group only: a preferred-
+  // billing candidate never crosses a group boundary.
+  if (preferBilling && env.OPENCLAUDE_BILLING_AWARE !== '0') {
+    candidates.sort((a, b) => {
+      // Primary key: group (already sorted correctly above — stable sort preserves it)
+      const aGroup = ranked.find(r => r.rp.model === a.model)?.group ?? 2
+      const bGroup = ranked.find(r => r.rp.model === b.model)?.group ?? 2
+      if (aGroup !== bGroup) return aGroup - bGroup
+      // Secondary key within group: preferred billing first
+      const aPref = a.billingModel === preferBilling ? 0 : 1
+      const bPref = b.billingModel === preferBilling ? 0 : 1
+      return aPref - bPref
+    })
+  }
+
+  return candidates
 }

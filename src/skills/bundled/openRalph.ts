@@ -604,7 +604,7 @@ Use Ralph's persona scheduler, plus Claude Code's newer \`/goal\` idea:
    - \`openralph-test-analyzer\` for failed test diagnosis
 6. Parse the returned YAML into \`$OPENRALPH_SESSION_DIR/persona-result.yml\`.
 7. Update \`progress.md\`, \`queue.md\`, and \`goal.json\` in that same session directory.
-8. Before each dispatch, run \`bash .openclaude/ralph/bin/openralph-route-stats.sh\` to read the routing outcome ledger. Pick the provider/model for this persona and workload by best recorded success rate (status=="complete" and tests_passed!=false counts as success). If any candidate model has n < 3 recorded outcomes for this persona × workload cell, prefer trying it once over exploiting the current best — exploration prevents day-one lock-in. Record the chosen model as \`provider_model_used\` in the persona-result YAML.
+8. Before each dispatch, run \`bash .openclaude/ralph/bin/openralph-route-stats.sh\` to read the routing outcome ledger. Pick the provider/model for this persona and workload by best recorded success rate (status=="complete" and tests_passed!=false counts as success). If any candidate model has n < 3 recorded outcomes for this persona × workload cell, prefer trying it once over exploiting the current best — exploration prevents day-one lock-in. Record the chosen model as \`provider_model_used\` in the persona-result YAML. For long-running or overnight tasks, prefer subscription-billed candidates (Claude Max proxy, Codex OAuth) over metered API candidates within the same success-rate tier, and prefer metered candidates for short interactive dispatches — subscription quota is perishable and expires unspent if idle.
 
 ### Adjudicated dispatch (optional mode — highest-value ledger entries)
 

@@ -1237,6 +1237,7 @@ async function* queryLoop(
             const candidates = resolveProviderForClass(modelClass, registryInput, {
               workload,
               excludeProviders: [...failedProviders],
+              preferBilling: 'subscription', // long-running: drain perishable quota first
             })
             const decision = shouldFailover(innerError.originalError, workload, candidates)
 

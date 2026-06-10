@@ -40,6 +40,7 @@ function makeCandidate(
     modelClass,
     ledgerSuccessRate: null,
     ledgerN: 0,
+    billingModel: 'metered' as const,
   }
 }
 
