@@ -157,10 +157,6 @@ export async function* handleStopHooks(
     }
   }
 
-  if (skipSubprocessChain) {
-    return { blockingErrors: [], preventContinuation: false }
-  }
-
   // chicago MCP: auto-unhide + lock release at turn end.
   // Main thread only — the CU lock is a process-wide module-level variable,
   // so a subagent's stopHooks releasing it leaves the main thread's cleanup
@@ -175,6 +171,10 @@ export async function* handleStopHooks(
     } catch {
       // Failures are silent — this is dogfooding cleanup, not critical path
     }
+  }
+
+  if (skipSubprocessChain) {
+    return { blockingErrors: [], preventContinuation: false }
   }
 
   try {
