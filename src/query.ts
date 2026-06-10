@@ -27,6 +27,7 @@ import {
   hadMutationsThisLoop,
   isDisciplineDebugEnabled,
   isDisciplineStatusAtExitEnabled,
+  isDirectFastPath,
   readDisciplineEventLogPath,
   readDisciplineLevel,
   readDisciplineProfile,
@@ -394,7 +395,7 @@ async function* queryLoop(
   // to "no auto-recall content this session," matching pre-feature
   // behavior.
   let mnemoAutoRecallContext: MnemoContext | null = null
-  if (isMnemoAutoRecallEnabled()) {
+  if (isMnemoAutoRecallEnabled() && !isDirectFastPath(state.loopDiscipline)) {
     if (firstUserPrompt.length > 0) {
       const recallFn = createMnemoRecallFn(
         state.toolUseContext.options.mcpClients ?? [],
@@ -1508,6 +1509,7 @@ async function* queryLoop(
         toolUseContext,
         querySource,
         stopHookActive,
+        isDirectFastPath(state.loopDiscipline),
       )
 
       if (stopHookResult.preventContinuation) {
@@ -1602,7 +1604,8 @@ async function* queryLoop(
       if (
         assistantMessages.length > 0 &&
         turnCount < (maxTurns ?? Infinity) &&
-        state.continuationNudgeCount < MAX_CONTINUATION_NUDGES
+        state.continuationNudgeCount < MAX_CONTINUATION_NUDGES &&
+        !isDirectFastPath(state.loopDiscipline)
       ) {
         const lastAssistant = assistantMessages.at(-1)
         if (lastAssistant?.type === 'assistant') {

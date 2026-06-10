@@ -4,6 +4,7 @@ import {
   createInitialLoopDisciplineState,
   DEFAULT_INITIAL_PHASE,
   getDisciplineEvents,
+  isDirectFastPath,
   MUTATING_BASH_PATTERN,
   MUTATING_TOOL_NAMES,
   PHASE_TOOL_ALLOWLIST,
@@ -1914,5 +1915,32 @@ describe('Phase G integration: apply* functions emit events', () => {
     })
     const resets = s.events.filter(e => e.kind === 'saturation-reset')
     expect(resets).toHaveLength(2)
+  })
+})
+
+describe('isDirectFastPath', () => {
+  it('returns true for direct workload with adaptive profile', () => {
+    const s = createInitialLoopDisciplineState(1, 'build', 'direct')
+    expect(isDirectFastPath(s, {})).toBe(true)
+  })
+
+  it('returns false for bounded workload with adaptive profile', () => {
+    const s = createInitialLoopDisciplineState(1, 'build', 'bounded')
+    expect(isDirectFastPath(s, {})).toBe(false)
+  })
+
+  it('returns false for long-running workload with adaptive profile', () => {
+    const s = createInitialLoopDisciplineState(1, 'build', 'long-running')
+    expect(isDirectFastPath(s, {})).toBe(false)
+  })
+
+  it('returns false for direct workload when profile=always', () => {
+    const s = createInitialLoopDisciplineState(1, 'build', 'direct')
+    expect(isDirectFastPath(s, { OPENCLAUDE_DISCIPLINE_PROFILE: 'always' })).toBe(false)
+  })
+
+  it('returns false for bounded workload when profile=always', () => {
+    const s = createInitialLoopDisciplineState(1, 'build', 'bounded')
+    expect(isDirectFastPath(s, { OPENCLAUDE_DISCIPLINE_PROFILE: 'always' })).toBe(false)
   })
 })

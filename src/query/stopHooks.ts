@@ -71,6 +71,7 @@ export async function* handleStopHooks(
   toolUseContext: ToolUseContext,
   querySource: QuerySource,
   stopHookActive?: boolean,
+  skipSubprocessChain?: boolean,
 ): AsyncGenerator<
   | StreamEvent
   | RequestStartEvent
@@ -154,6 +155,10 @@ export async function* handleStopHooks(
     if (!toolUseContext.agentId) {
       void executeAutoDream(stopHookContext, toolUseContext.appendSystemMessage)
     }
+  }
+
+  if (skipSubprocessChain) {
+    return { blockingErrors: [], preventContinuation: false }
   }
 
   // chicago MCP: auto-unhide + lock release at turn end.

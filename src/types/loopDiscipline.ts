@@ -402,6 +402,22 @@ export function readDisciplineProfile(
   return env.OPENCLAUDE_DISCIPLINE_PROFILE === 'always' ? 'always' : 'adaptive'
 }
 
+/**
+ * True when the workload is `direct` AND the discipline profile is not
+ * `always`. The three latency-sensitive hot paths (stop-hook subprocess
+ * chain, Mnemo auto-recall, continuation nudge) check this single
+ * predicate so the policy is expressed once and the call sites stay
+ * readable. Accepts an optional env so tests can inject a controlled
+ * environment without touching process.env.
+ */
+export function isDirectFastPath(
+  state: LoopDisciplineState,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (state.workload !== 'direct') return false
+  return readDisciplineProfile(env) !== 'always'
+}
+
 const MUTATION_REQUEST_PATTERN =
   /\b(add|build|change|code|commit|create|delete|edit|fix|implement|install|migrate|modify|patch|push|refactor|remove|rename|repair|replace|test|update|write)\b/i
 
