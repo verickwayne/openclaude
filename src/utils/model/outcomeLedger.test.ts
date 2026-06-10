@@ -8,8 +8,10 @@ import {
   aggregateLedgerStats,
   getLedgerStats,
   isSuccessEntry,
+  joinCheckerVerdicts,
   LEDGER_RELATIVE_PATH,
   MIN_RELIABLE_N,
+  type LedgerEntry,
 } from './outcomeLedger.js'
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
@@ -302,5 +304,241 @@ describe('constants', () => {
 
   test('MIN_RELIABLE_N is 3 (epsilon-greedy threshold)', () => {
     expect(MIN_RELIABLE_N).toBe(3)
+  })
+})
+
+// ─── joinCheckerVerdicts ──────────────────────────────────────────────────────
+
+describe('joinCheckerVerdicts', () => {
+  const worker = (slug: string, ts = '2026-06-09T10:00:00Z'): LedgerEntry => ({
+    ts,
+    task_slug: slug,
+    persona: 'openralph-builder',
+    workload: 'long-running',
+    provider_model_used: 'model-a',
+    status: 'complete',
+    tests_passed: true,
+  })
+
+  const checker = (slug: string, goal_met: boolean | null, ts = '2026-06-09T11:00:00Z'): LedgerEntry => ({
+    ts,
+    task_slug: slug,
+    persona: 'openralph-checker',
+    workload: 'long-running',
+    provider_model_used: 'model-b',
+    status: 'complete',
+    goal_met,
+  })
+
+  test('empty input returns empty output', () => {
+    expect(joinCheckerVerdicts([])).toEqual([])
+  })
+
+  test('worker with matching checker → checker_goal_met from checker row', () => {
+    const entries = [worker('task-a'), checker('task-a', true)]
+    const result = joinCheckerVerdicts(entries)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.checker_goal_met).toBe(true)
+    expect(result[0]?.task_slug).toBe('task-a')
+  })
+
+  test('worker with no matching checker → checker_goal_met is null', () => {
+    const entries = [worker('task-a')]
+    const result = joinCheckerVerdicts(entries)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.checker_goal_met).toBeNull()
+  })
+
+  test('checker without matching worker is not in output (checker rows excluded)', () => {
+    const entries = [checker('task-orphan', true)]
+    const result = joinCheckerVerdicts(entries)
+    expect(result).toHaveLength(0)
+  })
+
+  test('multiple checkers for same slug: latest ts wins', () => {
+    const entries = [
+      worker('task-b'),
+      checker('task-b', false, '2026-06-09T10:00:00Z'),
+      checker('task-b', true, '2026-06-09T12:00:00Z'), // later → wins
+    ]
+    const result = joinCheckerVerdicts(entries)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.checker_goal_met).toBe(true)
+  })
+
+  test('multiple checkers: later in array wins when ts equal', () => {
+    const sameTs = '2026-06-09T10:00:00Z'
+    const entries = [
+      worker('task-c'),
+      checker('task-c', false, sameTs),
+      checker('task-c', true, sameTs), // same ts, later in array → wins
+    ]
+    const result = joinCheckerVerdicts(entries)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.checker_goal_met).toBe(true)
+  })
+
+  test('checker with goal_met null → checker_goal_met null (no-verdict checker is absence)', () => {
+    const entries = [worker('task-d'), checker('task-d', null)]
+    const result = joinCheckerVerdicts(entries)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.checker_goal_met).toBeNull()
+  })
+
+  test('multiple workers — each gets its own verdict (different slugs)', () => {
+    const entries = [
+      worker('slug-1'),
+      worker('slug-2'),
+      checker('slug-1', true),
+      checker('slug-2', false),
+    ]
+    const result = joinCheckerVerdicts(entries)
+    expect(result).toHaveLength(2)
+    const r1 = result.find(r => r.task_slug === 'slug-1')!
+    const r2 = result.find(r => r.task_slug === 'slug-2')!
+    expect(r1.checker_goal_met).toBe(true)
+    expect(r2.checker_goal_met).toBe(false)
+  })
+
+  test('worker with null task_slug → checker_goal_met null (cannot join on null slug)', () => {
+    const nullSlugWorker: LedgerEntry = {
+      task_slug: null,
+      persona: 'openralph-builder',
+      workload: 'long-running',
+      provider_model_used: 'model-a',
+      status: 'complete',
+      tests_passed: true,
+    }
+    const entries = [nullSlugWorker, checker('some-slug', true)]
+    const result = joinCheckerVerdicts(entries)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.checker_goal_met).toBeNull()
+  })
+
+  test('non-openralph entries pass through with checker_goal_met null', () => {
+    const nonRalph: LedgerEntry = {
+      task_slug: 'task-x',
+      persona: 'some-other-persona',
+      workload: 'bounded',
+      provider_model_used: 'model-c',
+      status: 'complete',
+    }
+    const result = joinCheckerVerdicts([nonRalph])
+    expect(result).toHaveLength(1)
+    expect(result[0]?.checker_goal_met).toBeNull()
+  })
+})
+
+// ─── aggregateLedgerStats — checker-verified mode ─────────────────────────────
+
+describe('aggregateLedgerStats — checker-verified successDefinition', () => {
+  const workerEntry = (slug: string, isSuccess: boolean, checker_goal_met: boolean | null) => ({
+    task_slug: slug,
+    persona: 'openralph-builder',
+    workload: 'long-running',
+    provider_model_used: 'model-a',
+    status: isSuccess ? 'complete' : 'partial',
+    tests_passed: isSuccess ? (true as boolean | null) : (false as boolean | null),
+    checker_goal_met,
+  })
+
+  test('checker-verified: success only when isSuccess AND checker_goal_met true', () => {
+    const entries = [
+      workerEntry('t1', true, true),   // success + verified → counted
+      workerEntry('t2', true, false),  // success but checker says no → not a success
+      workerEntry('t3', false, true),  // not self-success → not a success
+    ]
+    const stats = aggregateLedgerStats(entries, { successDefinition: 'checker-verified' })
+    expect(stats).toHaveLength(1)
+    expect(stats[0]?.n).toBe(3)
+    expect(stats[0]?.successes).toBe(1)
+    expect(stats[0]?.successRate).toBeCloseTo(1 / 3)
+  })
+
+  test('checker-verified: rows with checker_goal_met null are excluded entirely', () => {
+    const entries = [
+      workerEntry('t1', true, true),   // included: verified success
+      workerEntry('t2', true, null),   // excluded: no verdict
+      workerEntry('t3', false, null),  // excluded: no verdict
+    ]
+    const stats = aggregateLedgerStats(entries, { successDefinition: 'checker-verified' })
+    // Only t1 is included; t2 and t3 are absent from n
+    expect(stats).toHaveLength(1)
+    expect(stats[0]?.n).toBe(1)
+    expect(stats[0]?.successes).toBe(1)
+    expect(stats[0]?.successRate).toBe(1)
+  })
+
+  test('checker-verified: checker rows excluded from output cells', () => {
+    const checkerEntry = {
+      task_slug: 't1',
+      persona: 'openralph-checker',
+      workload: 'long-running',
+      provider_model_used: 'model-b',
+      status: 'complete',
+      goal_met: true,
+      checker_goal_met: null,
+    }
+    const workerWithVerdict = workerEntry('t1', true, true)
+    const stats = aggregateLedgerStats([workerWithVerdict, checkerEntry], { successDefinition: 'checker-verified' })
+    // Only the worker row should appear — checker is excluded
+    expect(stats).toHaveLength(1)
+    expect(stats[0]?.persona).toBe('openralph-builder')
+  })
+
+  test('checker-verified with no verified rows → empty stats', () => {
+    const entries = [
+      workerEntry('t1', true, null),
+      workerEntry('t2', false, null),
+    ]
+    const stats = aggregateLedgerStats(entries, { successDefinition: 'checker-verified' })
+    expect(stats).toHaveLength(0)
+  })
+
+  test('default mode (self) is unchanged — no behavior change for existing consumers', () => {
+    const entries = [
+      { persona: 'openralph-builder', workload: 'w', provider_model_used: 'm', status: 'complete', tests_passed: true },
+      { persona: 'openralph-builder', workload: 'w', provider_model_used: 'm', status: 'complete', tests_passed: false },
+    ]
+    // 'self' (implicit default)
+    const selfStats = aggregateLedgerStats(entries)
+    expect(selfStats[0]?.n).toBe(2)
+    expect(selfStats[0]?.successes).toBe(1)
+
+    // Explicit 'self'
+    const selfExplicit = aggregateLedgerStats(entries, { successDefinition: 'self' })
+    expect(selfExplicit[0]?.n).toBe(2)
+    expect(selfExplicit[0]?.successes).toBe(1)
+  })
+
+  test('joinCheckerVerdicts + checker-verified round-trip via aggregateLedgerStats', () => {
+    // Build raw entries with one worker and one matching checker
+    const rawEntries: LedgerEntry[] = [
+      {
+        ts: '2026-06-09T10:00:00Z',
+        task_slug: 'feat-x',
+        persona: 'openralph-builder',
+        workload: 'long-running',
+        provider_model_used: 'model-a',
+        status: 'complete',
+        tests_passed: true,
+      },
+      {
+        ts: '2026-06-09T11:00:00Z',
+        task_slug: 'feat-x',
+        persona: 'openralph-checker',
+        workload: 'long-running',
+        provider_model_used: 'model-b',
+        status: 'complete',
+        goal_met: true,
+      },
+    ]
+    const annotated = joinCheckerVerdicts(rawEntries)
+    const stats = aggregateLedgerStats(annotated, { successDefinition: 'checker-verified' })
+    expect(stats).toHaveLength(1)
+    expect(stats[0]?.n).toBe(1)
+    expect(stats[0]?.successes).toBe(1)
+    expect(stats[0]?.successRate).toBe(1)
+    expect(stats[0]?.persona).toBe('openralph-builder')
   })
 })

@@ -99,10 +99,12 @@ Verification steps:
 4. List the specific evidence observed and any gaps — criteria in the condition that are not yet demonstrably satisfied.
 5. Return the verdict YAML below. Do not add commentary after the closing fence.
 
+TASK_SLUG RULE — critical for ledger join: the task_slug you echo in your YAML MUST be the EXACT SAME value as the task_slug from the worker dispatch brief (current-task.md or the slug passed in the dispatch context). The routing ledger joins checker verdicts to worker rows by matching task_slug. An invented or reworded slug will silently orphan this verdict. If no task_slug is present in the context, echo null — do not guess.
+
 End with this YAML block and no extra prose after it:
 
 \`\`\`yaml
-task_slug: "<from goal.json or current-task.md>"
+task_slug: "<EXACT task_slug from the worker dispatch brief — see TASK_SLUG RULE above>"
 task_category: "<implementation|debugging|research|refactoring|verification|other or null if not in brief>"
 status: "complete"
 provider_model_used: "<the checker model actually used — must differ from worker_model>"

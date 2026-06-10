@@ -319,6 +319,7 @@ provider_model_used = parse_yaml_field(yaml_text, "provider_model_used")
 status = parse_yaml_field(yaml_text, "status")
 tests_passed_raw = parse_yaml_field(yaml_text, "tests_passed")
 new_gaps_raw = parse_yaml_field(yaml_text, "new_gaps")
+goal_met_raw = parse_yaml_field(yaml_text, "goal_met")
 # persona already set from tool_input; fallback to YAML if present there
 if not persona:
   persona = parse_yaml_field(yaml_text, "persona")
@@ -328,6 +329,12 @@ if tests_passed_raw is None or tests_passed_raw.lower() == "skipped":
   tests_passed = None
 else:
   tests_passed = tests_passed_raw.lower() not in ("false", "0", "no")
+
+# goal_met: coerce to bool or None. Present only on checker rows; null for all others.
+if goal_met_raw is None:
+  goal_met = None
+else:
+  goal_met = goal_met_raw.lower() not in ("false", "0", "no")
 
 # new_gaps: count list items (lines starting with -) if the field is multi-line.
 new_gaps = 0
@@ -373,6 +380,7 @@ record = {
   "tests_passed": tests_passed,
   "new_gaps": new_gaps,
   "duration_s": duration_s,
+  "goal_met": goal_met,
 }
 
 # Clean up the start marker regardless of whether we write a ledger row.
@@ -712,30 +720,60 @@ if not rows:
   print("Ledger is empty.")
   sys.exit(0)
 
-# Aggregate per (persona, workload, provider_model_used)
+# Build checker verdict index: task_slug -> latest checker row (by ts, then array order).
+checker_by_slug = {}
+for row in rows:
+  persona = row.get("persona") or ""
+  if not persona.endswith("-checker"):
+    continue
+  slug = row.get("task_slug")
+  if not slug:
+    continue
+  existing = checker_by_slug.get(slug)
+  if existing is None or (row.get("ts") or "") >= (existing.get("ts") or ""):
+    checker_by_slug[slug] = row
+
+# Aggregate per (persona, workload, provider_model_used).
+# Worker rows: persona does NOT end with "-checker".
 Cell = collections.namedtuple("Cell", ["persona", "workload", "model"])
-stats = {}  # Cell -> {n, successes, durations}
+stats = {}  # Cell -> {n, successes, durations, n_verified, verified_successes}
 
 for row in rows:
   persona = row.get("persona") or "unknown"
+  if persona.endswith("-checker"):
+    continue
   workload = row.get("workload") or "unknown"
   model = row.get("provider_model_used") or "unknown"
   cell = Cell(persona, workload, model)
   if cell not in stats:
-    stats[cell] = {"n": 0, "successes": 0, "durations": []}
+    stats[cell] = {"n": 0, "successes": 0, "durations": [], "n_verified": 0, "verified_successes": 0}
   entry = stats[cell]
   entry["n"] += 1
-  # success: status == complete AND tests_passed is not False
+  # self-reported success: status == complete AND tests_passed is not False
   status = (row.get("status") or "").lower()
   tests_passed = row.get("tests_passed")
-  if status == "complete" and tests_passed is not False:
+  is_self_success = status == "complete" and tests_passed is not False
+  if is_self_success:
     entry["successes"] += 1
   dur = row.get("duration_s")
   if dur is not None:
     entry["durations"].append(dur)
+  # checker-verified join: absent verdict excluded (not a failure)
+  slug = row.get("task_slug")
+  if slug and slug in checker_by_slug:
+    goal_met = checker_by_slug[slug].get("goal_met")
+    if goal_met is not None:
+      entry["n_verified"] += 1
+      if is_self_success and goal_met is True:
+        entry["verified_successes"] += 1
+
+any_verified = any(e["n_verified"] > 0 for e in stats.values())
 
 # Print table
-header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14}"
+if any_verified:
+  header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'n_verified':>10} {'verified_rate':>13}"
+else:
+  header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14}"
 print(header)
 print("-" * len(header))
 for cell in sorted(stats, key=lambda c: (c.persona, c.workload, c.model)):
@@ -744,7 +782,13 @@ for cell in sorted(stats, key=lambda c: (c.persona, c.workload, c.model)):
   success_rate = e["successes"] / n if n > 0 else 0.0
   avg_duration = sum(e["durations"]) / len(e["durations"]) if e["durations"] else None
   avg_dur_str = f"{avg_duration:.1f}" if avg_duration is not None else "   n/a"
-  print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14}")
+  if any_verified:
+    nv = e["n_verified"]
+    vr = e["verified_successes"] / nv if nv > 0 else None
+    vr_str = f"{vr:.0%}" if vr is not None else "    n/a"
+    print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {nv:>10} {vr_str:>13}")
+  else:
+    print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14}")
 PY
 `
 
@@ -991,7 +1035,7 @@ Use Ralph's persona scheduler, plus Claude Code's newer \`/goal\` idea:
 1. Resolve the active session id from \`.openclaude/ralph/active-session\`, then set \`OPENRALPH_SESSION_DIR=.openclaude/ralph/sessions/<session_id>\`.
 2. Keep \`$OPENRALPH_SESSION_DIR/goal.json\` as the completion condition. Make it concrete and verifiable.
 3. Keep \`$OPENRALPH_SESSION_DIR/queue.md\` as the ordered atomic-task source of truth. When writing a new queue item, classify it with an optional \`category:\` field using exactly one of: implementation | debugging | research | refactoring | verification | other.
-4. Before each dispatch, write one task brief to \`$OPENRALPH_SESSION_DIR/current-task.md\`. Include the \`category:\` field from the queue item in the brief so the persona can echo it as \`task_category\` in the result YAML.
+4. Before each dispatch, write one task brief to \`$OPENRALPH_SESSION_DIR/current-task.md\`. The brief MUST include a \`task_slug:\` field (a short kebab-case identifier unique to this task, e.g. \`task_slug: fix-auth-redirect\`) and the \`category:\` field from the queue item. Every persona echoes the EXACT task_slug from the brief in its result YAML — the routing ledger uses this slug to join checker verdicts to worker rows. Include task_slug and category in the brief header so the persona can echo them as \`task_slug\` and \`task_category\` in the result YAML.
 5. Dispatch one of these built-in agents with the Agent tool:
    - \`openralph-builder\` for implementation
    - \`openralph-refiner\` for completeness and edge cases
@@ -1024,7 +1068,7 @@ g. **Discard the loser:** remove the loser's worktree without merging: \`git wor
 h. **Ledger capture is automatic:** both persona dispatches return the standard persona-result YAML, and both checker dispatches return their verdict YAML. The PostToolUse hook captures all four YAML blocks to the routing ledger automatically — no extra steps needed. Both outcomes (winner AND loser) are recorded to the ledger. Adjudication events are the highest-value ledger entries because they are direct A/B comparisons on identical inputs — the loser's outcome is as valuable as the winner's for routing calibration.
 i. Parse the winner's persona-result YAML into \`$OPENRALPH_SESSION_DIR/persona-result.yml\`, update \`progress.md\` and \`queue.md\` as usual, then resume the outer scheduler loop at the next queue item.
 
-9. Before writing \`goal.json.status\` to \`complete\` or \`completed\`, dispatch \`openralph-checker\` via the Agent tool. Pass in the dispatch context: the goal condition text, the proof_command (or null), and \`worker_model\` set to the \`provider_model_used\` value from the most recent worker persona result. The checker MUST use a different provider and model family than worker_model — instruct it explicitly: "Do not use [worker_model provider]. Use a model from a different provider." Only mark goal.json complete if the checker's returned YAML has \`goal_met: true\`. If the checker returns \`goal_met: false\`, extract its \`gaps\` list and push each gap as a new queue item before continuing the loop. The checker's YAML verdict carries \`task_slug\`, \`provider_model_used\`, and \`status: complete\` (indicating the check itself ran) so the routing ledger automatically records the verification dispatch via the PostToolUse hook.
+9. Before writing \`goal.json.status\` to \`complete\` or \`completed\`, dispatch \`openralph-checker\` via the Agent tool. Pass in the dispatch context: the goal condition text, the proof_command (or null), \`worker_model\` set to the \`provider_model_used\` value from the most recent worker persona result, and the \`task_slug\` from the most recent worker dispatch. The checker MUST echo this exact task_slug in its verdict YAML — the routing ledger joins checker verdicts to worker rows by matching task_slug (see step 4). The checker MUST use a different provider and model family than worker_model — instruct it explicitly: "Do not use [worker_model provider]. Use a model from a different provider." Only mark goal.json complete if the checker's returned YAML has \`goal_met: true\`. If the checker returns \`goal_met: false\`, extract its \`gaps\` list and push each gap as a new queue item before continuing the loop. The checker's YAML verdict carries \`task_slug\`, \`provider_model_used\`, and \`status: complete\` (indicating the check itself ran) so the routing ledger automatically records the verification dispatch via the PostToolUse hook.
 10. Stop only when \`goal.json.status\` is \`complete\` and the proof is visible in \`progress.md\`.
 
 The Stop hook records session bridges and blocks a stop while the active session's \`goal.json.status\` is still running, so future turns resume from session-scoped OpenRalph files instead of relying on memory.
@@ -1141,6 +1185,7 @@ export function registerOpenRalphSkills(): void {
       return [{ type: 'text', text: buildDisengagePrompt() }]
     },
   })
+
   registerBundledSkill({
     name: 'openralph-kick',
     aliases: ['ralph-kick', 'openralph-force'],
@@ -1153,5 +1198,4 @@ export function registerOpenRalphSkills(): void {
       return [{ type: 'text', text: buildKickPrompt(args) }]
     },
   })
-
 }

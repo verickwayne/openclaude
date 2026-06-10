@@ -1033,3 +1033,174 @@ test('hook extractor round-trip: absent task_category in YAML → null in JSONL 
   // task_category absent in YAML → null in record (never fails the hook)
   expect(record.task_category).toBeNull()
 })
+
+// ── Gap 4: goal_met extraction + checker↔worker join ─────────────────────────
+
+test('hook extractor round-trip: goal_met: true in checker YAML flows to JSONL record', () => {
+  const checkerYaml = [
+    '```yaml',
+    'task_slug: "feat-route-stats"',
+    'task_category: "verification"',
+    'status: "complete"',
+    'provider_model_used: "openai-compatible/gpt-5.3-codex"',
+    'goal_met: true',
+    'evidence:',
+    '  - "bun test passed"',
+    'gaps: []',
+    'proof_command_exit_code: 0',
+    'notes: "all good"',
+    '```',
+  ].join('\n')
+
+  const { root, exitCode, stderr } = runHookSubprocess({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'openralph-checker', prompt: 'check the goal' },
+    tool_response: `Verification done.\n\n${checkerYaml}\n`,
+    session_id: 'checker-sess',
+    cwd: 'test-cwd',
+    transcript_path: 'test-transcript',
+  })
+
+  expect(exitCode).toBe(0)
+  expect(stderr).not.toContain('Traceback')
+
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  expect(existsSync(ledgerPath)).toBe(true)
+
+  const lines = readFileSync(ledgerPath, 'utf8').trim().split('\n')
+  expect(lines).toHaveLength(1)
+
+  const record = JSON.parse(lines[0]!) as Record<string, unknown>
+  expect(record.persona).toBe('openralph-checker')
+  expect(record.task_slug).toBe('feat-route-stats')
+  expect(record.goal_met).toBe(true)
+  expect(record.status).toBe('complete')
+})
+
+test('hook extractor round-trip: goal_met: false in checker YAML → false in record', () => {
+  const checkerYaml = [
+    '```yaml',
+    'task_slug: "feat-failing"',
+    'task_category: "verification"',
+    'status: "complete"',
+    'provider_model_used: "openai-compatible/gpt-5.3-codex"',
+    'goal_met: false',
+    'evidence:',
+    '  - "tests failed"',
+    'gaps:',
+    '  - "missing coverage"',
+    'proof_command_exit_code: 1',
+    'notes: "needs more work"',
+    '```',
+  ].join('\n')
+
+  const { root, exitCode } = runHookSubprocess({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'openralph-checker', prompt: 'check' },
+    tool_response: `Failed.\n\n${checkerYaml}\n`,
+    session_id: 'checker-fail-sess',
+    cwd: 'test-cwd',
+    transcript_path: 'test-transcript',
+  })
+
+  expect(exitCode).toBe(0)
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
+  expect(record.goal_met).toBe(false)
+})
+
+test('hook extractor round-trip: absent goal_met in worker YAML → null in record', () => {
+  const workerYaml = [
+    '```yaml',
+    'task_slug: "worker-no-goal-met"',
+    'status: "complete"',
+    'commit: null',
+    'files_changed: []',
+    'tests_run: null',
+    'tests_passed: true',
+    'provider_model_used: "anthropic/claude-sonnet-4-6"',
+    'new_gaps: []',
+    'next_action: null',
+    'notes: "worker row"',
+    '```',
+  ].join('\n')
+
+  const { root, exitCode } = runHookSubprocess({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'openralph-builder', prompt: 'build' },
+    tool_response: `Done.\n\n${workerYaml}\n`,
+    session_id: 'worker-sess',
+    cwd: 'test-cwd',
+    transcript_path: 'test-transcript',
+  })
+
+  expect(exitCode).toBe(0)
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
+  // Worker rows should have goal_met: null (not a checker, no goal_met in YAML)
+  expect(record.goal_met).toBeNull()
+})
+
+test('scheduler contract step 4 mandates task_slug in every dispatch brief', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Step 4 must mention task_slug as a required field in the brief
+  expect(text).toContain('task_slug:')
+  // Must explain that it flows to the persona result YAML for ledger join
+  expect(text).toMatch(/task_slug.*brief|brief.*task_slug/i)
+  // Must mention the join / ledger join purpose
+  expect(text).toMatch(/join|routing ledger/i)
+})
+
+test('scheduler contract step 9 passes task_slug to checker dispatch for ledger join', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Step 9 must pass task_slug to the checker so the verdict can be joined to the worker row
+  const step9Start = text.indexOf('9.')
+  const step9End = text.indexOf('10.')
+  const step9 = text.slice(step9Start, step9End)
+  expect(step9).toContain('task_slug')
+  expect(step9).toMatch(/task_slug.*checker|checker.*task_slug/i)
+})
+
+test('checker PERSONA_RESULT_SCHEMA in openRalphAgents.ts contains TASK_SLUG RULE', () => {
+  const source = readFileSync(
+    'src/tools/AgentTool/built-in/openRalphAgents.ts',
+    'utf8',
+  )
+  // The TASK_SLUG RULE comment must be present in the checker prompt
+  expect(source).toContain('TASK_SLUG RULE')
+  // Must explain the join purpose (ledger joins checker verdicts to worker rows)
+  expect(source).toMatch(/routing ledger.*join|join.*routing ledger/i)
+  // Must instruct the checker to echo the EXACT same task_slug
+  expect(source).toMatch(/EXACT.*task_slug|exact.*task_slug/i)
+})
+
+test('route-stats script skips checker rows from worker aggregation', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-route-stats.sh']
+  // Must skip rows whose persona ends with "-checker" in the aggregation loop
+  expect(script).toContain('endswith("-checker")')
+  // Must still build a checker verdict index (checker_by_slug or similar)
+  expect(script).toMatch(/checker_by_slug|checker.*slug/i)
+  // The checker-verified join must use goal_met from the checker row
+  expect(script).toContain('goal_met')
+})
+
+test('route-stats script emits n_verified and verified_rate columns when checker data exists', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-route-stats.sh']
+  // Must produce n_verified column
+  expect(script).toContain('n_verified')
+  // Must produce verified_rate column
+  expect(script).toContain('verified_rate')
+  // Must gracefully skip (any_verified check) when no checker rows exist
+  expect(script).toContain('any_verified')
+})
