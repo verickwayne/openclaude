@@ -49,6 +49,16 @@ export type VerificationEntry = {
 /** Enforcement level for the in-loop discipline system. */
 export type DisciplineLevel = 0 | 1 | 2
 
+/**
+ * Coarse workload class for deciding whether the loop-discipline harness
+ * should run on a turn. Direct Q&A should stay fast; implementation and
+ * long-running work can pay the harness overhead.
+ */
+export type LoopWorkloadClass = 'direct' | 'bounded' | 'long-running'
+
+/** Operator policy for workload-aware discipline. */
+export type DisciplineProfile = 'adaptive' | 'always'
+
 /** Per-phase tool restriction policy. */
 export type ToolPolicy = {
   /** Tool names allowed in this phase. `'*'` means full surface. */
@@ -381,6 +391,69 @@ export function readDisciplineLevel(
 }
 
 /**
+ * Workload profile. adaptive is the default because strict discipline is
+ * valuable for implementation loops but wasteful for a one-turn explanation.
+ * Set OPENCLAUDE_DISCIPLINE_PROFILE=always to apply the configured level to
+ * every prompt.
+ */
+export function readDisciplineProfile(
+  env: NodeJS.ProcessEnv = process.env,
+): DisciplineProfile {
+  return env.OPENCLAUDE_DISCIPLINE_PROFILE === 'always' ? 'always' : 'adaptive'
+}
+
+const MUTATION_REQUEST_PATTERN =
+  /\b(add|build|change|code|commit|create|delete|edit|fix|implement|install|migrate|modify|patch|push|refactor|remove|rename|repair|replace|test|update|write)\b/i
+
+const LONG_RUNNING_REQUEST_PATTERN =
+  /\b(autonomous|autonomously|continue|end-to-end|long[-\s]?running|multi[-\s]?(agent|provider|step|turn)|orchestrat|plan|push|until complete|verify|workstream)\b/i
+
+const DIRECT_QUESTION_PATTERN =
+  /^(can you\s+)?(what|why|how|when|where|who|which|explain|summarize|describe|tell me|show me|list)\b/i
+
+/**
+ * Classify the turn before the loop starts. This is intentionally coarse:
+ * false positives should retain discipline, false negatives only affect
+ * direct-answer latency. Tool-use observations still drive saturation and
+ * verification once a mutating loop is active.
+ */
+export function classifyLoopWorkloadFromPrompt(
+  prompt: string,
+): LoopWorkloadClass {
+  const text = prompt.trim()
+  if (text.length === 0) return 'direct'
+  if (LONG_RUNNING_REQUEST_PATTERN.test(text) || text.length > 800) {
+    return 'long-running'
+  }
+  if (MUTATION_REQUEST_PATTERN.test(text)) return 'bounded'
+  if (text.length <= 320 && DIRECT_QUESTION_PATTERN.test(text)) {
+    return 'direct'
+  }
+  return 'bounded'
+}
+
+/**
+ * Apply the workload profile to the configured discipline level.
+ *
+ * adaptive:
+ * - direct: level 0, no gates or completion nudges
+ * - bounded/long-running: configured level
+ *
+ * always:
+ * - configured level for every turn
+ */
+export function resolveEffectiveDisciplineLevel(args: {
+  configuredLevel: DisciplineLevel
+  workload: LoopWorkloadClass
+  profile?: DisciplineProfile
+}): DisciplineLevel {
+  if (args.configuredLevel === 0) return 0
+  const profile = args.profile ?? readDisciplineProfile()
+  if (profile === 'always') return args.configuredLevel
+  return args.workload === 'direct' ? 0 : args.configuredLevel
+}
+
+/**
  * Self-tamper guard's directory-prefix deny list. Phase C consults this
  * after canonicalizing the target path. Storing here so the policy lives
  * next to the rest of the discipline types — a single source of truth that
@@ -469,6 +542,8 @@ export type PendingPlan = {
 /** Per-loop loop-discipline bag held on State. */
 export type LoopDisciplineState = {
   level: DisciplineLevel
+  /** Workload classification captured at loop start. */
+  workload: LoopWorkloadClass
   phase: Phase
   phaseHistory: PhaseTransition[]
   phaseEnteredAt: number
@@ -503,9 +578,11 @@ export type LoopDisciplineState = {
 export function createInitialLoopDisciplineState(
   level: DisciplineLevel,
   initialPhase: Phase = DEFAULT_INITIAL_PHASE,
+  workload: LoopWorkloadClass = 'bounded',
 ): LoopDisciplineState {
   return {
     level,
+    workload,
     phase: initialPhase,
     phaseHistory: [],
     phaseEnteredAt: 1,

@@ -68,7 +68,7 @@ describe('GetLoopDisciplineStatusTool — unavailable cases', () => {
 
 describe('GetLoopDisciplineStatusTool — fresh state', () => {
   it('returns level, phase, and zeroed counters', async () => {
-    const ctx = makeContext(createInitialLoopDisciplineState(2, 'build'))
+    const ctx = makeContext(createInitialLoopDisciplineState(2, 'build', 'long-running'))
     const out = await GetLoopDisciplineStatusTool.call(
       {},
       // biome-ignore lint/suspicious/noExplicitAny: minimal stub
@@ -79,6 +79,7 @@ describe('GetLoopDisciplineStatusTool — fresh state', () => {
     )
     expect(out.data.available).toBe(true)
     expect(out.data.level).toBe(2)
+    expect(out.data.workload).toBe('long-running')
     expect(out.data.phase).toBe('build')
     expect(out.data.saturation_count).toBe(0)
     expect(out.data.saturation_trips_this_task).toBe(0)

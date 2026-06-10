@@ -47,6 +47,7 @@ const outputSchema = lazySchema(() =>
   z.object({
     available: z.boolean(),
     level: z.number().optional(),
+    workload: z.string().optional(),
     phase: z.string().optional(),
     phase_entered_at_turn: z.number().optional(),
     saturation_count: z.number().optional(),
@@ -164,6 +165,7 @@ export const GetLoopDisciplineStatusTool = buildTool({
       data: {
         available: true,
         level: state.level,
+        workload: state.workload,
         phase: state.phase,
         phase_entered_at_turn: state.phaseEnteredAt,
         saturation_count: state.saturationCount,

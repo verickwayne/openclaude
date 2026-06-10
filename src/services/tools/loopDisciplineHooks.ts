@@ -317,6 +317,7 @@ export function _phaseGateTestProbe(args: {
   return evaluatePhaseGate(
     {
       level: args.level,
+      workload: 'bounded',
       phase: args.phase,
       phaseHistory: [],
       phaseEnteredAt: 1,
@@ -345,6 +346,7 @@ export function _tamperGuardTestProbe(args: {
   return evaluateSelfTamperGuard(
     {
       level: args.level,
+      workload: 'bounded',
       phase: args.phase ?? 'build',
       phaseHistory: [],
       phaseEnteredAt: 1,

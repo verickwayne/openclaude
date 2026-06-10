@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  classifyLoopWorkloadFromPrompt,
   createInitialLoopDisciplineState,
   DEFAULT_INITIAL_PHASE,
   getDisciplineEvents,
@@ -7,7 +8,9 @@ import {
   MUTATING_TOOL_NAMES,
   PHASE_TOOL_ALLOWLIST,
   readDisciplineLevel,
+  readDisciplineProfile,
   readInitialPhase,
+  resolveEffectiveDisciplineLevel,
   TAMPER_DENY_PREFIXES,
   type LoopDisciplineState,
 } from './loopDiscipline.js'
@@ -48,10 +51,67 @@ describe('readInitialPhase', () => {
   })
 })
 
+describe('adaptive discipline workload policy', () => {
+  it('defaults to adaptive profile and allows an always override', () => {
+    expect(readDisciplineProfile({})).toBe('adaptive')
+    expect(readDisciplineProfile({ OPENCLAUDE_DISCIPLINE_PROFILE: 'always' })).toBe(
+      'always',
+    )
+    expect(readDisciplineProfile({ OPENCLAUDE_DISCIPLINE_PROFILE: 'other' })).toBe(
+      'adaptive',
+    )
+  })
+
+  it('classifies direct answer prompts as direct', () => {
+    expect(classifyLoopWorkloadFromPrompt('What does this function do?')).toBe(
+      'direct',
+    )
+    expect(classifyLoopWorkloadFromPrompt('Explain OAuth in this harness.')).toBe(
+      'direct',
+    )
+  })
+
+  it('classifies implementation and autonomous prompts as harness work', () => {
+    expect(classifyLoopWorkloadFromPrompt('Fix the login bug in src/auth.ts')).toBe(
+      'bounded',
+    )
+    expect(
+      classifyLoopWorkloadFromPrompt(
+        'Proceed autonomously until the entire multi-step migration is complete, then test, commit, and push.',
+      ),
+    ).toBe('long-running')
+  })
+
+  it('demotes direct prompts only in adaptive mode', () => {
+    expect(
+      resolveEffectiveDisciplineLevel({
+        configuredLevel: 2,
+        workload: 'direct',
+        profile: 'adaptive',
+      }),
+    ).toBe(0)
+    expect(
+      resolveEffectiveDisciplineLevel({
+        configuredLevel: 2,
+        workload: 'bounded',
+        profile: 'adaptive',
+      }),
+    ).toBe(2)
+    expect(
+      resolveEffectiveDisciplineLevel({
+        configuredLevel: 2,
+        workload: 'direct',
+        profile: 'always',
+      }),
+    ).toBe(2)
+  })
+})
+
 describe('createInitialLoopDisciplineState', () => {
   it('produces a safe default state at level 0', () => {
     const s = createInitialLoopDisciplineState(0)
     expect(s.level).toBe(0)
+    expect(s.workload).toBe('bounded')
     expect(s.phase).toBe('build')
     expect(s.phaseHistory).toEqual([])
     expect(s.phaseEnteredAt).toBe(1)
@@ -71,6 +131,11 @@ describe('createInitialLoopDisciplineState', () => {
   it('honors an explicit initial phase override', () => {
     const s = createInitialLoopDisciplineState(2, 'explore')
     expect(s.phase).toBe('explore')
+  })
+
+  it('records the workload class for status and diagnostics', () => {
+    const s = createInitialLoopDisciplineState(0, 'build', 'direct')
+    expect(s.workload).toBe('direct')
   })
 })
 

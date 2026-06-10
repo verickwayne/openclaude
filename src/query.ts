@@ -17,6 +17,7 @@ import {
   applySaturationObservation,
   buildPlanHandoffMessage,
   classifyIteration,
+  classifyLoopWorkloadFromPrompt,
   createInitialLoopDisciplineState,
   emitDisciplineEventToStderr,
   evaluateCompletionExit,
@@ -28,7 +29,9 @@ import {
   isDisciplineStatusAtExitEnabled,
   readDisciplineEventLogPath,
   readDisciplineLevel,
+  readDisciplineProfile,
   readInitialPhase,
+  resolveEffectiveDisciplineLevel,
   type LoopDisciplineState,
 } from './types/loopDiscipline.js'
 import {
@@ -339,6 +342,14 @@ async function* queryLoop(
     skipCacheWrite,
   } = params
   const deps = params.deps ?? productionDeps()
+  const firstUserPrompt = extractFirstUserPromptText(params.messages)
+  const loopWorkload = classifyLoopWorkloadFromPrompt(firstUserPrompt)
+  const configuredDisciplineLevel = readDisciplineLevel()
+  const effectiveDisciplineLevel = resolveEffectiveDisciplineLevel({
+    configuredLevel: configuredDisciplineLevel,
+    workload: loopWorkload,
+    profile: readDisciplineProfile(),
+  })
 
   // Mutable cross-iteration state. The loop body destructures this at the top
   // of each iteration so reads stay bare-name (`messages`, `toolUseContext`).
@@ -356,8 +367,9 @@ async function* queryLoop(
     pendingToolUseSummary: undefined,
     transition: undefined,
     loopDiscipline: createInitialLoopDisciplineState(
-      readDisciplineLevel(),
+      effectiveDisciplineLevel,
       readInitialPhase(),
+      loopWorkload,
     ),
   }
   // Plumb loop-discipline access through ToolUseContext so hooks called
@@ -383,7 +395,6 @@ async function* queryLoop(
   // behavior.
   let mnemoAutoRecallContext: MnemoContext | null = null
   if (isMnemoAutoRecallEnabled()) {
-    const firstUserPrompt = extractFirstUserPromptText(state.messages)
     if (firstUserPrompt.length > 0) {
       const recallFn = createMnemoRecallFn(
         state.toolUseContext.options.mcpClients ?? [],
