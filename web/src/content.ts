@@ -11,7 +11,7 @@ export const features = [
   },
   {
     title: 'profiles per repo',
-    body: 'save model, base url, auth, and runtime defaults to .openclaude-profile.json so every clone boots the same way.',
+    body: 'save model, base url, auth, and runtime defaults to .limitless-profile.json so every clone boots the same way.',
   },
   {
     title: 'streaming, not batch',

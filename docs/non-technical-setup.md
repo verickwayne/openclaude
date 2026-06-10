@@ -1,4 +1,4 @@
-# OpenClaude for Non-Technical Users
+# Limitless for Non-Technical Users
 
 This guide is for people who want the easiest setup path.
 
@@ -6,9 +6,9 @@ You do not need to build from source. You do not need Bun. You do not need to un
 
 If you can copy and paste commands into a terminal, you can set this up.
 
-## What OpenClaude Does
+## What Limitless Does
 
-OpenClaude lets you use an AI coding assistant with different model providers such as:
+Limitless lets you use an AI coding assistant with different model providers such as:
 
 - OpenAI
 - DeepSeek
@@ -17,6 +17,7 @@ OpenClaude lets you use an AI coding assistant with different model providers su
 - Codex
 
 For most first-time users, OpenAI is the easiest option.
+
 
 ## Before You Start
 
@@ -28,9 +29,9 @@ You need:
 
 ## Fastest Path
 
-1. Install OpenClaude with npm
+1. Install Limitless with npm
 2. Set 3 environment variables
-3. Run `openclaude`
+3. Run `limitless`
 
 ## Choose Your Operating System
 
@@ -62,7 +63,7 @@ Choose this if:
 
 ## What Success Looks Like
 
-After you run `openclaude`, the CLI should start and wait for your prompt.
+After you run `limitless`, the CLI should start and wait for your prompt.
 
 At that point, you can ask it to:
 
@@ -73,7 +74,7 @@ At that point, you can ask it to:
 
 ## Common Problems
 
-### `openclaude` command not found
+### `limitless` command not found
 
 Cause:
 
@@ -84,7 +85,7 @@ Fix:
 
 1. Close the terminal
 2. Open a new terminal
-3. Run `openclaude` again
+3. Run `limitless` again
 
 On Windows PowerShell, if that still does not work, add npm's global bin folder
 to your user `Path`, then open a new PowerShell window:
@@ -112,7 +113,7 @@ Fix:
 
 1. Get a fresh key from your provider
 2. Paste it again carefully
-3. Re-run `openclaude`
+3. Re-run `limitless`
 
 ### Ollama not working
 

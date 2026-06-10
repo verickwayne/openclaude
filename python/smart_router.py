@@ -1,7 +1,7 @@
 """
 smart_router.py
 ---------------
-Intelligent auto-router for openclaude.
+Intelligent auto-router for Limitless.
 
 Instead of always using one fixed provider, the smart router:
 - Pings all configured providers on startup

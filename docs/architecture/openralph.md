@@ -1,6 +1,6 @@
 # OpenRalph Architecture
 
-OpenRalph is a project-local skill and process layer for long-running OpenClaude work. It is intentionally outside the internal query loop.
+OpenRalph is a project-local skill and process layer for long-running Limitless work. It is intentionally outside the internal query loop.
 
 ## Design
 
@@ -9,7 +9,7 @@ OpenRalph is a project-local skill and process layer for long-running OpenClaude
 - Persistent scheduler state is session-scoped under `.openclaude/ralph/sessions/<session_id>/`.
 - `.openclaude/ralph/active-session` is only a project-local pointer to the default session for status/resume commands.
 - Hooks in `.claude/settings.local.json` call `openralph-hook.sh`.
-- The hook reads OpenClaude hook stdin JSON and records `session_id`, event name, tool name, cwd, and transcript path.
+- The hook reads Limitless hook stdin JSON and records `session_id`, event name, tool name, cwd, and transcript path.
 - `goal.json` is the session's explicit completion condition, borrowing the useful part of Claude Code `/goal`.
 - `queue.md`, `current-task.md`, `progress.md`, `events.jsonl`, and `persona-result.yml` live in the session directory and make scheduler state inspectable and resumable without colliding with other sessions in the same project.
 
@@ -36,9 +36,9 @@ Each persona returns structured YAML and includes `provider_model_used` so the s
 
 ## Improvement Over Claude Ralph
 
-Claude Ralph proved that session bridges, stop-time pressure, durable state files, and persona dispatch improve long-running work. OpenRalph keeps those mechanics but adapts them to OpenClaude:
+Claude Ralph proved that session bridges, stop-time pressure, durable state files, and persona dispatch improve long-running work. OpenRalph keeps those mechanics but adapts them to Limitless:
 
-- hook bridge uses OpenClaude's native hook payload rather than Claude-specific PPID bridge files;
+- hook bridge uses Limitless's native hook payload rather than Claude-specific PPID bridge files;
 - goal state is explicit, inspectable, and tied to a specific session id;
 - provider/model routing is part of the persona result contract;
 - status/resume/disengage are skill commands instead of shell-only commands;

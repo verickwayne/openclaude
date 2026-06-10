@@ -2,7 +2,7 @@
 
 Date: 2026-06-10
 
-This note records the harness decisions behind OpenClaude's long-running agent-loop work.
+This note records the harness decisions behind Limitless's long-running agent-loop work.
 
 ## Inputs
 

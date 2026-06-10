@@ -6,12 +6,12 @@ Branch: `feat/multi-provider`
 
 ## Summary
 
-This report is cumulative for the June 10 OpenClaude harness work. It covers:
+This report is cumulative for the June 10 Limitless harness work. It covers:
 
 1. The internal agent-loop harness update that improves long-running autonomous work while reducing overhead for simple direct-answer prompts.
-2. The follow-up OpenRalph workstream: a Ralph-style skill and supporting process architecture for OpenClaude that lives outside the internal harness.
-3. The Ralph session-scoping follow-up: both OpenClaude OpenRalph and Claude Code CLI Ralph now bind mutable scheduler files to a specific session, not just a project folder.
-4. The non-optional Ralph kick follow-up: both Claude Code CLI Ralph and OpenClaude OpenRalph now have an external session-targeted force path.
+2. The follow-up OpenRalph workstream: a Ralph-style skill and supporting process architecture for Limitless that lives outside the internal harness.
+3. The Ralph session-scoping follow-up: both Limitless OpenRalph and Claude Code CLI Ralph now bind mutable scheduler files to a specific session, not just a project folder.
+4. The non-optional Ralph kick follow-up: both Claude Code CLI Ralph and Limitless OpenRalph now have an external session-targeted force path.
 
 ## What Changed
 
@@ -49,12 +49,12 @@ This report is cumulative for the June 10 OpenClaude harness work. It covers:
 2. Project-local support files
    - `/openralph` extracts support files that can be installed into `.openclaude/ralph/bin/`.
    - `openralph-bootstrap.sh` creates `.openclaude/ralph/` state, queue, progress, goal, current-task, persona-result, session, and bridge directories.
-   - `openralph-hook.sh` reads OpenClaude hook stdin JSON, records `session_id`, event, tool, cwd, and transcript path, and keeps unfinished OpenRalph sessions visible through the Stop hook.
+   - `openralph-hook.sh` reads Limitless hook stdin JSON, records `session_id`, event, tool, cwd, and transcript path, and keeps unfinished OpenRalph sessions visible through the Stop hook.
    - `openralph-status.sh` and `openralph-disengage.sh` provide operational status and state-preserving shutdown.
 
 3. Hook/session bridge
-   - The OpenRalph hook architecture intentionally ports the useful part of Claude Ralph's session bridge into OpenClaude.
-   - It uses OpenClaude's existing hook payload fields, especially `session_id`, `cwd`, and `transcript_path`.
+   - The OpenRalph hook architecture intentionally ports the useful part of Claude Ralph's session bridge into Limitless.
+   - It uses Limitless's existing hook payload fields, especially `session_id`, `cwd`, and `transcript_path`.
    - The hook reads stdin first and falls back to environment variables, which makes it work across normal CLI sessions and subprocess contexts.
 
 4. Goal-led scheduler pattern
@@ -65,14 +65,14 @@ This report is cumulative for the June 10 OpenClaude harness work. It covers:
 5. Persona agents
    - Added built-in `openralph-builder`, `openralph-refiner`, `openralph-researcher`, and `openralph-test-analyzer` agents.
    - Each persona reads `.openclaude/ralph/current-task.md` and returns structured YAML for the scheduler.
-   - Persona results include `provider_model_used` so OpenRalph can use OpenClaude's provider/model-agnostic model picker intentionally.
+   - Persona results include `provider_model_used` so OpenRalph can use Limitless's provider/model-agnostic model picker intentionally.
 
 6. Architecture note
-   - Added `docs/architecture/openralph.md` to explain how the skill/process layer maps Ralph, `/goal`, `/loop`, hooks, and provider routing onto OpenClaude.
+   - Added `docs/architecture/openralph.md` to explain how the skill/process layer maps Ralph, `/goal`, `/loop`, hooks, and provider routing onto Limitless.
 
 ### Session-Scoped Ralph Follow-Up
 
-1. OpenClaude OpenRalph
+1. Limitless OpenRalph
    - Moved mutable scheduler files to `.openclaude/ralph/sessions/<session_id>/`.
    - Kept `.openclaude/ralph/active-session` and `.openclaude/ralph/active-session.json` as project-level indexes only.
    - Updated `openralph-hook.sh` so hook events are written to both project-level `events.jsonl` and session-level `sessions/<session_id>/events.jsonl`.
@@ -94,7 +94,7 @@ This report is cumulative for the June 10 OpenClaude harness work. It covers:
    - If state is missing, it requires a prompt and creates the loop for the explicitly supplied session id through `ralph-engage.sh`.
    - Updated `~/.claude/ralph/scripts/setup-loop.sh` so external scripts can pass the target session through `RALPH_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` / `CLAUDE_SESSION_ID` rather than relying only on a hook bridge.
 
-2. OpenClaude OpenRalph
+2. Limitless OpenRalph
    - Added bundled `bin/openralph-kick.sh` and the `/openralph-kick` slash command, with aliases `/ralph-kick` and `/openralph-force`.
    - Existing sessions are reactivated by touching `.openclaude/ralph/enabled`, updating `active-session`, writing `sessions/<session_id>/kick.json`, and appending `kick-log.jsonl` and project `events.jsonl`.
    - Missing sessions require `--prompt` or `--prompt-file`, then bootstrap the exact requested session id through `openralph-bootstrap.sh`.
@@ -106,7 +106,7 @@ The existing loop-discipline system has useful long-running work primitives: pha
 
 The adaptive workload gate preserves strict behavior for real implementation work while skipping the harness for one-turn direct answers. The `/longtask` skill and `orchestration` agent add durable state and delegation planning without making every turn pay that cost.
 
-OpenRalph addresses a different layer. Ralph's strongest property is operational: persistent state, session bridging, persona dispatch, status/resume/disengage, and stop-time pressure to keep working. OpenClaude already has hooks, session ids, provider routing, and skills, so the better port is not a direct copy of Claude scripts. It is a project-local process layer that uses those primitives and improves Ralph with a goal ledger and provider/model routing.
+OpenRalph addresses a different layer. Ralph's strongest property is operational: persistent state, session bridging, persona dispatch, status/resume/disengage, and stop-time pressure to keep working. Limitless already has hooks, session ids, provider routing, and skills, so the better port is not a direct copy of Claude scripts. It is a project-local process layer that uses those primitives and improves Ralph with a goal ledger and provider/model routing.
 
 ## Research Inputs
 

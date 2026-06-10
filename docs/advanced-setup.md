@@ -1,4 +1,4 @@
-# OpenClaude Advanced Setup
+# Limitless Advanced Setup
 
 This guide is for users who want source builds, Bun workflows, provider profiles, diagnostics, or more control over runtime behavior.
 
@@ -48,9 +48,9 @@ export OPENAI_MODEL=gpt-4o
 `codexplan` maps to GPT-5.5 on the Codex backend with high reasoning.
 `codexspark` maps to GPT-5.3 Codex Spark for faster loops.
 
-If you use the in-app provider wizard, choose `Codex OAuth` to open ChatGPT sign-in in your browser and let OpenClaude store Codex credentials securely.
+If you use the in-app provider wizard, choose `Codex OAuth` to open ChatGPT sign-in in your browser and let Limitless store Codex credentials securely.
 
-If you already use the Codex CLI, OpenClaude reads `~/.codex/auth.json` automatically. You can also point it elsewhere with `CODEX_AUTH_JSON_PATH` or override the token directly with `CODEX_API_KEY`.
+If you already use the Codex CLI, Limitless reads `~/.codex/auth.json` automatically. You can also point it elsewhere with `CODEX_AUTH_JSON_PATH` or override the token directly with `CODEX_API_KEY`.
 
 If you set `CODEX_API_KEY` manually and are not relying on `auth.json` or stored
 Codex OAuth credentials, also set `CHATGPT_ACCOUNT_ID` (or
@@ -64,7 +64,7 @@ export OPENAI_MODEL=codexplan
 export CODEX_API_KEY=...
 export CHATGPT_ACCOUNT_ID=...
 
-openclaude
+limitless
 ```
 
 ### DeepSeek
@@ -221,7 +221,7 @@ export OPENAI_MODEL=gpt-4o
 | `LIMITLESS_DISABLE_CO_AUTHORED_BY` | No | Suppress the default `Co-Authored-By` trailer in generated git commits. Legacy `OPENCLAUDE_DISABLE_CO_AUTHORED_BY` still works as a fallback. |
 | `LIMITLESS_LOG_TOKEN_USAGE` | No | When truthy (e.g. `verbose`), emits one JSON line on stderr per API request with input/output/cache tokens and the resolved provider. **User-facing debug output** — complements the REPL display controlled by `/config showCacheStats`. Distinct from `CLAUDE_CODE_ENABLE_TOKEN_USAGE_ATTACHMENT`, which is **model-facing** (injects context usage info into the prompt itself). Both can run together. Legacy `OPENCLAUDE_LOG_TOKEN_USAGE` still works as a fallback. |
 
-> OpenClaude's own env vars use the `LIMITLESS_` prefix. The legacy `OPENCLAUDE_` prefix is still honored as a fallback for every `LIMITLESS_*` var — `LIMITLESS_` wins when both are set. Host-environment vars (`CLAUDE_CODE_*`, `CLAUDE_*`, `ANTHROPIC_*`) are unchanged.
+> Limitless's own env vars use the `LIMITLESS_` prefix. The legacy `OPENCLAUDE_` prefix is still honored as a fallback for every `LIMITLESS_*` var — `LIMITLESS_` wins when both are set. Host-environment vars (`CLAUDE_CODE_*`, `CLAUDE_*`, `ANTHROPIC_*`) are unchanged.
 
 Model env vars are provider-scoped: Anthropic-native sessions read
 `ANTHROPIC_MODEL`, OpenAI-compatible sessions read `OPENAI_MODEL`, Gemini reads

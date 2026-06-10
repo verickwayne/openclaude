@@ -7,6 +7,9 @@ web/*.tsbuildinfo
 .env.*
 !.env.example
 auth.json
+.limitless-profile.json
+.limitless/
+# legacy paths (kept for users mid-migration from the old name)
 .openclaude-profile.json
 .openclaude/
 reports/

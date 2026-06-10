@@ -30,9 +30,9 @@ function App() {
     <div className="site-shell">
       <header className="site-header">
         <nav className="nav" aria-label="primary">
-          <a className="brand" href="/" aria-label="openclaude home">
+          <a className="brand" href="/" aria-label="limitless home">
             <img src="/openclaude.png" alt="" />
-            <span>openclaude</span>
+            <span>limitless</span>
             <span className="ver">v0.7</span>
           </a>
           <div className="nav-right">
@@ -92,7 +92,7 @@ function App() {
                 <span className="step-num">02</span>
                 <div>
                   <strong>start</strong>
-                  <p>run <code>openclaude</code> in any repo.</p>
+                  <p>run <code>limitless</code> in any repo.</p>
                 </div>
               </li>
               <li>
@@ -111,7 +111,7 @@ function App() {
         <div className="footer-line">
           <span className="brand">
             <img src="/openclaude.png" alt="" />
-            <span>openclaude</span>
+            <span>limitless</span>
             <span className="ver">v0.7.0</span>
           </span>
           <span className="sep">|</span>

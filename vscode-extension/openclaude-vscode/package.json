@@ -1,7 +1,7 @@
 {
   "name": "openclaude-vscode",
-  "displayName": "OpenClaude",
-  "description": "Practical VS Code companion for OpenClaude with project-aware launch behavior and a real Control Center.",
+  "displayName": "Limitless",
+  "description": "Practical VS Code companion for Limitless with project-aware launch behavior and a real Control Center.",
   "version": "0.2.0",
   "publisher": "devnull-bootloader",
   "engines": {
@@ -40,60 +40,60 @@
     "commands": [
       {
         "command": "openclaude.start",
-        "title": "OpenClaude: Launch in Terminal",
-        "category": "OpenClaude"
+        "title": "Limitless: Launch in Terminal",
+        "category": "Limitless"
       },
       {
         "command": "openclaude.startInWorkspaceRoot",
-        "title": "OpenClaude: Launch in Workspace Root",
-        "category": "OpenClaude"
+        "title": "Limitless: Launch in Workspace Root",
+        "category": "Limitless"
       },
       {
         "command": "openclaude.openDocs",
-        "title": "OpenClaude: Open Repository",
-        "category": "OpenClaude"
+        "title": "Limitless: Open Repository",
+        "category": "Limitless"
       },
       {
         "command": "openclaude.openSetupDocs",
-        "title": "OpenClaude: Open Setup Guide",
-        "category": "OpenClaude"
+        "title": "Limitless: Open Setup Guide",
+        "category": "Limitless"
       },
       {
         "command": "openclaude.openWorkspaceProfile",
-        "title": "OpenClaude: Open Workspace Profile",
-        "category": "OpenClaude"
+        "title": "Limitless: Open Workspace Profile",
+        "category": "Limitless"
       },
       {
         "command": "openclaude.openControlCenter",
-        "title": "OpenClaude: Open Control Center",
-        "category": "OpenClaude"
+        "title": "Limitless: Open Control Center",
+        "category": "Limitless"
       },
       {
         "command": "openclaude.newChat",
-        "title": "OpenClaude: New Chat",
-        "category": "OpenClaude"
+        "title": "Limitless: New Chat",
+        "category": "Limitless"
       },
       {
         "command": "openclaude.openChat",
-        "title": "OpenClaude: Open Chat Panel",
-        "category": "OpenClaude"
+        "title": "Limitless: Open Chat Panel",
+        "category": "Limitless"
       },
       {
         "command": "openclaude.resumeSession",
-        "title": "OpenClaude: Resume Session",
-        "category": "OpenClaude"
+        "title": "Limitless: Resume Session",
+        "category": "Limitless"
       },
       {
         "command": "openclaude.abortChat",
-        "title": "OpenClaude: Abort Generation",
-        "category": "OpenClaude"
+        "title": "Limitless: Abort Generation",
+        "category": "Limitless"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "openclaude",
-          "title": "OpenClaude",
+          "title": "Limitless",
           "icon": "media/openclaude.svg"
         }
       ]
@@ -120,22 +120,22 @@
       }
     ],
     "configuration": {
-      "title": "OpenClaude",
+      "title": "Limitless",
       "properties": {
         "openclaude.launchCommand": {
           "type": "string",
-          "default": "openclaude",
-          "description": "Command run in the integrated terminal when launching OpenClaude."
+          "default": "limitless",
+          "description": "Command run in the integrated terminal when launching Limitless."
         },
         "openclaude.terminalName": {
           "type": "string",
-          "default": "OpenClaude",
-          "description": "Integrated terminal tab name for OpenClaude sessions."
+          "default": "Limitless",
+          "description": "Integrated terminal tab name for Limitless sessions."
         },
         "openclaude.useOpenAIShim": {
           "type": "boolean",
           "default": false,
-          "description": "Optionally set CLAUDE_CODE_USE_OPENAI=1 in launched OpenClaude terminals."
+          "description": "Optionally set CLAUDE_CODE_USE_OPENAI=1 in launched Limitless terminals."
         },
         "openclaude.permissionMode": {
           "type": "string",
@@ -153,7 +153,7 @@
     },
     "themes": [
       {
-        "label": "OpenClaude Terminal Black",
+        "label": "Limitless Terminal Black",
         "uiTheme": "vs-dark",
         "path": "./themes/OpenClaude-Terminal-Black.json"
       }

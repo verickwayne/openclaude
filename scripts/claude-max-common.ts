@@ -93,7 +93,7 @@ export async function ensureClaudeMaxLoginReady(): Promise<void> {
   const tokens = getClaudeAIOAuthTokens()
   if (!tokens?.accessToken || !tokens.refreshToken) {
     throw new Error(
-      'Claude.ai OAuth login is missing. Run `openclaude auth login --claudeai` before launching the Claude Max proxy.',
+      'Claude.ai OAuth login is missing. Run `limitless auth login --claudeai` before launching the Claude Max proxy.',
     )
   }
 }

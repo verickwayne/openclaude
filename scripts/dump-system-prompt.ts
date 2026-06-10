@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Dump the fully-rendered system prompt openclaude sends to the LLM.
+// Dump the fully-rendered system prompt limitless sends to the LLM.
 // Stubs build-time globals so we can call getSystemPrompt without going
 // through the full bundler.
 // Run: NODE_ENV=test bun run scripts/dump-system-prompt.ts
@@ -10,7 +10,7 @@
   BUILD_TIME: new Date().toISOString(),
   ISSUES_EXPLAINER: 'report the issue at https://github.com/Gitlawb/openclaude/issues',
   FEEDBACK_CHANNEL: 'https://github.com/Gitlawb/openclaude/issues',
-  PACKAGE_URL: '@gitlawb/openclaude',
+  PACKAGE_URL: '@gitlawb/limitless',
   NATIVE_PACKAGE_URL: undefined,
 }
 
