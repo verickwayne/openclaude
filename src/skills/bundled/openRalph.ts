@@ -36,7 +36,7 @@ fi
 PROJECT_ROOT="$(pwd)"
 RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
 SESSION_DIR="$RALPH_DIR/sessions"
-mkdir -p "$SESSION_DIR" "$RALPH_DIR/bridges" "$RALPH_DIR/logs"
+mkdir -p "$SESSION_DIR" "$RALPH_DIR/bridges" "$RALPH_DIR/logs" "$RALPH_DIR/ledger"
 
 SESSION_ID="\${CLAUDE_CODE_SESSION_ID:-\${CLAUDE_SESSION_ID:-}}"
 if [[ -z "$SESSION_ID" ]]; then
@@ -158,6 +158,9 @@ if [[ -f .gitignore ]]; then
   ; do
     grep -qF "$_entry" .gitignore || echo "$_entry" >> .gitignore
   done
+  # .openclaude/ralph/ledger/outcomes.jsonl is NOT gitignored by default.
+  # Routing knowledge is a data asset worth committing (see openRalph §3 / Angle E).
+  # To opt out: manually add .openclaude/ralph/ledger/ to your .gitignore.
 fi
 
 echo "OpenRalph engaged"
@@ -221,6 +224,114 @@ with open(bridge_path, "w", encoding="utf-8") as f:
 with open(project_log_path, "a", encoding="utf-8") as f:
   f.write(json.dumps(event, separators=(",", ":")) + "\\n")
 PY
+
+# ── Routing Outcome Ledger capture ────────────────────────────────────────────
+# On PostToolUse where tool_name == Agent, extract the persona-result YAML block
+# from the tool response and append one JSONL record to the cross-session ledger.
+# Runs unconditionally (not just in session state dir) so it captures all dispatches.
+# Wrapped in || true so a malformed YAML or absent field never fails the hook.
+if [[ "$EVENT" == "PostToolUse" && "$TOOL_NAME" == "Agent" ]]; then
+  TOOL_RESPONSE="$(read_json_field tool_response)"
+  TOOL_INPUT_RAW="$(python3 - "tool_input" "$INPUT" <<'PY'
+import json, sys
+field, raw = sys.argv[1], sys.argv[2]
+try:
+  data = json.loads(raw or "{}")
+  val = data.get(field)
+  print(json.dumps(val) if val is not None else "")
+except Exception:
+  print("")
+PY
+)"
+  export TOOL_RESPONSE TOOL_INPUT_RAW
+  python3 - "$RALPH_DIR/ledger/outcomes.jsonl" "$SESSION_STATE_DIR/session.json" <<'PY' || true
+import json, os, re, sys, time
+ledger_path, session_json_path = sys.argv[1], sys.argv[2]
+tool_response = os.environ.get("TOOL_RESPONSE", "")
+tool_input_raw = os.environ.get("TOOL_INPUT_RAW", "")
+session_id = os.environ.get("SESSION_ID", "unknown")
+
+# Persona: prefer subagent_type from tool_input (the dispatched agent name).
+persona = None
+try:
+  tool_input = json.loads(tool_input_raw) if tool_input_raw else {}
+  persona = tool_input.get("subagent_type") or None
+except Exception:
+  pass
+
+# Extract the trailing YAML block from the tool response.
+# Build the backtick fence programmatically to avoid quoting issues.
+_bt3 = chr(96) * 3
+yaml_match = re.search(_bt3 + r"yaml\s*\n([\s\S]*?)" + _bt3, tool_response or "")
+if not yaml_match:
+  sys.exit(0)
+yaml_text = yaml_match.group(1)
+
+def parse_yaml_field(text, key):
+  """Minimal key: value extractor — avoids a yaml dep."""
+  m = re.search(r"^" + re.escape(key) + r":\s*(.+)$", text, re.MULTILINE)
+  if not m:
+    return None
+  val = m.group(1).strip().strip('"').strip("'")
+  return None if val in ("null", "~", "") else val
+
+task_slug = parse_yaml_field(yaml_text, "task_slug")
+provider_model_used = parse_yaml_field(yaml_text, "provider_model_used")
+status = parse_yaml_field(yaml_text, "status")
+tests_passed_raw = parse_yaml_field(yaml_text, "tests_passed")
+new_gaps_raw = parse_yaml_field(yaml_text, "new_gaps")
+# persona already set from tool_input; fallback to YAML if present there
+if not persona:
+  persona = parse_yaml_field(yaml_text, "persona")
+
+# tests_passed: coerce to bool or None.
+if tests_passed_raw is None or tests_passed_raw.lower() == "skipped":
+  tests_passed = None
+else:
+  tests_passed = tests_passed_raw.lower() not in ("false", "0", "no")
+
+# new_gaps: count list items (lines starting with -) if the field is multi-line.
+new_gaps = 0
+gaps_block = re.search(r"^new_gaps:\s*\n((?:\s+-.*\n)*)", yaml_text, re.MULTILINE)
+if gaps_block:
+  new_gaps = len([l for l in gaps_block.group(1).splitlines() if l.strip().startswith("-")])
+elif new_gaps_raw and new_gaps_raw not in ("[]", ""):
+  new_gaps = 1
+
+# workload: read from session.json if present.
+workload = None
+try:
+  sess = json.load(open(session_json_path, encoding="utf-8"))
+  workload = sess.get("workload") or sess.get("mode")
+except Exception:
+  pass
+
+# duration_s: not available from hook stdin; set null.
+duration_s = None
+
+record = {
+  "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+  "session_id": session_id,
+  "task_slug": task_slug,
+  "persona": persona,
+  "workload": workload,
+  "provider_model_used": provider_model_used,
+  "status": status,
+  "tests_passed": tests_passed,
+  "new_gaps": new_gaps,
+  "duration_s": duration_s,
+}
+
+# Skip if we got no signal fields — nothing useful to record.
+if not any([task_slug, provider_model_used, status]):
+  sys.exit(0)
+
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+with open(ledger_path, "a", encoding="utf-8") as f:
+  f.write(json.dumps(record, separators=(",", ":")) + "\\n")
+PY
+fi
+# ─────────────────────────────────────────────────────────────────────────────
 
 # Session-scoped effects only when this session has its own state dir (created by engage).
 if [[ -d "$SESSION_STATE_DIR" ]]; then
@@ -355,6 +466,69 @@ echo "OpenRalph session disengaged: $SESSION_ID"
 echo "State preserved at $SESSION_STATE_DIR"
 `
 
+const OPENRALPH_ROUTE_STATS_SH = `#!/usr/bin/env bash
+set -euo pipefail
+RALPH_DIR="$(pwd)/.openclaude/ralph"
+LEDGER="$RALPH_DIR/ledger/outcomes.jsonl"
+if [[ ! -f "$LEDGER" ]]; then
+  echo "No routing ledger found at $LEDGER"
+  exit 0
+fi
+python3 - "$LEDGER" <<'PY'
+import json, sys, collections
+
+ledger_path = sys.argv[1]
+rows = []
+with open(ledger_path, encoding="utf-8") as f:
+  for line in f:
+    line = line.strip()
+    if not line:
+      continue
+    try:
+      rows.append(json.loads(line))
+    except Exception:
+      continue
+
+if not rows:
+  print("Ledger is empty.")
+  sys.exit(0)
+
+# Aggregate per (persona, workload, provider_model_used)
+Cell = collections.namedtuple("Cell", ["persona", "workload", "model"])
+stats = {}  # Cell -> {n, successes, durations}
+
+for row in rows:
+  persona = row.get("persona") or "unknown"
+  workload = row.get("workload") or "unknown"
+  model = row.get("provider_model_used") or "unknown"
+  cell = Cell(persona, workload, model)
+  if cell not in stats:
+    stats[cell] = {"n": 0, "successes": 0, "durations": []}
+  entry = stats[cell]
+  entry["n"] += 1
+  # success: status == complete AND tests_passed is not False
+  status = (row.get("status") or "").lower()
+  tests_passed = row.get("tests_passed")
+  if status == "complete" and tests_passed is not False:
+    entry["successes"] += 1
+  dur = row.get("duration_s")
+  if dur is not None:
+    entry["durations"].append(dur)
+
+# Print table
+header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14}"
+print(header)
+print("-" * len(header))
+for cell in sorted(stats, key=lambda c: (c.persona, c.workload, c.model)):
+  e = stats[cell]
+  n = e["n"]
+  success_rate = e["successes"] / n if n > 0 else 0.0
+  avg_duration = sum(e["durations"]) / len(e["durations"]) if e["durations"] else None
+  avg_dur_str = f"{avg_duration:.1f}" if avg_duration is not None else "   n/a"
+  print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14}")
+PY
+`
+
 const OPENRALPH_README = `# OpenRalph Support Files
 
 OpenRalph is a project-local scheduler pattern for OpenClaude.
@@ -374,6 +548,7 @@ export const OPENRALPH_FILES = {
   'bin/openralph-hook.sh': OPENRALPH_HOOK_SH,
   'bin/openralph-status.sh': OPENRALPH_STATUS_SH,
   'bin/openralph-disengage.sh': OPENRALPH_DISENGAGE_SH,
+  'bin/openralph-route-stats.sh': OPENRALPH_ROUTE_STATS_SH,
   'README.md': OPENRALPH_README,
 }
 
@@ -429,7 +604,7 @@ Use Ralph's persona scheduler, plus Claude Code's newer \`/goal\` idea:
    - \`openralph-test-analyzer\` for failed test diagnosis
 6. Parse the returned YAML into \`$OPENRALPH_SESSION_DIR/persona-result.yml\`.
 7. Update \`progress.md\`, \`queue.md\`, and \`goal.json\` in that same session directory.
-8. Use the model/provider picker deliberately: fast models for search/status, strongest available model for architecture or risky edits, local models for offline mechanical tasks.
+8. Before each dispatch, run \`bash .openclaude/ralph/bin/openralph-route-stats.sh\` to read the routing outcome ledger. Pick the provider/model for this persona and workload by best recorded success rate (status=="complete" and tests_passed!=false counts as success). If any candidate model has n < 3 recorded outcomes for this persona × workload cell, prefer trying it once over exploiting the current best — exploration prevents day-one lock-in. Record the chosen model as \`provider_model_used\` in the persona-result YAML.
 9. Stop only when \`goal.json.status\` is \`complete\` and the proof is visible in \`progress.md\`.
 
 The Stop hook records session bridges and blocks a stop while the active session's \`goal.json.status\` is still running, so future turns resume from session-scoped OpenRalph files instead of relying on memory.`

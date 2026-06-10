@@ -106,3 +106,132 @@ test('researcher whenToUse references sessions/<session_id>/ path form', () => {
   expect(source).toContain('sessions/<session_id>/research')
   expect(source).not.toContain("under .openclaude/ralph/research.'")
 })
+
+// ── Routing Outcome Ledger tests ──────────────────────────────────────────────
+
+test('hook captures ledger line on PostToolUse Agent dispatch', () => {
+  const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
+
+  // Capture must be inside the PostToolUse branch keyed on EVENT == PostToolUse
+  // and TOOL_NAME == Agent.
+  expect(hook).toContain('PostToolUse')
+  expect(hook).toContain('Agent')
+
+  // Must write to the ledger path (project-level, cross-session).
+  expect(hook).toContain('ledger/outcomes.jsonl')
+
+  // Must mkdir -p for the ledger dir before appending.
+  expect(hook).toContain('ledger')
+
+  // Must extract provider_model_used from the YAML block.
+  expect(hook).toContain('provider_model_used')
+
+  // Must never fail the hook — wrap in || true so a bad YAML doesn't break the
+  // Stop gate or any other hook event.
+  expect(hook).toContain('|| true')
+})
+
+test('hook ledger append uses safe shell variable references (ledger path uses RALPH_DIR)', () => {
+  const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
+  // The ledger path must reference RALPH_DIR (not a hard-coded literal).
+  // Plain $RALPH_DIR is safe in a JS template literal because JS only interpolates
+  // ${expr} — bare $VARNAME is left as-is in the string.
+  // The generated script must contain RALPH_DIR somewhere near ledger/outcomes.jsonl.
+  const ledgerLine = hook
+    .split('\n')
+    .find(line => line.includes('ledger/outcomes.jsonl'))
+  expect(ledgerLine).toBeDefined()
+  // The line referencing the ledger file should contain RALPH_DIR (with or without
+  // braces — both are safe in JS template literals for this variable name).
+  expect(hook).toMatch(/RALPH_DIR.*ledger\/outcomes\.jsonl|ledger\/outcomes\.jsonl.*RALPH_DIR/)
+})
+
+test('route-stats script is registered in OPENRALPH_FILES', () => {
+  const key = 'bin/openralph-route-stats.sh'
+  // toHaveProperty mis-handles paths with slashes — use direct key check instead.
+  expect(key in OPENRALPH_FILES).toBe(true)
+  const script = (OPENRALPH_FILES as Record<string, string>)[key]
+
+  // Must read outcomes.jsonl.
+  expect(script).toContain('outcomes.jsonl')
+
+  // Must aggregate per persona × workload × provider_model_used.
+  expect(script).toContain('persona')
+  expect(script).toContain('provider_model_used')
+
+  // Must compute a success rate (status==complete + tests_passed not false).
+  expect(script).toContain('success')
+
+  // Must print n (count) and avg_duration.
+  expect(script).toContain('avg_duration')
+
+  // Must use python3 stdlib only (no pip deps).
+  expect(script).toContain('python3')
+  expect(script).not.toContain('import pandas')
+  expect(script).not.toContain('import numpy')
+})
+
+test('scheduler step 8 reads route-stats and uses success-rate model selection with exploration', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Step 8 must reference the route-stats script.
+  expect(text).toContain('openralph-route-stats.sh')
+
+  // Must pick model by best recorded success rate.
+  expect(text).toContain('success rate')
+
+  // Must specify the exploration rule: n < 3 triggers trying an under-sampled candidate.
+  expect(text).toContain('n < 3')
+})
+
+test('bootstrap creates ledger dir and ledger is NOT gitignored by default', () => {
+  const bootstrap = OPENRALPH_FILES['bin/openralph-bootstrap.sh']
+
+  // Must mkdir -p for the ledger directory.
+  expect(bootstrap).toContain('ledger')
+
+  // The ledger path must NOT appear as a gitignore entry (it is committed by default
+  // per §3 / Angle E — routing knowledge is worth committing).
+  // It may appear commented-out as an optional line but must not be in the active
+  // per-entry idempotent append loop without a comment marker.
+  const gitignoreLoopMatch = bootstrap.match(
+    /for _entry in\\s+\\\\([\s\S]*?)\\s*;\\s*do/,
+  )
+  if (gitignoreLoopMatch) {
+    // If the loop is present, ledger/outcomes.jsonl must not be in it.
+    expect(gitignoreLoopMatch[1]).not.toContain('ledger')
+  }
+  // outcomes.jsonl itself must not be added as a gitignore entry anywhere.
+  // A comment referencing it (# optional: ...) is acceptable.
+  const nonCommentLines = bootstrap
+    .split('\n')
+    .filter(line => !line.trim().startsWith('#'))
+  const gitignoreLedgerEntries = nonCommentLines.filter(
+    line =>
+      line.includes('.openclaude/ralph/ledger') &&
+      line.includes('>> .gitignore'),
+  )
+  expect(gitignoreLedgerEntries).toHaveLength(0)
+})
+
+test('ledger JSONL record shape contains all required fields', () => {
+  const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
+
+  // All required fields per spec §3 data shape must appear in the ledger logic.
+  const requiredFields = [
+    '"ts"',
+    '"session_id"',
+    '"task_slug"',
+    '"persona"',
+    '"provider_model_used"',
+    '"status"',
+    '"tests_passed"',
+    '"workload"',
+  ]
+  for (const field of requiredFields) {
+    expect(hook).toContain(field)
+  }
+})
