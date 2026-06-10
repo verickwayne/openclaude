@@ -1204,3 +1204,48 @@ test('route-stats script emits n_verified and verified_rate columns when checker
   // Must gracefully skip (any_verified check) when no checker rows exist
   expect(script).toContain('any_verified')
 })
+
+// ── Finding 1: kick other-session liveness guard ──────────────────────────────
+
+test('kick write_kick_state guards against re-pointing away from a live other session', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-kick.sh']
+  // The guard must fire when active != sid (a different session is live), not only
+  // when active == sid. The elif branch distinguishes the two cases.
+  expect(script).toContain('"$active" != "$sid"')
+  // Must check the OTHER session's bridge file (keyed by $active, not $sid).
+  expect(script).toContain('"$RALPH_DIR/bridges/$active.json"')
+  // Staleness threshold must reuse OPENRALPH_ADOPT_STALE_SECONDS (not a new name)
+  // so adopt and kick stay consistent.
+  expect(script).toContain('OPENRALPH_ADOPT_STALE_SECONDS')
+  // The -1 sentinel for a missing bridge must be handled (same as adopt).
+  expect(script).toContain('"$bridge_age" -ge 0')
+})
+
+test('kick other-session refusal message names the live session, the staleness rule, and --force', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-kick.sh']
+  // The refusal message must name --force so the user knows how to override.
+  expect(script).toMatch(/Re-pointing active-session[\s\S]*--force|--force[\s\S]*Re-pointing active-session/)
+  // Must mention OPENRALPH_ADOPT_STALE_SECONDS so the user can tune it.
+  const refusalBlock = script.slice(script.indexOf('Re-pointing active-session'))
+  expect(refusalBlock.slice(0, 400)).toContain('OPENRALPH_ADOPT_STALE_SECONDS')
+  // Exit code must be 2 (same as the same-session guard).
+  expect(script).toContain('exit 2')
+})
+
+// ── Finding 6: buildKickPrompt verb distinction ───────────────────────────────
+
+test('buildKickPrompt contains verb-distinction sentence for kick, resume, and disengage', async () => {
+  registerOpenRalphSkills()
+  const kick = getBundledSkills().find(command => command.name === 'openralph-kick')!
+  const blocks = await kick.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Must name all three lifecycle verbs in one distinguishing statement.
+  expect(text).toMatch(/kick\s*=/)
+  expect(text).toMatch(/resume\s*=/)
+  expect(text).toMatch(/disengage\s*=/)
+  // kick = shell-level re-entry markers
+  expect(text).toContain('shell-level')
+  // resume = model-driven continuation
+  expect(text).toContain('model-driven')
+})

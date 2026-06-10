@@ -873,8 +873,7 @@ resolve_session() {
 write_kick_state() {
   local sid="$1"
   local session_state_dir="$SESSION_DIR/$sid"
-  local now active bridge_age
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  local active bridge_age
   mkdir -p "$session_state_dir"
 
   active="$(cat "$RALPH_DIR/active-session" 2>/dev/null || true)"
@@ -889,6 +888,23 @@ PY
 )"
     if [[ "$bridge_age" -ge 0 && "$bridge_age" -lt "\${OPENRALPH_KICK_LIVE_SECONDS:-15}" ]]; then
       echo "openralph-kick: session $sid already looks live (bridge age \${bridge_age}s). Use --force to rewrite kick markers anyway." >&2
+      exit 2
+    fi
+  elif [[ "$FORCE" != "1" && -n "$active" && "$active" != "$sid" && -f "$RALPH_DIR/enabled" ]]; then
+    # A DIFFERENT session is currently the active-session pointer with enabled present.
+    # If its bridge heartbeat is fresh, re-pointing active-session would silently disable
+    # that session's Stop gate mid-flight (the hook gate requires SESSION_ID == ACTIVE_SESSION).
+    # Reuse the same staleness threshold as openralph-adopt.sh so the rule is consistent.
+    bridge_age="$(python3 - "$RALPH_DIR/bridges/$active.json" <<'PY'
+import os, sys, time
+try:
+  print(int(time.time() - os.path.getmtime(sys.argv[1])))
+except OSError:
+  print(-1)
+PY
+)"
+    if [[ "$bridge_age" -ge 0 && "$bridge_age" -lt "\${OPENRALPH_ADOPT_STALE_SECONDS:-600}" ]]; then
+      echo "openralph-kick: session $active is live (bridge age \${bridge_age}s, threshold \${OPENRALPH_ADOPT_STALE_SECONDS:-600}s). Re-pointing active-session to $sid would disable its Stop gate mid-flight. Wait until the bridge heartbeat exceeds OPENRALPH_ADOPT_STALE_SECONDS, disengage $active first, or rerun with --force." >&2
       exit 2
     fi
   fi
@@ -1134,7 +1150,9 @@ Run:
 bash .openclaude/ralph/bin/openralph-kick.sh${suffix}
 \`\`\`
 
-Use this when a slash command was typed but the loop did not actually engage, or when a separate terminal needs to reactivate a session by id. For existing state, the script sets \`.openclaude/ralph/active-session\`, touches \`.openclaude/ralph/enabled\`, writes \`kick.json\`, and appends \`kick-log.jsonl\`/project events. For missing state, rerun with \`--prompt\` or \`--prompt-file\` so \`openralph-bootstrap.sh\` can create a concrete session objective.`
+Use this when a slash command was typed but the loop did not actually engage, or when a separate terminal needs to reactivate a session by id. For existing state, the script sets \`.openclaude/ralph/active-session\`, touches \`.openclaude/ralph/enabled\`, writes \`kick.json\`, and appends \`kick-log.jsonl\`/project events. For missing state, rerun with \`--prompt\` or \`--prompt-file\` so \`openralph-bootstrap.sh\` can create a concrete session objective.
+
+Lifecycle verb reference: kick = shell-level re-entry markers for a loop that never started or whose hook never fired; resume = model-driven continuation of a loop that ran and has existing session state; disengage = close the loop and preserve its state for future reference.`
 }
 
 export function registerOpenRalphSkills(): void {
