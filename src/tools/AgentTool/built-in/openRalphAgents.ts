@@ -13,6 +13,7 @@ const PERSONA_RESULT_SCHEMA = `End with this YAML block and no extra prose after
 task_slug: "<from .openclaude/ralph/sessions/<session_id>/current-task.md>"
 task_category: "<implementation|debugging|research|refactoring|verification|other or null if not in brief>"
 status: "complete" | "partial" | "blocked"
+failure_category: "<rate_limited|auth|server_error|timeout|context_exceeded|quality|tool_error|other or null if status is complete>"
 commit: "<hash or null>"
 files_changed:
   - "path/to/file"
@@ -22,7 +23,12 @@ provider_model_used: "<provider/model or model class used>"
 new_gaps: []
 next_action: "<one concrete scheduler action>"
 notes: "<brief context for scheduler>"
-\`\`\``
+\`\`\`
+
+When status is not "complete", set failure_category to classify why:
+  infrastructure (not model quality): rate_limited, auth, server_error, timeout
+  capability: context_exceeded (model cannot handle task at this context size)
+  quality: quality (wrong/incomplete output), tool_error (misused API), other`
 
 const COMMON_PROMPT = `You are an OpenRalph persona agent dispatched by the OpenClaude scheduler. Resolve the target session id from .openclaude/ralph/active-session unless the caller gives you one explicitly. Read .openclaude/ralph/sessions/<session_id>/current-task.md first, then only the files needed for that task.
 

@@ -13,8 +13,10 @@ import {
   LEDGER_RELATIVE_PATH,
   MIN_RELIABLE_N,
   DEFAULT_HALF_LIFE_DAYS,
+  INFRA_FAILURE_CATEGORIES,
   type LedgerEntry,
   type RecencyOptions,
+  type FailureCategory,
 } from './outcomeLedger.js'
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
@@ -295,6 +297,150 @@ describe('task_category on LedgerEntry', () => {
     // All three belong to the same (persona, workload, model) cell
     expect(stats).toHaveLength(1)
     expect(stats[0]?.n).toBe(3)
+  })
+})
+
+// ─── failure_category discrimination ─────────────────────────────────────────
+
+describe('INFRA_FAILURE_CATEGORIES set', () => {
+  test('contains rate_limited, auth, server_error, timeout', () => {
+    expect(INFRA_FAILURE_CATEGORIES.has('rate_limited')).toBe(true)
+    expect(INFRA_FAILURE_CATEGORIES.has('auth')).toBe(true)
+    expect(INFRA_FAILURE_CATEGORIES.has('server_error')).toBe(true)
+    expect(INFRA_FAILURE_CATEGORIES.has('timeout')).toBe(true)
+  })
+
+  test('does NOT contain context_exceeded, quality, tool_error, other', () => {
+    expect(INFRA_FAILURE_CATEGORIES.has('context_exceeded')).toBe(false)
+    expect(INFRA_FAILURE_CATEGORIES.has('quality')).toBe(false)
+    expect(INFRA_FAILURE_CATEGORIES.has('tool_error')).toBe(false)
+    expect(INFRA_FAILURE_CATEGORIES.has('other')).toBe(false)
+  })
+})
+
+describe('aggregateLedgerStats — failure_category policy', () => {
+  const base = {
+    persona: 'openralph-builder',
+    workload: 'long-running',
+    provider_model_used: 'model-a',
+  }
+
+  function makeEntry(fc: FailureCategory | null | undefined, status = 'partial'): LedgerEntry {
+    return { ...base, status, tests_passed: status === 'complete' ? true : false, failure_category: fc ?? undefined }
+  }
+
+  test('infrastructure entries are excluded from n and successes', () => {
+    const entries: LedgerEntry[] = [
+      { ...base, status: 'complete', tests_passed: true },            // success
+      makeEntry('rate_limited'),                                        // infra — excluded
+      makeEntry('auth'),                                                // infra — excluded
+      makeEntry('server_error'),                                        // infra — excluded
+      makeEntry('timeout'),                                             // infra — excluded
+    ]
+    const [stat] = aggregateLedgerStats(entries)
+    expect(stat?.n).toBe(1)
+    expect(stat?.successes).toBe(1)
+    expect(stat?.infraExcluded).toBe(4)
+  })
+
+  test('infrastructure categories individually each excluded', () => {
+    const infraCategories: FailureCategory[] = ['rate_limited', 'auth', 'server_error', 'timeout']
+    for (const fc of infraCategories) {
+      const entries: LedgerEntry[] = [
+        { ...base, status: 'complete', tests_passed: true },
+        makeEntry(fc),
+      ]
+      const [stat] = aggregateLedgerStats(entries)
+      expect(stat?.n).toBe(1)
+      expect(stat?.infraExcluded).toBe(1)
+    }
+  })
+
+  test('context_exceeded counts as failure (not excluded from n)', () => {
+    const entries: LedgerEntry[] = [
+      { ...base, status: 'complete', tests_passed: true },
+      makeEntry('context_exceeded'),
+    ]
+    const [stat] = aggregateLedgerStats(entries)
+    expect(stat?.n).toBe(2)
+    expect(stat?.successes).toBe(1)
+    expect(stat?.infraExcluded).toBe(0)
+  })
+
+  test('quality, tool_error, other all count as failures (not excluded)', () => {
+    const qualityCategories: FailureCategory[] = ['quality', 'tool_error', 'other']
+    for (const fc of qualityCategories) {
+      const entries: LedgerEntry[] = [
+        { ...base, status: 'complete', tests_passed: true },
+        makeEntry(fc),
+      ]
+      const [stat] = aggregateLedgerStats(entries)
+      expect(stat?.n).toBe(2)
+      expect(stat?.successes).toBe(1)
+      expect(stat?.infraExcluded).toBe(0)
+    }
+  })
+
+  test('absent failure_category (legacy rows) counted normally', () => {
+    const entries: LedgerEntry[] = [
+      { ...base, status: 'complete', tests_passed: true },
+      { ...base, status: 'partial', tests_passed: false },   // no failure_category
+    ]
+    const [stat] = aggregateLedgerStats(entries)
+    expect(stat?.n).toBe(2)
+    expect(stat?.successes).toBe(1)
+    expect(stat?.infraExcluded).toBe(0)
+  })
+
+  test('null failure_category treated as absent (counted normally)', () => {
+    const entries: LedgerEntry[] = [
+      { ...base, status: 'complete', tests_passed: true },
+      { ...base, status: 'partial', tests_passed: false, failure_category: null },
+    ]
+    const [stat] = aggregateLedgerStats(entries)
+    expect(stat?.n).toBe(2)
+    expect(stat?.successes).toBe(1)
+    expect(stat?.infraExcluded).toBe(0)
+  })
+
+  test('infraExcluded is 0 when all entries lack infrastructure categories', () => {
+    const entries: LedgerEntry[] = [
+      { ...base, status: 'complete', tests_passed: true },
+      { ...base, status: 'complete', tests_passed: true },
+    ]
+    const [stat] = aggregateLedgerStats(entries)
+    expect(stat?.infraExcluded).toBe(0)
+  })
+
+  test('infraExcluded tracked per cell independently', () => {
+    // Model A: 1 success + 2 infra failures
+    // Model B: 1 success + 0 infra failures
+    const entries: LedgerEntry[] = [
+      { ...base, provider_model_used: 'model-a', status: 'complete', tests_passed: true },
+      { ...base, provider_model_used: 'model-a', status: 'partial', failure_category: 'rate_limited' },
+      { ...base, provider_model_used: 'model-a', status: 'partial', failure_category: 'server_error' },
+      { ...base, provider_model_used: 'model-b', status: 'complete', tests_passed: true },
+    ]
+    const stats = aggregateLedgerStats(entries)
+    const a = stats.find(s => s.provider_model_used === 'model-a')!
+    const b = stats.find(s => s.provider_model_used === 'model-b')!
+    expect(a.infraExcluded).toBe(2)
+    expect(a.n).toBe(1)
+    expect(b.infraExcluded).toBe(0)
+    expect(b.n).toBe(1)
+  })
+
+  test('cell with only infra entries still appears (infraExcluded set, n=0)', () => {
+    // An infra-only cell should appear in output so the operator can see it was active.
+    const entries: LedgerEntry[] = [
+      makeEntry('rate_limited'),
+      makeEntry('timeout'),
+    ]
+    const stats = aggregateLedgerStats(entries)
+    expect(stats).toHaveLength(1)
+    expect(stats[0]?.n).toBe(0)
+    expect(stats[0]?.infraExcluded).toBe(2)
+    expect(stats[0]?.successRate).toBeNull()
   })
 })
 

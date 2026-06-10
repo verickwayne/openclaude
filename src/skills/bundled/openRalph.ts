@@ -139,6 +139,7 @@ cat > "$SESSION_STATE_DIR/persona-result.yml" <<'EOF'
 task_slug: null
 task_category: null
 status: null
+failure_category: null
 commit: null
 files_changed: []
 tests_run: null
@@ -371,6 +372,7 @@ def parse_yaml_field(text, key):
 
 task_slug = parse_yaml_field(yaml_text, "task_slug")
 task_category = parse_yaml_field(yaml_text, "task_category")
+failure_category = parse_yaml_field(yaml_text, "failure_category")
 provider_model_used = parse_yaml_field(yaml_text, "provider_model_used")
 status = parse_yaml_field(yaml_text, "status")
 tests_passed_raw = parse_yaml_field(yaml_text, "tests_passed")
@@ -454,6 +456,7 @@ record = {
   "workload": workload,
   "provider_model_used": provider_model_used,
   "status": status,
+  "failure_category": failure_category,
   "tests_passed": tests_passed,
   "new_gaps": new_gaps,
   "duration_s": duration_s,
@@ -816,10 +819,13 @@ for row in rows:
   if existing is None or (row.get("ts") or "") >= (existing.get("ts") or ""):
     checker_by_slug[slug] = row
 
+# Infrastructure failure categories: excluded from n/successes (not model-quality evidence).
+INFRA_CATEGORIES = {"rate_limited", "auth", "server_error", "timeout"}
+
 # Aggregate per (persona, workload, provider_model_used).
 # Worker rows: persona does NOT end with "-checker".
 Cell = collections.namedtuple("Cell", ["persona", "workload", "model"])
-stats = {}  # Cell -> {n, successes, durations, n_verified, verified_successes, token_pairs}
+stats = {}  # Cell -> {n, successes, durations, n_verified, verified_successes, token_pairs, infra_excluded}
 
 for row in rows:
   persona = row.get("persona") or "unknown"
@@ -829,8 +835,13 @@ for row in rows:
   model = row.get("provider_model_used") or "unknown"
   cell = Cell(persona, workload, model)
   if cell not in stats:
-    stats[cell] = {"n": 0, "successes": 0, "durations": [], "n_verified": 0, "verified_successes": 0, "token_pairs": []}
+    stats[cell] = {"n": 0, "successes": 0, "durations": [], "n_verified": 0, "verified_successes": 0, "token_pairs": [], "infra_excluded": 0}
   entry = stats[cell]
+  # Exclude infrastructure failures — they carry no model-quality signal.
+  fc = row.get("failure_category")
+  if fc and fc in INFRA_CATEGORIES:
+    entry["infra_excluded"] += 1
+    continue
   entry["n"] += 1
   # self-reported success: status == complete AND tests_passed is not False
   status = (row.get("status") or "").lower()
@@ -857,14 +868,23 @@ for row in rows:
 
 any_verified = any(e["n_verified"] > 0 for e in stats.values())
 any_tokens = any(len(e["token_pairs"]) > 0 for e in stats.values())
+any_infra_excluded = any(e["infra_excluded"] > 0 for e in stats.values())
 
 # Print table
-if any_verified and any_tokens:
+if any_verified and any_tokens and any_infra_excluded:
+  header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'avg_tokens':>10} {'n_verified':>10} {'verified_rate':>13} {'infra_excl':>10}"
+elif any_verified and any_tokens:
   header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'avg_tokens':>10} {'n_verified':>10} {'verified_rate':>13}"
+elif any_verified and any_infra_excluded:
+  header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'n_verified':>10} {'verified_rate':>13} {'infra_excl':>10}"
+elif any_tokens and any_infra_excluded:
+  header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'avg_tokens':>10} {'infra_excl':>10}"
 elif any_verified:
   header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'n_verified':>10} {'verified_rate':>13}"
 elif any_tokens:
   header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'avg_tokens':>10}"
+elif any_infra_excluded:
+  header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14} {'infra_excl':>10}"
 else:
   header = f"{'persona':<28} {'workload':<14} {'model':<36} {'n':>4} {'success_rate':>12} {'avg_duration_s':>14}"
 print(header)
@@ -877,11 +897,25 @@ for cell in sorted(stats, key=lambda c: (c.persona, c.workload, c.model)):
   avg_dur_str = f"{avg_duration:.1f}" if avg_duration is not None else "   n/a"
   avg_tok = sum(e["token_pairs"]) / len(e["token_pairs"]) if e["token_pairs"] else None
   avg_tok_str = f"{int(avg_tok)}" if avg_tok is not None else "   n/a"
-  if any_verified and any_tokens:
+  ie = e["infra_excluded"]
+  ie_str = str(ie)
+  if any_verified and any_tokens and any_infra_excluded:
+    nv = e["n_verified"]
+    vr = e["verified_successes"] / nv if nv > 0 else None
+    vr_str = f"{vr:.0%}" if vr is not None else "    n/a"
+    print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {avg_tok_str:>10} {nv:>10} {vr_str:>13} {ie_str:>10}")
+  elif any_verified and any_tokens:
     nv = e["n_verified"]
     vr = e["verified_successes"] / nv if nv > 0 else None
     vr_str = f"{vr:.0%}" if vr is not None else "    n/a"
     print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {avg_tok_str:>10} {nv:>10} {vr_str:>13}")
+  elif any_verified and any_infra_excluded:
+    nv = e["n_verified"]
+    vr = e["verified_successes"] / nv if nv > 0 else None
+    vr_str = f"{vr:.0%}" if vr is not None else "    n/a"
+    print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {nv:>10} {vr_str:>13} {ie_str:>10}")
+  elif any_tokens and any_infra_excluded:
+    print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {avg_tok_str:>10} {ie_str:>10}")
   elif any_verified:
     nv = e["n_verified"]
     vr = e["verified_successes"] / nv if nv > 0 else None
@@ -889,6 +923,8 @@ for cell in sorted(stats, key=lambda c: (c.persona, c.workload, c.model)):
     print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {nv:>10} {vr_str:>13}")
   elif any_tokens:
     print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {avg_tok_str:>10}")
+  elif any_infra_excluded:
+    print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14} {ie_str:>10}")
   else:
     print(f"{cell.persona:<28} {cell.workload:<14} {cell.model:<36} {n:>4} {success_rate:>11.0%} {avg_dur_str:>14}")
 PY

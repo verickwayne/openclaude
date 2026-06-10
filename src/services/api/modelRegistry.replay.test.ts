@@ -8,9 +8,11 @@ import { expect, test, describe } from 'bun:test'
 import { resolveProviderForClass } from './modelRegistry.js'
 import {
   aggregateLedgerStats,
+  wilsonLower,
   MIN_RELIABLE_N,
   type LedgerEntry,
   type RecencyOptions,
+  type FailureCategory,
 } from '../../utils/model/outcomeLedger.js'
 
 // ─── Registry fixture ─────────────────────────────────────────────────────────
@@ -697,5 +699,130 @@ describe('Scenario 6 — non-stationarity: recency defense against model drift',
     expect(haikuIdx).toBeLessThan(miniIdx)
     expect(miniIdx).toBeLessThan(mini4Idx)
     console.log(`[Scenario 6 regression guard] long half-life: group0>group1>group2 invariant holds ✓`)
+  })
+})
+
+// ─── Scenario 7: Failure-category discrimination ──────────────────────────────
+//
+// Validates the Kalibr-inspired invariant: infrastructure failures must NOT
+// depress a model's Wilson LCB versus a model that had no infrastructure failures.
+//
+// Model A: 8 genuine successes + 6 rate_limited entries (14 raw rows).
+// Model B: 8 successes + 0 rate_limited entries (8 raw rows).
+//
+// WITHOUT category exclusion (hypothetical): A has 8/14 ≈ 57% rate; B has 8/8 = 100%.
+//   WilsonLCB(8, 14) ≈ 0.38 vs WilsonLCB(8, 8) ≈ 0.72 → A ranks below B.
+//   This is WRONG: A's rate_limited entries are infrastructure noise, not evidence
+//   that A produces worse output quality than B.
+//
+// WITH category exclusion (our implementation): infra entries excluded from n/successes.
+//   A effective: 8/8 = 100% (rate_limited dropped); B: 8/8 = 100%.
+//   WilsonLCB(8, 8) = WilsonLCB(8, 8) → A and B rank equal.
+//   A's LCB is UNCHANGED by the rate_limited entries.
+//
+// Additional assertion: context_exceeded DOES count as failure.
+//   Model C: 8 successes + 6 context_exceeded entries → n=14, successes=8 → LCB < A's.
+
+describe('Scenario 7 — failure-category discrimination: infrastructure noise excluded from routing signal', () => {
+  function makeBaseEntry(
+    model: string,
+    status: 'complete' | 'partial',
+    fc?: FailureCategory,
+  ): LedgerEntry {
+    return {
+      ts: '2026-06-10T10:00:00Z',
+      session_id: `s7-${model}`,
+      task_slug: `task-s7-${model}`,
+      persona: 'openralph-builder',
+      workload: 'long-running',
+      provider_model_used: model,
+      status,
+      tests_passed: status === 'complete' ? true : false,
+      new_gaps: 0,
+      duration_s: null,
+      failure_category: fc,
+    }
+  }
+
+  test('A (8 successes + 6 rate_limited) and B (8 successes) rank equal after exclusion', () => {
+    // Model A: 8 genuine successes + 6 rate_limited failures
+    const aEntries: LedgerEntry[] = [
+      ...Array.from({ length: 8 }, () => makeBaseEntry('haiku', 'complete')),
+      ...Array.from({ length: 6 }, () => makeBaseEntry('haiku', 'partial', 'rate_limited')),
+    ]
+    // Model B: 8 genuine successes, no infrastructure failures
+    const bEntries: LedgerEntry[] = Array.from({ length: 8 }, () => makeBaseEntry('gpt-5.5-mini', 'complete'))
+
+    const allEntries = [...aEntries, ...bEntries]
+    const stats = aggregateLedgerStats(allEntries)
+
+    const aStats = stats.find(s => s.provider_model_used === 'haiku')!
+    const bStats = stats.find(s => s.provider_model_used === 'gpt-5.5-mini')!
+
+    // After exclusion: A should have n=8 (6 infra entries dropped), B n=8.
+    expect(aStats.n).toBe(8)
+    expect(aStats.successes).toBe(8)
+    expect(aStats.infraExcluded).toBe(6)
+    expect(bStats.n).toBe(8)
+    expect(bStats.successes).toBe(8)
+    expect(bStats.infraExcluded).toBe(0)
+
+    // Wilson LCB must be identical — rate_limited entries did not affect A's signal.
+    const aLCB = wilsonLower(aStats.successes, aStats.n)
+    const bLCB = wilsonLower(bStats.successes, bStats.n)
+    expect(aLCB).toBeCloseTo(bLCB, 9)
+
+    // Demonstrate what would happen WITHOUT exclusion (hypothetical 8/14 vs 8/8):
+    const lcbWithout = wilsonLower(8, 14)
+    const lcbClean = wilsonLower(8, 8)
+    console.log(`[Scenario 7] WITHOUT exclusion: A LCB(8/14)=${lcbWithout.toFixed(4)} vs B LCB(8/8)=${lcbClean.toFixed(4)} — A would rank below B`)
+    console.log(`[Scenario 7] WITH exclusion:    A LCB(8/8)=${aLCB.toFixed(4)} vs B LCB(8/8)=${bLCB.toFixed(4)} — A and B rank equal`)
+    console.log(`[Scenario 7] A infraExcluded=${aStats.infraExcluded}, A.n=${aStats.n}, B.n=${bStats.n}`)
+
+    // Key invariant: WITH exclusion, A's LCB is strictly greater than what it
+    // would have been without exclusion (infra noise was suppressing A's signal).
+    expect(aLCB).toBeGreaterThan(lcbWithout)
+  })
+
+  test('context_exceeded DOES count as failure — model with context_exceeded ranks below clean model', () => {
+    // Model C: 8 successes + 6 context_exceeded → n=14 (NOT excluded), 8/14 ≈ 57%
+    // Model B: 8 successes + 0 failures → n=8, 8/8 = 100%
+    const cEntries: LedgerEntry[] = [
+      ...Array.from({ length: 8 }, () => makeBaseEntry('haiku', 'complete')),
+      ...Array.from({ length: 6 }, () => makeBaseEntry('haiku', 'partial', 'context_exceeded')),
+    ]
+    const bEntries: LedgerEntry[] = Array.from({ length: 8 }, () => makeBaseEntry('gpt-5.5-mini', 'complete'))
+
+    const stats = aggregateLedgerStats([...cEntries, ...bEntries])
+    const cStats = stats.find(s => s.provider_model_used === 'haiku')!
+    const bStats = stats.find(s => s.provider_model_used === 'gpt-5.5-mini')!
+
+    // context_exceeded is NOT excluded — counts as failure → n=14, successes=8
+    expect(cStats.n).toBe(14)
+    expect(cStats.successes).toBe(8)
+    expect(cStats.infraExcluded).toBe(0)
+
+    const cLCB = wilsonLower(cStats.successes, cStats.n)
+    const bLCB = wilsonLower(bStats.successes, bStats.n)
+
+    console.log(`[Scenario 7 ctx] context_exceeded: C LCB(8/14)=${cLCB.toFixed(4)}, B LCB(8/8)=${bLCB.toFixed(4)} — C ranks below B (correct)`)
+
+    // C should rank strictly below B because context_exceeded counts as real failure.
+    expect(cLCB).toBeLessThan(bLCB)
+  })
+
+  test('all four infra categories individually cause exclusion from routing signal', () => {
+    const infraCats: FailureCategory[] = ['rate_limited', 'auth', 'server_error', 'timeout']
+    for (const fc of infraCats) {
+      // 8 successes + 3 infra failures of this type
+      const entries: LedgerEntry[] = [
+        ...Array.from({ length: 8 }, () => makeBaseEntry('haiku', 'complete')),
+        ...Array.from({ length: 3 }, () => makeBaseEntry('haiku', 'partial', fc)),
+      ]
+      const [stat] = aggregateLedgerStats(entries)
+      expect(stat?.n).toBe(8)
+      expect(stat?.infraExcluded).toBe(3)
+      console.log(`[Scenario 7 fc=${fc}] infraExcluded=3, n=8 — ${fc} correctly excluded ✓`)
+    }
   })
 })

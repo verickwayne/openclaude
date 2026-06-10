@@ -9,6 +9,34 @@ import * as path from 'node:path'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/**
+ * Failure category for a non-complete dispatch.  Adopted from Kalibr's outcome
+ * record design: infrastructure failures must not pollute model-quality signals.
+ *
+ * Vocabulary (pragmatic subset — not Kalibr's full 13):
+ *   Infrastructure (NOT model-quality evidence):
+ *     rate_limited   — 429 / quota exhausted; try again later
+ *     auth           — 401 / invalid or expired key
+ *     server_error   — 5xx / overloaded; provider is unhealthy
+ *     timeout        — wall-clock limit exceeded before any response
+ *   Capability (model-level, but task-size specific):
+ *     context_exceeded — prompt + response would exceed model's context window;
+ *                        the model genuinely could not handle the task at this size
+ *   Quality (counts against success normally):
+ *     quality        — model produced output but it was wrong / incomplete
+ *     tool_error     — model called a tool incorrectly or misused the API
+ *     other          — failure reason does not fit any above category
+ */
+export type FailureCategory =
+  | 'rate_limited'
+  | 'auth'
+  | 'server_error'
+  | 'timeout'
+  | 'context_exceeded'
+  | 'quality'
+  | 'tool_error'
+  | 'other'
+
 /** One JSONL line written by openralph-hook.sh. All fields optional because
  *  the hook skips absent YAML values rather than failing. */
 export type LedgerEntry = {
@@ -55,6 +83,22 @@ export type LedgerEntry = {
    *    everything else → 'metered'
    *  Null when provider_model_used is absent. */
   billing_model?: 'subscription' | 'metered' | 'free' | null
+  /**
+   * Why the dispatch did not complete, when status !== 'complete'.
+   * Self-reported by the persona in the persona-result YAML.
+   * Null (or absent) on successful dispatches, or when the persona did not
+   * classify the failure.
+   *
+   * Aggregation policy (see aggregateLedgerStats):
+   *   - Infrastructure categories (rate_limited, auth, server_error, timeout):
+   *     EXCLUDED from both n and successes — not evidence of model quality.
+   *   - context_exceeded: counts as failure (the model genuinely could not handle
+   *     the task at this context size).
+   *   - quality / tool_error / other: count as failure normally.
+   *   - Absent / null (legacy rows, pre-category data): counted as today —
+   *     backward-compatible; absence is not infrastructure.
+   */
+  failure_category?: FailureCategory | null
 }
 
 /** A worker LedgerEntry annotated after joinCheckerVerdicts() runs.
@@ -89,6 +133,13 @@ export type LedgerStats = {
    * success indicator).  Null when no RecencyOptions were supplied.
    */
   effectiveSuccesses: number | null
+  /**
+   * Count of entries excluded from n/successes because they carried an
+   * infrastructure failure_category (rate_limited, auth, server_error, timeout).
+   * These entries are noise, not model-quality evidence, and are filtered before
+   * Wilson LCB computation.  0 when no such entries exist in the cell.
+   */
+  infraExcluded: number
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -125,6 +176,26 @@ export function wilsonLower(successes: number, n: number, z = 1.0): number {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * The set of failure_category values that represent infrastructure failures —
+ * provider-side problems that tell us nothing about model quality.
+ *
+ * Aggregation policy: entries carrying any of these categories are EXCLUDED
+ * from both n and successes in aggregateLedgerStats.  They are tracked in the
+ * cell's infraExcluded counter for observability but do not affect the Wilson
+ * LCB that drives routing decisions.
+ *
+ * Compare: context_exceeded is NOT in this set — it is a capability failure
+ * (the model genuinely could not do the task at that context size) and counts
+ * against success normally.
+ */
+export const INFRA_FAILURE_CATEGORIES: ReadonlySet<FailureCategory> = new Set([
+  'rate_limited',
+  'auth',
+  'server_error',
+  'timeout',
+])
 
 /**
  * Returns true when an entry counts as a success:
@@ -322,6 +393,8 @@ export function aggregateLedgerStats(
       durations: number[]
       effectiveN: number
       effectiveSuccesses: number
+      /** Infrastructure-excluded entry count for observability (route-stats display). */
+      infraExcluded: number
     }
   >()
 
@@ -343,9 +416,33 @@ export function aggregateLedgerStats(
     const key = `${persona}\0${workload}\0${model}`
     let cell = cells.get(key)
     if (!cell) {
-      cell = { persona, workload, model, n: 0, successes: 0, durations: [], effectiveN: 0, effectiveSuccesses: 0 }
+      cell = { persona, workload, model, n: 0, successes: 0, durations: [], effectiveN: 0, effectiveSuccesses: 0, infraExcluded: 0 }
       cells.set(key, cell)
     }
+
+    // ── Failure-category discrimination ────────────────────────────────────────
+    // Infrastructure failures (rate_limited, auth, server_error, timeout) are
+    // excluded from n/successes entirely — they carry no model-quality signal.
+    // They are tracked in infraExcluded for observability but do not affect the
+    // Wilson LCB that drives routing.
+    //
+    // context_exceeded is NOT excluded: the model genuinely could not handle the
+    // task at that context size — this is capability evidence, counts as failure.
+    //
+    // Legacy rows (failure_category absent/null): counted as today — absence of
+    // category does not imply infrastructure failure.
+    //
+    // NOTE: providerFailover.ts classifyFailoverReason() fires on API errors
+    // before a persona dispatch completes, so failover-driven retries never
+    // produce persona YAML.  failure_category here is persona-level
+    // self-classification only — no double-counting with the failover path.
+    const fc = entry.failure_category
+    if (fc !== undefined && fc !== null && INFRA_FAILURE_CATEGORIES.has(fc)) {
+      cell.infraExcluded++
+      continue // exclude from n/successes/durations/effective counts
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     cell.n++
 
     const isSuccess = successDef === 'checker-verified'
@@ -382,6 +479,7 @@ export function aggregateLedgerStats(
       avgDurationS,
       effectiveN: recencyOpts ? cell.effectiveN : null,
       effectiveSuccesses: recencyOpts ? cell.effectiveSuccesses : null,
+      infraExcluded: cell.infraExcluded,
     })
   }
   return result
