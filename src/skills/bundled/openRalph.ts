@@ -605,6 +605,27 @@ Use Ralph's persona scheduler, plus Claude Code's newer \`/goal\` idea:
 6. Parse the returned YAML into \`$OPENRALPH_SESSION_DIR/persona-result.yml\`.
 7. Update \`progress.md\`, \`queue.md\`, and \`goal.json\` in that same session directory.
 8. Before each dispatch, run \`bash .openclaude/ralph/bin/openralph-route-stats.sh\` to read the routing outcome ledger. Pick the provider/model for this persona and workload by best recorded success rate (status=="complete" and tests_passed!=false counts as success). If any candidate model has n < 3 recorded outcomes for this persona × workload cell, prefer trying it once over exploiting the current best — exploration prevents day-one lock-in. Record the chosen model as \`provider_model_used\` in the persona-result YAML.
+
+### Adjudicated dispatch (optional mode — highest-value ledger entries)
+
+**Trigger:** use adjudicated dispatch when the current task in \`current-task.md\` contains the field \`adjudicate: true\`, OR when the task has accumulated 2 or more consecutive \`blocked\` or \`partial\` results (no_progress detected in \`progress.md\`). The marker is the preferred explicit opt-in — add \`adjudicate: true\` in the task YAML header of any high-stakes or long-running work item in \`queue.md\`.
+
+**Procedure (N=2 cross-provider builds):**
+
+1. Read \`bash .openclaude/ralph/bin/openralph-route-stats.sh\` to enumerate available model candidates. Select exactly 2 candidate models from **different providers** — the highest-ranked model from provider A and the highest-ranked model from provider B (using the same success-rate selection rule from step 8). If route stats are empty, pick one Anthropic model and one non-Anthropic model.
+2. For each candidate, create an isolated git worktree:
+   \`\`\`bash
+   git worktree add .openclaude/ralph/adjudication/<slug>-candidate-A <base-branch>
+   git worktree add .openclaude/ralph/adjudication/<slug>-candidate-B <base-branch>
+   \`\`\`
+3. Dispatch the **identical task brief** (the same \`current-task.md\` content, unmodified) to both candidates using the Agent tool — one dispatch per worktree. Each persona receives the identical brief so the comparison is decorrelated by model family, not by task framing. Instruct each: "Work inside the worktree at \`.openclaude/ralph/adjudication/<slug>-candidate-X\`. Do not commit to main. Return your standard persona-result YAML."
+4. Dispatch \`openralph-checker\` **once per candidate result** to evaluate each independently. Pass each candidate's \`provider_model_used\` as \`worker_model\` so the checker uses a different provider. Collect each checker's verdict YAML (\`goal_met\`, \`gaps\`, \`tests_passed\`, evidence).
+5. **Select the winner:** prefer the candidate whose checker returned \`goal_met: true\`. If both or neither returned \`goal_met: true\`, prefer the candidate with fewer \`gaps\` items and with \`tests_passed: true\`. If still tied, prefer the candidate ranked higher by route-stats success rate.
+6. **Merge the winner:** cherry-pick or merge the winner's worktree commits into the main working tree. Remove the winner's worktree: \`git worktree remove .openclaude/ralph/adjudication/<slug>-candidate-X\`.
+7. **Discard the loser:** remove the loser's worktree without merging: \`git worktree remove --force .openclaude/ralph/adjudication/<slug>-candidate-Y\`.
+8. **Ledger capture is automatic:** both persona dispatches return the standard persona-result YAML, and both checker dispatches return their verdict YAML. The PostToolUse hook captures all four YAML blocks to the routing ledger automatically — no extra steps needed. Both outcomes (winner AND loser) are recorded to the ledger. Adjudication events are the highest-value ledger entries because they are direct A/B comparisons on identical inputs — the loser's outcome is as valuable as the winner's for routing calibration.
+9. Continue the normal scheduler loop from step 6 using the merged result.
+
 9. Before writing \`goal.json.status\` to \`complete\` or \`completed\`, dispatch \`openralph-checker\` via the Agent tool. Pass in the dispatch context: the goal condition text, the proof_command (or null), and \`worker_model\` set to the \`provider_model_used\` value from the most recent worker persona result. The checker MUST use a different provider and model family than worker_model — instruct it explicitly: "Do not use [worker_model provider]. Use a model from a different provider." Only mark goal.json complete if the checker's returned YAML has \`goal_met: true\`. If the checker returns \`goal_met: false\`, extract its \`gaps\` list and push each gap as a new queue item before continuing the loop. The checker's YAML verdict carries \`task_slug\`, \`provider_model_used\`, and \`status: complete\` (indicating the check itself ran) so the routing ledger automatically records the verification dispatch via the PostToolUse hook.
 10. Stop only when \`goal.json.status\` is \`complete\` and the proof is visible in \`progress.md\`.
 

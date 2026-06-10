@@ -389,6 +389,109 @@ test('hook exits 0 and writes no ledger line when tool_response has no YAML bloc
   }
 })
 
+// ── Adjudicated dispatch tests ────────────────────────────────────────────────
+
+test('scheduler contract defines the high-stakes marker (adjudicate: true field)', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // The marker must be a field named `adjudicate: true` on the task entry in
+  // queue.md / current-task.md — explicit opt-in per task (simpler than heuristic).
+  expect(text).toContain('adjudicate: true')
+
+  // The contract must also state the consecutive-blocked fallback heuristic so
+  // tasks that stall automatically get adjudication without requiring the field.
+  expect(text).toMatch(/consecutive.*blocked|blocked.*consecutive|partial.*blocked|no_progress/i)
+})
+
+test('adjudicated dispatch step picks 2 candidates from DIFFERENT providers', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Must dispatch to exactly N=2 candidates as the starting point.
+  expect(text).toContain('N=2')
+
+  // Each candidate must come from a different provider (cross-provider diversity
+  // is the whole point — decorrelated second opinions).
+  expect(text).toMatch(/different provider|different providers/i)
+
+  // Must reference the route-stats / resolveProviderForClass vocabulary for picking
+  // candidates so it stays consistent with the existing step 8 routing contract.
+  expect(text).toContain('openralph-route-stats.sh')
+})
+
+test('adjudicated dispatch step isolates each candidate in its own worktree', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Each dispatch must use an isolated git worktree so the two candidates cannot
+  // interfere with each other's commits or file changes.
+  expect(text).toContain('worktree')
+
+  // The task brief sent to both must be identical (same current-task.md content).
+  expect(text).toMatch(/identical|same task brief|same.*brief|brief.*identical/i)
+})
+
+test('adjudicated dispatch step dispatches openralph-checker once per candidate', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // The checker must be dispatched once per candidate result, not just once overall.
+  // "per candidate" or "for each candidate" in the contract signals this.
+  expect(text).toMatch(/checker.*each candidate|each candidate.*checker|per candidate/i)
+})
+
+test('adjudicated dispatch step compares verdicts and merges the winner', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Must compare checker verdicts (goal_met + gaps count + tests) to choose winner.
+  expect(text).toContain('goal_met')
+  expect(text).toMatch(/winner|winning candidate/i)
+
+  // Winner's work must be merged (or its worktree checked out into main).
+  expect(text).toMatch(/merge.*winner|winner.*merge|cherry-pick|merge the winner/i)
+
+  // Loser's worktree must be discarded.
+  expect(text).toMatch(/discard.*loser|loser.*discard|remove.*worktree|worktree.*remove/i)
+})
+
+test('adjudicated dispatch step records BOTH outcomes to the ledger', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Both persona dispatches return the standard YAML which the PostToolUse hook
+  // picks up automatically.  The contract must confirm both flow through — mention
+  // that both outcomes (winner AND loser) are recorded to the ledger.
+  expect(text).toMatch(/both.*ledger|ledger.*both|all.*outcomes.*ledger|loser.*ledger|ledger.*loser/i)
+})
+
+test('adjudicated dispatch verdict comparison uses gaps count and tests_passed', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Contract must specify the comparison criteria: goal_met, gaps count, tests_passed.
+  // This ensures the selector is deterministic rather than arbitrary.
+  expect(text).toContain('gaps')
+  expect(text).toContain('tests_passed')
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 test('hook appends one well-formed JSONL ledger record for a valid persona YAML', () => {
   const personaYaml = [
     '```yaml',
