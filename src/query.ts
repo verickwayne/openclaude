@@ -6,6 +6,18 @@ import type {
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import { FallbackTriggeredError } from './services/api/withRetry.js'
 import {
+  appendFailoverRecord,
+  getFailoverLogPath,
+  ProviderFailoverError,
+  shouldFailover,
+} from './services/api/providerFailover.js'
+import {
+  buildLiveRegistryInput,
+  resolveProviderForClass,
+} from './services/api/modelRegistry.js'
+import { getFirstPartyModelIds } from './utils/model/modelOptions.js'
+import { getProviderProfiles } from './utils/providerProfiles.js'
+import {
   calculateTokenWarningState,
   isAutoCompactEnabled,
   type AutoCompactTrackingState,
@@ -128,7 +140,10 @@ import { StreamingToolExecutor } from './services/tools/StreamingToolExecutor.js
 import { queryCheckpoint } from './utils/queryProfiler.js'
 import { runTools } from './services/tools/toolOrchestration.js'
 import { applyToolResultBudget } from './utils/toolResultStorage.js'
-import { recordContentReplacement } from './utils/sessionStorage.js'
+import {
+  getProjectDir,
+  recordContentReplacement,
+} from './utils/sessionStorage.js'
 import { handleStopHooks } from './query/stopHooks.js'
 import {
   createToolFailureLoopGuardState,
@@ -141,6 +156,8 @@ import type { Terminal, Continue } from './query/transitions.js'
 import { feature } from 'bun:bundle'
 import {
   getCurrentTurnTokenBudget,
+  getOriginalCwd,
+  getSessionId,
   getTurnOutputTokens,
   incrementBudgetContinuationCount,
 } from './bootstrap/state.js'
@@ -1177,6 +1194,104 @@ async function* queryLoop(
 
             continue
           }
+
+          // ── Provider failover (Angle C half 1) ──────────────────────────────
+          // When all retries against the current provider are exhausted due to
+          // an auth/429/5xx error, attempt to re-resolve the same model class
+          // from the next available provider and continue the loop without
+          // interrupting the run.
+          //
+          // Gates checked here (gates in shouldFailover):
+          //   1. OPENCLAUDE_PROVIDER_FAILOVER !== '0'   (kill-switch)
+          //   2. workload === 'long-running'             (only pay the switch cost here)
+          //   3. alternative candidates exist            (resolveProviderForClass returned >= 1)
+          if (innerError instanceof ProviderFailoverError) {
+            const workload = state.loopDiscipline.workload
+            const registryInput = buildLiveRegistryInput({
+              getFirstPartyModels: getFirstPartyModelIds,
+              getProfiles: getProviderProfiles,
+            })
+            const { guessModelClassForModel } = await import('./services/api/modelRegistry.js')
+            const modelClass = guessModelClassForModel(innerError.fromModel, registryInput)
+            const candidates = resolveProviderForClass(modelClass, registryInput, {
+              workload,
+              excludeProvider: innerError.fromProvider,
+            })
+            const decision = shouldFailover(innerError.originalError, workload, candidates)
+
+            if (decision.failover) {
+              const toProvider = decision.candidate
+
+              // Swap the active provider.  This mutates toolUseContext.options —
+              // the same pattern used by FallbackTriggeredError for mainLoopModel.
+              toolUseContext.options.providerOverride = toProvider
+              // Also switch currentModel to the new provider's model id so that
+              // the next call to callModel sends the right model string.
+              currentModel = toProvider.model
+
+              // Best-effort provenance record.
+              const sessionId = getSessionId()
+              const logPath = getFailoverLogPath(
+                getProjectDir(getOriginalCwd()),
+                sessionId,
+              )
+              appendFailoverRecord(
+                {
+                  ts: new Date().toISOString(),
+                  event: 'provider_failover',
+                  from_provider: innerError.fromProvider,
+                  from_model: innerError.fromModel,
+                  to_provider: toProvider.profileId,
+                  to_model: toProvider.model,
+                  reason: innerError.reason,
+                  workload,
+                  session_id: sessionId,
+                },
+                logPath,
+              )
+
+              // Reset the streaming attempt state so the next iteration starts
+              // fresh (no orphaned tool results from the failed attempt).
+              yield* yieldMissingToolResultBlocks(
+                assistantMessages,
+                'Provider failover triggered',
+              )
+              assistantMessages.length = 0
+              toolResults.length = 0
+              toolUseBlocks.length = 0
+              needsFollowUp = false
+              if (streamingToolExecutor) {
+                streamingToolExecutor.discard()
+                streamingToolExecutor = new StreamingToolExecutor(
+                  toolUseContext.options.tools,
+                  canUseTool,
+                  toolUseContext,
+                )
+              }
+
+              logEvent('tengu_provider_failover_triggered', {
+                from_provider: innerError.fromProvider as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                from_model: innerError.fromModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                to_provider: toProvider.profileId as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                to_model: toProvider.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                reason: innerError.reason as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                workload: workload as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+              })
+
+              yield createSystemMessage(
+                `Provider failover: switched from ${innerError.fromProvider}/${innerError.fromModel} to ${toProvider.profileId}/${toProvider.model} (${innerError.reason})`,
+                'warning',
+              )
+
+              attemptWithFallback = true
+              continue
+            }
+            // Decision was no-failover (wrong workload, no candidates, kill-switch).
+            // Convert to a terminal error — re-throw wrapped so the outer catch
+            // handles it with logError.
+            throw innerError.originalError
+          }
+
           throw innerError
         }
       }

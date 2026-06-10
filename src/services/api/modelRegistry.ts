@@ -76,6 +76,47 @@ const STATIC_CLASS_CANDIDATES: Record<ModelClass, string[]> = {
   local: [], // populated entirely from live local profiles
 }
 
+// ─── Model-class reverse lookup ──────────────────────────────────────────────
+
+/**
+ * All non-local model classes, in lookup priority order for failover.
+ * `local` is excluded because failover to a local model when a cloud provider
+ * fails is a policy decision the operator must make explicitly; it is not the
+ * automatic behavior we want.
+ */
+export const FAILOVER_MODEL_CLASSES: ModelClass[] = ['frontier', 'mid', 'fast', 'verification']
+
+/**
+ * Guess the model class for a given model string by checking the static
+ * candidate lists (and live registry profiles).  Returns the first class whose
+ * static list or live registry includes `model`.  Falls back to `'mid'` when
+ * no match is found — `mid` is the most common workload class for long-running
+ * loops and the safest default.
+ *
+ * This is intentionally a best-effort heuristic used only for provider failover
+ * (where the query loop has already chosen a provider and we want to find an
+ * alternative in the same capability tier).  It is NOT a canonical model-class
+ * assignment — the orchestration agent's explicit class choice is authoritative.
+ */
+export function guessModelClassForModel(
+  model: string,
+  input: RegistryInput,
+): ModelClass {
+  const registry = buildModelRegistry(input)
+  // Check static lists first (fast path, no profile iteration).
+  for (const cls of FAILOVER_MODEL_CLASSES) {
+    if (STATIC_CLASS_CANDIDATES[cls].includes(model)) return cls
+  }
+  // Check live profiles: if the model is local (baseUrl = localhost), return 'local'.
+  // Otherwise default to 'mid'.
+  const rp = registry.get(model)
+  if (rp) {
+    const lower = (rp.baseURL ?? '').toLowerCase()
+    if (lower.includes('localhost') || lower.includes('127.0.0.1')) return 'local'
+  }
+  return 'mid'
+}
+
 // ─── Core registry functions ──────────────────────────────────────────────────
 
 /** model id -> ResolvedProvider. First match wins; profiles in array order. */

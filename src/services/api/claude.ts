@@ -262,6 +262,10 @@ import {
   type RetryContext,
   withRetry,
 } from './withRetry.js'
+import {
+  classifyFailoverReason,
+  ProviderFailoverError,
+} from './providerFailover.js'
 
 // Define a type that represents valid JSON values
 type JsonValue = string | number | boolean | null | JsonObject | JsonArray
@@ -2663,6 +2667,27 @@ async function* queryModel(
     // an error message with no actual retry on the fallback model.
     if (errorFromRetry instanceof FallbackTriggeredError) {
       throw errorFromRetry
+    }
+
+    // ProviderFailoverError must also propagate to query.ts so it can
+    // re-resolve the model class to the next provider and continue the loop.
+    // query.ts gates this on workload === 'long-running' + kill-switch check +
+    // candidate availability; here we only classify whether the error class
+    // is eligible (auth/429/5xx).  We throw if eligible so that non-eligible
+    // errors continue to the normal error-message yield path unchanged.
+    if (
+      errorFromRetry instanceof CannotRetryError &&
+      classifyFailoverReason(errorFromRetry.originalError) !== null
+    ) {
+      const fromProvider = (options.providerOverride ?? mainLoopOverride)?.profileId ?? 'first-party'
+      const fromModel = (options.providerOverride ?? mainLoopOverride)?.model ?? options.model
+      const reason = classifyFailoverReason(errorFromRetry.originalError)!
+      throw new ProviderFailoverError(
+        errorFromRetry.originalError,
+        fromProvider,
+        fromModel,
+        reason,
+      )
     }
 
     // Check if this is a 404 error during stream creation that should trigger
