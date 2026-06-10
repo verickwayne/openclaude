@@ -43,6 +43,7 @@ import {
   type ResolvedProfileRoute,
   type ProviderPreset,
 } from '../integrations/index.js'
+import { resolveRouteCredentialValue } from '../integrations/routeMetadata.js'
 import { logForDebugging } from './debug.js'
 import {
   sanitizeProfileCustomHeaders,
@@ -143,6 +144,21 @@ function resolveProfileCapabilityRouteId(
   return (
     resolveRouteIdFromBaseUrl(baseUrl) ??
     resolveProfileRoute(provider).routeId
+  )
+}
+
+function resolveProfileApiKey(
+  profile: ProviderProfile,
+  processEnv: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  return (
+    trimOrUndefined(profile.apiKey) ??
+    resolveRouteCredentialValue({
+      routeId: resolveProfileCapabilityRouteId(profile.provider, profile.baseUrl),
+      baseUrl: profile.baseUrl,
+      processEnv,
+      activeProfileProvider: profile.provider,
+    })
   )
 }
 
@@ -481,16 +497,18 @@ function isProcessEnvAlignedWithProfile(
   }
 
   if (compatibilityMode === 'anthropic') {
+    const effectiveApiKey = resolveProfileApiKey(profile, processEnv)
     return (
       !hasProviderSelectionFlags(processEnv) &&
       sameOptionalEnvValue(processEnv.ANTHROPIC_BASE_URL, profile.baseUrl) &&
       sameOptionalEnvValue(processEnv.ANTHROPIC_MODEL, getPrimaryModel(profile.model)) &&
       (!includeApiKey ||
-        sameOptionalEnvValue(processEnv.ANTHROPIC_API_KEY, profile.apiKey))
+        sameOptionalEnvValue(processEnv.ANTHROPIC_API_KEY, effectiveApiKey))
     )
   }
 
   if (compatibilityMode === 'mistral') {
+    const effectiveApiKey = resolveProfileApiKey(profile, processEnv)
     return (
       processEnv.CLAUDE_CODE_USE_MISTRAL !== undefined &&
       processEnv.CLAUDE_CODE_USE_GEMINI === undefined &&
@@ -502,11 +520,12 @@ function isProcessEnvAlignedWithProfile(
       sameOptionalEnvValue(processEnv.MISTRAL_BASE_URL, profile.baseUrl) &&
       sameOptionalEnvValue(processEnv.MISTRAL_MODEL, getPrimaryModel(profile.model)) &&
       (!includeApiKey ||
-        sameOptionalEnvValue(processEnv.MISTRAL_API_KEY, profile.apiKey))
+        sameOptionalEnvValue(processEnv.MISTRAL_API_KEY, effectiveApiKey))
     )
   }
 
   if (compatibilityMode === 'gemini') {
+    const effectiveApiKey = resolveProfileApiKey(profile, processEnv)
     return (
       processEnv.CLAUDE_CODE_USE_GEMINI !== undefined &&
       processEnv.CLAUDE_CODE_USE_MISTRAL === undefined &&
@@ -518,7 +537,7 @@ function isProcessEnvAlignedWithProfile(
       sameOptionalEnvValue(processEnv.GEMINI_BASE_URL, profile.baseUrl) &&
       sameOptionalEnvValue(processEnv.GEMINI_MODEL, getPrimaryModel(profile.model)) &&
       (!includeApiKey ||
-        sameOptionalEnvValue(processEnv.GEMINI_API_KEY, profile.apiKey))
+        sameOptionalEnvValue(processEnv.GEMINI_API_KEY, effectiveApiKey))
     )
   }
 
@@ -564,6 +583,7 @@ function isProcessEnvAlignedWithProfile(
     )
   }
 
+  const effectiveApiKey = resolveProfileApiKey(profile, processEnv)
   return (
     processEnv.CLAUDE_CODE_USE_OPENAI !== undefined &&
     processEnv.CLAUDE_CODE_USE_GEMINI === undefined &&
@@ -579,23 +599,23 @@ function isProcessEnvAlignedWithProfile(
     sameOptionalEnvValue(processEnv.OPENAI_AUTH_SCHEME, profile.authScheme) &&
     sameOptionalEnvValue(processEnv.OPENAI_AUTH_HEADER_VALUE, profile.authHeaderValue) &&
     (!includeApiKey ||
-      sameOptionalEnvValue(processEnv.OPENAI_API_KEY, profile.apiKey)) &&
+      sameOptionalEnvValue(processEnv.OPENAI_API_KEY, effectiveApiKey)) &&
     (profile.baseUrl?.toLowerCase().includes('bankr')
       ? !includeApiKey ||
-        sameOptionalEnvValue(processEnv.BNKR_API_KEY, profile.apiKey)
+        sameOptionalEnvValue(processEnv.BNKR_API_KEY, effectiveApiKey)
       : true) &&
     (profile.baseUrl?.toLowerCase().includes('x.ai')
       ? !includeApiKey ||
-        sameOptionalEnvValue(processEnv.XAI_API_KEY, profile.apiKey)
+        sameOptionalEnvValue(processEnv.XAI_API_KEY, effectiveApiKey)
       : true) &&
     (profile.baseUrl?.toLowerCase().includes('api.venice.ai')
       ? !includeApiKey ||
-        sameOptionalEnvValue(processEnv.VENICE_API_KEY, profile.apiKey)
+        sameOptionalEnvValue(processEnv.VENICE_API_KEY, effectiveApiKey)
       : true) &&
     (profile.baseUrl?.toLowerCase().includes('api.xiaomimimo.com') ||
       profile.baseUrl?.toLowerCase().includes('api.mimo-v2.com')
       ? !includeApiKey ||
-        sameOptionalEnvValue(processEnv.MIMO_API_KEY, profile.apiKey)
+        sameOptionalEnvValue(processEnv.MIMO_API_KEY, effectiveApiKey)
       : true)
   )
 }
@@ -623,6 +643,7 @@ export function clearProviderProfileEnvFromProcessEnv(
 export function applyProviderProfileToProcessEnv(profile: ProviderProfile): void {
   const { route, compatibilityMode } = resolveProfileCompatibility(profile.provider)
   const primaryModel = getPrimaryModel(profile.model)
+  const effectiveApiKey = resolveProfileApiKey(profile)
   let profileEnv: ProfileEnv
 
   if (route.routeId === 'unknown-fallback') {
@@ -638,19 +659,19 @@ export function applyProviderProfileToProcessEnv(profile: ProviderProfile): void
     profileEnv = {
       ANTHROPIC_BASE_URL: profile.baseUrl,
       ANTHROPIC_MODEL: primaryModel,
-      ...(profile.apiKey ? { ANTHROPIC_API_KEY: profile.apiKey } : {}),
+      ...(effectiveApiKey ? { ANTHROPIC_API_KEY: effectiveApiKey } : {}),
     }
   } else if (compatibilityMode === 'mistral') {
     profileEnv = {
       MISTRAL_BASE_URL: profile.baseUrl,
       MISTRAL_MODEL: primaryModel,
-      ...(profile.apiKey ? { MISTRAL_API_KEY: profile.apiKey } : {}),
+      ...(effectiveApiKey ? { MISTRAL_API_KEY: effectiveApiKey } : {}),
     }
   } else if (compatibilityMode === 'gemini') {
     profileEnv = {
       GEMINI_BASE_URL: profile.baseUrl,
       GEMINI_MODEL: primaryModel,
-      ...(profile.apiKey ? { GEMINI_API_KEY: profile.apiKey } : {}),
+      ...(effectiveApiKey ? { GEMINI_API_KEY: effectiveApiKey } : {}),
     }
   } else if (compatibilityMode === 'github') {
     profileEnv = buildGithubProfileEnv({
@@ -697,29 +718,32 @@ export function applyProviderProfileToProcessEnv(profile: ProviderProfile): void
       }
     }
 
-    if (profile.apiKey) {
-      openAIProfileEnv.OPENAI_API_KEY = profile.apiKey
+    if (effectiveApiKey) {
+      openAIProfileEnv.OPENAI_API_KEY = effectiveApiKey
+      if (route.routeId === 'openrouter' || profile.baseUrl.toLowerCase().includes('openrouter.ai')) {
+        openAIProfileEnv.OPENROUTER_API_KEY = effectiveApiKey
+      }
       if (route.vendorId === 'minimax' || profile.baseUrl.toLowerCase().includes('minimax')) {
-        openAIProfileEnv.MINIMAX_API_KEY = profile.apiKey
+        openAIProfileEnv.MINIMAX_API_KEY = effectiveApiKey
       }
       if (
         route.gatewayId === 'nvidia-nim' ||
         profile.baseUrl.toLowerCase().includes('nvidia') ||
         profile.baseUrl.toLowerCase().includes('integrate.api.nvidia')
       ) {
-        openAIProfileEnv.NVIDIA_API_KEY = profile.apiKey
+        openAIProfileEnv.NVIDIA_API_KEY = effectiveApiKey
       }
       if (route.routeId === 'bankr' || profile.baseUrl.toLowerCase().includes('bankr')) {
-        openAIProfileEnv.BNKR_API_KEY = profile.apiKey
+        openAIProfileEnv.BNKR_API_KEY = effectiveApiKey
       }
       if (route.routeId === 'xai' || profile.baseUrl.toLowerCase().includes('x.ai')) {
-        openAIProfileEnv.XAI_API_KEY = profile.apiKey
+        openAIProfileEnv.XAI_API_KEY = effectiveApiKey
       }
       if (route.routeId === 'venice' || profile.baseUrl.toLowerCase().includes('api.venice.ai')) {
-        openAIProfileEnv.VENICE_API_KEY = profile.apiKey
+        openAIProfileEnv.VENICE_API_KEY = effectiveApiKey
       }
       if (route.routeId === 'xiaomi-mimo' || profile.baseUrl.toLowerCase().includes('api.xiaomimimo.com') || profile.baseUrl.toLowerCase().includes('api.mimo-v2.com')) {
-        openAIProfileEnv.MIMO_API_KEY = profile.apiKey
+        openAIProfileEnv.MIMO_API_KEY = effectiveApiKey
       }
     }
     if (route.gatewayId === 'nvidia-nim') {
@@ -1106,6 +1130,9 @@ function buildOpenAICompatibleStartupEnv(
   }
   if (activeProfile.apiKey) {
     env.OPENAI_API_KEY = activeProfile.apiKey
+    if (activeProfile.provider === 'openrouter' || activeProfile.baseUrl.toLowerCase().includes('openrouter.ai')) {
+      env.OPENROUTER_API_KEY = activeProfile.apiKey
+    }
     if (activeProfile.baseUrl?.toLowerCase().includes('bankr')) {
       env.BNKR_API_KEY = activeProfile.apiKey
     }

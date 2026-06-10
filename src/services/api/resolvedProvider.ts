@@ -4,6 +4,11 @@ import type {
   OpenAICompatibleAuthScheme,
   ProviderProfile,
 } from '../../utils/config.js'
+import {
+  resolveRouteCredentialValue,
+  resolveRouteIdFromBaseUrl,
+} from '../../integrations/routeMetadata.js'
+import { resolveProfileRoute } from '../../integrations/index.js'
 
 export type ResolvedProviderKind =
   | 'anthropic-native'
@@ -63,12 +68,23 @@ export function resolvedProviderFromProfile(
   profile: ProviderProfile,
   model: string,
 ): ResolvedProvider {
+  const routeId =
+    resolveRouteIdFromBaseUrl(profile.baseUrl) ??
+    resolveProfileRoute(profile.provider).routeId
+  const apiKey =
+    profile.apiKey ||
+    resolveRouteCredentialValue({
+      routeId,
+      baseUrl: profile.baseUrl,
+      activeProfileProvider: profile.provider,
+    })
+
   return {
     profileId: profile.id,
     kind: kindFromProfile(profile),
     model,
     baseURL: profile.baseUrl || undefined, // lowercase field → capital carrier
-    apiKey: profile.apiKey || undefined,
+    apiKey,
     authHeader: profile.authHeader || undefined,
     authScheme: profile.authScheme || undefined,
     authHeaderValue: profile.authHeaderValue || undefined,

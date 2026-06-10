@@ -26,6 +26,7 @@ const noCredentials: ProviderAvailabilityDeps = {
   isCodexProfile: () => false,
   hasClaudeOAuth: () => false,
   hasCodexCredentials: () => false,
+  getRouteCredential: () => undefined,
 }
 
 describe('isProviderAvailable', () => {
@@ -103,6 +104,17 @@ describe('isProviderAvailable', () => {
         hasCodexCredentials: () => false,
       }),
     ).toBe(false)
+  })
+
+  test('returns true for a hosted route with a route-specific env credential', () => {
+    expect(
+      isProviderAvailable(makeProfile({ apiKey: undefined }), {
+        ...noCredentials,
+        resolveRouteId: () => 'openrouter',
+        getRouteCredential: (_profile, routeId) =>
+          routeId === 'openrouter' ? 'or-live-key' : undefined,
+      }),
+    ).toBe(true)
   })
 
   test('returns false for a hosted route with no key and no OAuth', () => {

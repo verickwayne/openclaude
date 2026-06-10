@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 import { acquireEnvMutex, releaseEnvMutex } from '../entrypoints/sdk/shared.js'
 import type { ProviderProfile } from './config.js'
+import { PROFILE_FILE_NAME } from './providerProfile.js'
 
 async function importFreshProvidersModule() {
   return import(`./model/providers.ts?ts=${Date.now()}-${Math.random()}`)
@@ -33,6 +34,7 @@ const RESTORED_KEYS = [
   'OPENAI_AUTH_SCHEME',
   'OPENAI_AUTH_HEADER_VALUE',
   'OPENAI_API_KEY',
+  'OPENROUTER_API_KEY',
   'CODEX_API_KEY',
   'CODEX_CREDENTIAL_SOURCE',
   'CHATGPT_ACCOUNT_ID',
@@ -573,6 +575,28 @@ describe('applyProviderProfileToProcessEnv', () => {
     expect(process.env.OPENAI_AUTH_SCHEME).toBeUndefined()
     expect(process.env.OPENAI_AUTH_HEADER_VALUE).toBeUndefined()
     expect(process.env.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined()
+  })
+
+  test('openrouter profile uses OPENROUTER_API_KEY without storing it on the profile', async () => {
+    const { applyProviderProfileToProcessEnv } =
+      await importFreshProviderProfileModules()
+
+    process.env.OPENROUTER_API_KEY = 'or-live-key'
+
+    applyProviderProfileToProcessEnv(
+      buildProfile({
+        provider: 'openrouter',
+        name: 'OpenRouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        model: 'openai/gpt-5-mini',
+        apiKey: undefined,
+      }),
+    )
+
+    expect(process.env.OPENAI_BASE_URL).toBe('https://openrouter.ai/api/v1')
+    expect(process.env.OPENAI_MODEL).toBe('openai/gpt-5-mini')
+    expect(process.env.OPENAI_API_KEY).toBe('or-live-key')
+    expect(process.env.OPENROUTER_API_KEY).toBe('or-live-key')
   })
 
   test('supported routes apply sanitized profile custom headers to env', async () => {
@@ -1495,7 +1519,7 @@ describe('setActiveProviderProfile', () => {
       }))
 
       const result = setActiveProviderProfile('xai_oauth_prof', { configDir })
-      const profilePath = join(configDir, '.openclaude-profile.json')
+      const profilePath = join(configDir, PROFILE_FILE_NAME)
       const persisted = JSON.parse(readFileSync(profilePath, 'utf8'))
 
       expect(result?.id).toBe('xai_oauth_prof')
@@ -1547,11 +1571,11 @@ describe('setActiveProviderProfile', () => {
         configDir,
       })
       const persisted = JSON.parse(
-        readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
+        readFileSync(join(configDir, PROFILE_FILE_NAME), 'utf8'),
       )
 
       expect(result?.id).toBe('ollama_prof')
-      expect(existsSync(join(tempDir, '.openclaude-profile.json'))).toBe(false)
+      expect(existsSync(join(tempDir, PROFILE_FILE_NAME))).toBe(false)
       expect(persisted.profile).toBe('openai')
       expect(persisted.env).toEqual({
         OPENAI_BASE_URL: 'http://localhost:11434/v1',
@@ -1592,11 +1616,11 @@ describe('setActiveProviderProfile', () => {
         configDir,
       })
       const persisted = JSON.parse(
-        readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
+        readFileSync(join(configDir, PROFILE_FILE_NAME), 'utf8'),
       )
 
       expect(result?.id).toBe('deepseek_prof')
-      expect(existsSync(join(tempDir, '.openclaude-profile.json'))).toBe(false)
+      expect(existsSync(join(tempDir, PROFILE_FILE_NAME))).toBe(false)
       expect(persisted.profile).toBe('openai')
       expect(persisted.env).toEqual({
         OPENAI_BASE_URL: 'https://api.deepseek.com/v1',
@@ -1637,11 +1661,11 @@ describe('setActiveProviderProfile', () => {
         configDir,
       })
       const persisted = JSON.parse(
-        readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
+        readFileSync(join(configDir, PROFILE_FILE_NAME), 'utf8'),
       )
 
       expect(result?.id).toBe('deepseek_vendor_prof')
-      expect(existsSync(join(tempDir, '.openclaude-profile.json'))).toBe(false)
+      expect(existsSync(join(tempDir, PROFILE_FILE_NAME))).toBe(false)
       expect(persisted.profile).toBe('openai')
       expect(persisted.env).toEqual({
         OPENAI_BASE_URL: 'https://api.deepseek.com/v1',
@@ -1678,11 +1702,11 @@ describe('setActiveProviderProfile', () => {
         configDir,
       })
       const persisted = JSON.parse(
-        readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
+        readFileSync(join(configDir, PROFILE_FILE_NAME), 'utf8'),
       )
 
       expect(result?.id).toBe('venice_prof')
-      expect(existsSync(join(tempDir, '.openclaude-profile.json'))).toBe(false)
+      expect(existsSync(join(tempDir, PROFILE_FILE_NAME))).toBe(false)
       expect(persisted.profile).toBe('openai')
       expect(persisted.env).toEqual({
         OPENAI_BASE_URL: 'https://api.venice.ai/api/v1',
@@ -1721,11 +1745,11 @@ describe('setActiveProviderProfile', () => {
         configDir,
       })
       const persisted = JSON.parse(
-        readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
+        readFileSync(join(configDir, PROFILE_FILE_NAME), 'utf8'),
       )
 
       expect(result?.id).toBe('mimo_prof')
-      expect(existsSync(join(tempDir, '.openclaude-profile.json'))).toBe(false)
+      expect(existsSync(join(tempDir, PROFILE_FILE_NAME))).toBe(false)
       expect(persisted.profile).toBe('openai')
       expect(persisted.env).toEqual({
         OPENAI_BASE_URL: 'https://api.xiaomimimo.com/v1',
@@ -1766,11 +1790,11 @@ describe('setActiveProviderProfile', () => {
         configDir,
       })
       const persisted = JSON.parse(
-        readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
+        readFileSync(join(configDir, PROFILE_FILE_NAME), 'utf8'),
       )
 
       expect(result?.id).toBe('bedrock_prof')
-      expect(existsSync(join(tempDir, '.openclaude-profile.json'))).toBe(false)
+      expect(existsSync(join(tempDir, PROFILE_FILE_NAME))).toBe(false)
       expect(persisted.profile).toBe('bedrock')
       expect(persisted.env).toEqual({
         ANTHROPIC_MODEL: 'claude-sonnet-4-6',
@@ -1810,11 +1834,11 @@ describe('setActiveProviderProfile', () => {
         configDir,
       })
       const persisted = JSON.parse(
-        readFileSync(join(configDir, '.openclaude-profile.json'), 'utf8'),
+        readFileSync(join(configDir, PROFILE_FILE_NAME), 'utf8'),
       )
 
       expect(result?.id).toBe('anthro_persisted_prof')
-      expect(existsSync(join(tempDir, '.openclaude-profile.json'))).toBe(false)
+      expect(existsSync(join(tempDir, PROFILE_FILE_NAME))).toBe(false)
       expect(persisted.profile).toBe('anthropic')
       expect(persisted.env).toEqual({
         ANTHROPIC_BASE_URL: 'https://api.anthropic.com',

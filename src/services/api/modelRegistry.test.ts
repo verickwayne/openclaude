@@ -1,4 +1,4 @@
-import { expect, test, describe } from 'bun:test'
+import { afterEach, expect, test, describe } from 'bun:test'
 import {
   buildModelRegistry,
   resolveProviderForModel,
@@ -13,6 +13,16 @@ const PROFILES = [
   { id: 'p1', name: 'OpenRouter', provider: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-5.5,anthropic/claude-3.5' },
   { id: 'p2', name: 'Ollama', provider: 'openai', baseUrl: 'http://localhost:11434/v1', model: 'llama3.2:latest' },
 ] as any[]
+
+const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY
+
+afterEach(() => {
+  if (originalOpenRouterApiKey === undefined) {
+    delete process.env.OPENROUTER_API_KEY
+  } else {
+    process.env.OPENROUTER_API_KEY = originalOpenRouterApiKey
+  }
+})
 
 test('registry maps each profile model to its profile', () => {
   const reg = buildModelRegistry({
@@ -32,6 +42,25 @@ test('resolveProviderForModel returns a ResolvedProvider for a known model', () 
   expect(rp?.kind).toBe('openai-compatible')
   expect(rp?.baseURL).toBe('https://openrouter.ai/api/v1')
   expect(rp?.model).toBe('openai/gpt-5.5')
+})
+
+test('OpenRouter profile models use OPENROUTER_API_KEY when profile key is empty', () => {
+  process.env.OPENROUTER_API_KEY = 'or-live-key'
+
+  const rp = resolveProviderForModel('openai/gpt-5.5', {
+    firstPartyModels: [],
+    profiles: [
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        provider: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        model: 'openai/gpt-5.5',
+      },
+    ] as any[],
+  })
+
+  expect(rp?.apiKey).toBe('or-live-key')
 })
 
 test('claude-max-proxy profiles route as Anthropic proxy, not OpenAI-compatible', () => {

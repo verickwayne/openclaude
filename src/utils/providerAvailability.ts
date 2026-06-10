@@ -3,6 +3,7 @@ import { getClaudeAIOAuthTokens } from './auth.js'
 import { readCodexCredentials } from './codexCredentials.js'
 import { parseModelList } from './providerModels.js'
 import { getRouteDescriptor, resolveProfileRoute } from '../integrations/index.js'
+import { resolveRouteCredentialValue } from '../integrations/routeMetadata.js'
 import { isCodexBaseUrl } from '../services/api/providerConfig.js'
 
 /**
@@ -17,6 +18,7 @@ export type ProviderAvailabilityDeps = {
   isCodexProfile: (profile: ProviderProfile) => boolean
   hasClaudeOAuth: () => boolean
   hasCodexCredentials: () => boolean
+  getRouteCredential: (profile: ProviderProfile, routeId: string) => string | undefined
 }
 
 function routeIdForProfile(profile: ProviderProfile): string {
@@ -63,6 +65,17 @@ function hasCodexCredentials(): boolean {
   )
 }
 
+function getRouteCredential(
+  profile: ProviderProfile,
+  routeId: string,
+): string | undefined {
+  return resolveRouteCredentialValue({
+    routeId,
+    baseUrl: profile.baseUrl,
+    activeProfileProvider: profile.provider,
+  })
+}
+
 const defaultAvailabilityDeps: ProviderAvailabilityDeps = {
   resolveRouteId: routeIdForProfile,
   isLocalRoute,
@@ -70,6 +83,7 @@ const defaultAvailabilityDeps: ProviderAvailabilityDeps = {
   isCodexProfile,
   hasClaudeOAuth,
   hasCodexCredentials,
+  getRouteCredential,
 }
 
 /**
@@ -86,6 +100,10 @@ export function isProviderAvailable(
   }
 
   const routeId = deps.resolveRouteId(profile)
+
+  if (deps.getRouteCredential(profile, routeId)) {
+    return true
+  }
 
   if (deps.isLocalRoute(routeId)) {
     return true

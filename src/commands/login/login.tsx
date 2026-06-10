@@ -27,7 +27,11 @@ import {
   resetAutoModeGateCheck,
   resetBypassPermissionsCheck,
 } from '../../utils/permissions/bypassPermissionsKillswitch.js'
-import { ensureClaudeMaxOAuthProxyProfileActive } from '../../utils/providerProfiles.js'
+import { getPrimaryModel } from '../../utils/providerModels.js'
+import {
+  applyActiveProviderProfileFromConfig,
+  ensureClaudeMaxOAuthProxyProfileActive,
+} from '../../utils/providerProfiles.js'
 import { resetUserCache } from '../../utils/user.js'
 import { resolveLoginTarget } from './loginTarget.js'
 
@@ -170,6 +174,14 @@ export async function call(
             )
             return
           }
+
+          applyActiveProviderProfileFromConfig(undefined, { force: true })
+          context.setAppState(prev => ({
+            ...prev,
+            mainLoopModel: getPrimaryModel(activeProfile.model),
+            mainLoopModelForSession: null,
+          }))
+          context.onChangeAPIKey()
 
           const { ensureClaudeMaxProxyRunning, describeEnsureResult } =
             await import(
