@@ -73,7 +73,11 @@ const LOGO_LESS = [
 ]
 
 // Infinity flourish \u2014 ties the LIMIT / LESS stack into the LIMITLESS wordmark.
-const LOGO_INFINITY = `       \u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500  \u221e  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f       `
+const LOGO_INFINITY = [
+  `               \u256d\u2500\u2500\u256e\u256d\u2500\u2500\u256e               `,
+  `       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524  \u2502\u2502  \u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500       `,
+  `               \u2570\u2500\u2500\u256f\u2570\u2500\u2500\u256f               `,
+]
 
 // ─── Provider detection ───────────────────────────────────────────────────────
 
@@ -194,7 +198,7 @@ export function printStartupScreen(modelOverride?: string): void {
   out.push('')
 
   // Gradient logo
-  const allLogo = [...LOGO_LIMIT, '', ...LOGO_LESS, '', LOGO_INFINITY]
+  const allLogo = [...LOGO_LIMIT, '', ...LOGO_LESS, '', ...LOGO_INFINITY]
   const total = allLogo.length
   for (let i = 0; i < total; i++) {
     const t = total > 1 ? i / (total - 1) : 0
