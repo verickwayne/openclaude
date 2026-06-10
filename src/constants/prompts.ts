@@ -217,7 +217,7 @@ function getSimpleDoingTasksSection(): string {
   ]
 
   const userHelpSubitems = [
-    `/help: Get help with using OpenClaude`,
+    `/help: Get help with using Limitless`,
     `To give feedback, users should ${MACRO.ISSUES_EXPLAINER}`,
   ]
 
@@ -250,7 +250,7 @@ function getSimpleDoingTasksSection(): string {
       : []),
     ...(process.env.USER_TYPE === 'ant'
       ? [
-          `If the user reports a bug, slowness, or unexpected behavior with OpenClaude itself (as opposed to asking you to fix their own code), recommend the appropriate slash command: /issue for model-related problems (odd outputs, wrong tool choices, hallucinations, refusals), or /share to upload the full session transcript for product bugs, crashes, slowness, or general issues. Only recommend these when the user is describing a problem with OpenClaude.`,
+          `If the user reports a bug, slowness, or unexpected behavior with Limitless itself (as opposed to asking you to fix their own code), recommend the appropriate slash command: /issue for model-related problems (odd outputs, wrong tool choices, hallucinations, refusals), or /share to upload the full session transcript for product bugs, crashes, slowness, or general issues. Only recommend these when the user is describing a problem with Limitless.`,
         ]
       : []),
     `If the user asks for help or wants to give feedback inform them of the following:`,
@@ -676,7 +676,7 @@ export async function computeSimpleEnvInfo(
     const identity = getModelIdentity(modelId)
     if (marketingName) {
       modelDescription = `You are powered by the model named ${marketingName}. The exact model ID is ${modelId}.`
-    } else if (identity.shortName !== 'OpenClaude') {
+    } else if (identity.shortName !== 'Limitless') {
       modelDescription = `${identity.persona} ${identity.description}`
     } else {
       modelDescription = `You are powered by the model ${modelId}.`
@@ -710,7 +710,7 @@ export async function computeSimpleEnvInfo(
     knowledgeCutoffMessage,
     process.env.USER_TYPE === 'ant' && isUndercover()
       ? null
-      : `OpenClaude is available as a CLI in the terminal and can be used across local development environments and IDE workflows.`,
+      : `Limitless is available as a CLI in the terminal and can be used across local development environments and IDE workflows.`,
     // Fast-mode toggle note suppressed — it referenced Claude Opus 4.7 by name,
     // which contradicts the per-craft identity for every local model the
     // harness drives. Operators who use /fast already know what it does.
