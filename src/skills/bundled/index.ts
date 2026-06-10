@@ -4,6 +4,7 @@ import { registerBatchSkill } from './batch.js'
 import { registerClaudeInChromeSkill } from './claudeInChrome.js'
 import { registerDebugSkill } from './debug.js'
 import { registerKeybindingsSkill } from './keybindings.js'
+import { registerLimitlessTeamSkills } from './limitlessTeam.js'
 import { registerLongTaskSkill } from './longTask.js'
 import { registerLoopSkill } from './loop.js'
 import { registerOpenRalphSkills } from './openRalph.js'
@@ -27,6 +28,7 @@ export function initBundledSkills(): void {
   registerBatchSkill()
   registerLongTaskSkill()
   registerOpenRalphSkills()
+  registerLimitlessTeamSkills()
   if (feature('KAIROS') || feature('KAIROS_DREAM')) {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const { registerDreamSkill } = require('./dream.js')

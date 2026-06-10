@@ -5,6 +5,7 @@ import { isEnvTruthy } from '../../utils/envUtils.js'
 import { CLAUDE_CODE_GUIDE_AGENT } from './built-in/claudeCodeGuideAgent.js'
 import { EXPLORE_AGENT } from './built-in/exploreAgent.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
+import { LIMITLESS_AGENTS } from './built-in/limitlessAgents.js'
 import { OPENRALPH_AGENTS } from './built-in/openRalphAgents.js'
 import { ORCHESTRATION_AGENT } from './built-in/orchestrationAgent.js'
 import { PLAN_AGENT } from './built-in/planAgent.js'
@@ -49,6 +50,7 @@ export function getBuiltInAgents(): AgentDefinition[] {
     STATUSLINE_SETUP_AGENT,
     ORCHESTRATION_AGENT,
     ...OPENRALPH_AGENTS,
+    ...LIMITLESS_AGENTS,
   ]
 
   if (areExplorePlanAgentsEnabled()) {
