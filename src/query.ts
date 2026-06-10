@@ -607,6 +607,18 @@ async function* queryLoop(
       : undefined
     queryCheckpoint('query_microcompact_end')
 
+    // Opt-in observation masking (OPENCLAUDE_OBSERVATION_MASKING=1).
+    // Replaces stale tool_result content with one-line summaries without an
+    // LLM call. Runs after microcompact (so already-cleared blocks are
+    // skipped) and before autocompact (so token savings count toward the
+    // autocompact threshold). Default OFF — context-fidelity sensitive.
+    if (process.env.OPENCLAUDE_OBSERVATION_MASKING === '1') {
+      const { maskStaleObservations } = await import(
+        './services/api/maskStaleObservations.js'
+      )
+      messagesForQuery = maskStaleObservations(messagesForQuery)
+    }
+
     // Project the collapsed context view and maybe commit more collapses.
     // Runs BEFORE autocompact so that if collapse gets us under the
     // autocompact threshold, autocompact is a no-op and we keep granular
