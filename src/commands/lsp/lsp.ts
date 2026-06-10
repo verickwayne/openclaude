@@ -114,6 +114,7 @@ const DISCOVERY_DIRECTORY_IGNORE_SET = new Set([
   '.git',
   '.hg',
   '.next',
+  '.limitless',
   '.openclaude',
   '.svn',
   'build',

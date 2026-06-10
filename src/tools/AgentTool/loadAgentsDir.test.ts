@@ -121,4 +121,37 @@ describe('agent definition loading', () => {
 
     expect(agent?.getSystemPrompt()).toBe('openclaude prompt')
   })
+
+  test('loads project agents from .limitless/agents', async () => {
+    const projectDir = join(tempDir, 'project-limitless')
+    await writeAgent(
+      join(projectDir, '.limitless', 'agents', 'limitless-agent.md'),
+      'limitless-agent',
+    )
+
+    const { activeAgents } = await getAgentDefinitionsWithOverrides(projectDir)
+
+    expect(
+      activeAgents.some(agent => agent.agentType === 'limitless-agent'),
+    ).toBe(true)
+  })
+
+  test('prefers .limitless project agents over .openclaude agents', async () => {
+    const projectDir = join(tempDir, 'project-prefer-limitless')
+    await writeAgent(
+      join(projectDir, '.openclaude', 'agents', 'shared-agent.md'),
+      'shared-agent',
+      'openclaude prompt',
+    )
+    await writeAgent(
+      join(projectDir, '.limitless', 'agents', 'shared-agent.md'),
+      'shared-agent',
+      'limitless prompt',
+    )
+
+    const { activeAgents } = await getAgentDefinitionsWithOverrides(projectDir)
+    const agent = activeAgents.find(agent => agent.agentType === 'shared-agent')
+
+    expect(agent?.getSystemPrompt()).toBe('limitless prompt')
+  })
 })

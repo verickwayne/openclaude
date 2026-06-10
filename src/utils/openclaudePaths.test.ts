@@ -378,15 +378,16 @@ describe('OpenClaude paths', () => {
     ).toBe('/tmp/custom-openclaude')
   })
 
-  test('project and local settings paths use .openclaude', async () => {
+  test('project and local settings paths default to .limitless for fresh repos', async () => {
     await acquireEnvMutex()
     const { getRelativeSettingsFilePathForSource } = await importFreshSettings()
 
+    // Fresh repo (no .limitless or .openclaude dir) → defaults to .limitless
     expect(getRelativeSettingsFilePathForSource('projectSettings')).toBe(
-      '.openclaude/settings.json',
+      '.limitless/settings.json',
     )
     expect(getRelativeSettingsFilePathForSource('localSettings')).toBe(
-      '.openclaude/settings.local.json',
+      '.limitless/settings.local.json',
     )
   })
 

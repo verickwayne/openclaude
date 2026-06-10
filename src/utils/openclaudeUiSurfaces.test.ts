@@ -47,6 +47,20 @@ describe('OpenClaude settings path surfaces', () => {
     ).toBe(true)
   })
 
+  test('isClaudeSettingsPath recognizes project .limitless settings files', () => {
+    expect(
+      isClaudeSettingsPath(
+        join(process.cwd(), '.limitless', 'settings.json'),
+      ),
+    ).toBe(true)
+
+    expect(
+      isClaudeSettingsPath(
+        join(process.cwd(), '.limitless', 'settings.local.json'),
+      ),
+    ).toBe(true)
+  })
+
   test('permission save destinations point user settings to ~/.openclaude', () => {
     expect(optionForPermissionSaveDestination('userSettings')).toEqual({
       label: 'User settings',
@@ -55,16 +69,17 @@ describe('OpenClaude settings path surfaces', () => {
     })
   })
 
-  test('permission save destinations point project settings to .openclaude', () => {
+  test('permission save destinations point project settings to .limitless for fresh repos', () => {
+    // Fresh repo (no .limitless or .openclaude dir present) → resolves to .limitless
     expect(optionForPermissionSaveDestination('projectSettings')).toEqual({
       label: 'Project settings',
-      description: 'Checked in at .openclaude/settings.json',
+      description: 'Checked in at .limitless/settings.json',
       value: 'projectSettings',
     })
 
     expect(optionForPermissionSaveDestination('localSettings')).toEqual({
       label: 'Project settings (local)',
-      description: 'Saved in .openclaude/settings.local.json',
+      description: 'Saved in .limitless/settings.local.json',
       value: 'localSettings',
     })
   })

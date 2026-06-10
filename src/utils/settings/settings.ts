@@ -13,6 +13,7 @@ import { uniq } from '../array.js'
 import { logForDebugging } from '../debug.js'
 import { logForDiagnosticsNoPII } from '../diagLogs.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from '../envUtils.js'
+import { resolveProjectStateDirname } from '../productStateDir.js'
 import { getErrnoCode, isENOENT } from '../errors.js'
 import { writeFileSyncAndFlush_DEPRECATED } from '../file.js'
 import { readFileSync } from '../fileRead.js'
@@ -298,11 +299,14 @@ export function getSettingsFilePathForSource(
 export function getRelativeSettingsFilePathForSource(
   source: 'projectSettings' | 'localSettings',
 ): string {
+  // Prefer .limitless when it already exists; fall back to .openclaude for
+  // not-yet-migrated repos; default to .limitless for fresh repos.
+  const configDir = resolveProjectStateDirname(getOriginalCwd())
   switch (source) {
     case 'projectSettings':
-      return '.openclaude/settings.json'
+      return `${configDir}/settings.json`
     case 'localSettings':
-      return '.openclaude/settings.local.json'
+      return `${configDir}/settings.local.json`
   }
 }
 

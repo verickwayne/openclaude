@@ -81,6 +81,7 @@ export const DANGEROUS_DIRECTORIES = [
   '.idea',
   '.claude',
   '.openclaude',
+  '.limitless',
 ] as const
 
 /**
@@ -219,6 +220,8 @@ export function isClaudeSettingsPath(filePath: string): boolean {
 
   // Use platform separator so endsWith checks work on both Unix (/) and Windows (\)
   if (
+    normalizedPath.endsWith(`${sep}.limitless${sep}settings.json`) ||
+    normalizedPath.endsWith(`${sep}.limitless${sep}settings.local.json`) ||
     normalizedPath.endsWith(`${sep}.openclaude${sep}settings.json`) ||
     normalizedPath.endsWith(`${sep}.openclaude${sep}settings.local.json`) ||
     normalizedPath.endsWith(`${sep}.claude${sep}settings.json`) ||
@@ -249,6 +252,9 @@ function isClaudeConfigFilePath(filePath: string): boolean {
   const openCommandsDir = join(getOriginalCwd(), '.openclaude', 'commands')
   const openAgentsDir = join(getOriginalCwd(), '.openclaude', 'agents')
   const openSkillsDir = join(getOriginalCwd(), '.openclaude', 'skills')
+  const limitlessCommandsDir = join(getOriginalCwd(), '.limitless', 'commands')
+  const limitlessAgentsDir = join(getOriginalCwd(), '.limitless', 'agents')
+  const limitlessSkillsDir = join(getOriginalCwd(), '.limitless', 'skills')
 
   return (
     pathInWorkingPath(filePath, commandsDir) ||
@@ -256,7 +262,10 @@ function isClaudeConfigFilePath(filePath: string): boolean {
     pathInWorkingPath(filePath, skillsDir) ||
     pathInWorkingPath(filePath, openCommandsDir) ||
     pathInWorkingPath(filePath, openAgentsDir) ||
-    pathInWorkingPath(filePath, openSkillsDir)
+    pathInWorkingPath(filePath, openSkillsDir) ||
+    pathInWorkingPath(filePath, limitlessCommandsDir) ||
+    pathInWorkingPath(filePath, limitlessAgentsDir) ||
+    pathInWorkingPath(filePath, limitlessSkillsDir)
   )
 }
 
