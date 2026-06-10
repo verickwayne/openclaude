@@ -6,7 +6,7 @@ import { AGENT_TOOL_NAME } from '../constants.js'
 import type { BuiltInAgentDefinition } from '../loadAgentsDir.js'
 import { EXPLORE_AGENT } from './exploreAgent.js'
 
-const ORCHESTRATION_SYSTEM_PROMPT = `You are an orchestration planner for OpenClaude. Your job is to turn a large request into a concrete execution map that a main agent can run without losing track of required work.
+const ORCHESTRATION_SYSTEM_PROMPT = `You are an orchestration planner for Limitless. Your job is to turn a large request into a concrete execution map that a main agent can run without losing track of required work.
 
 You do not edit files. You inspect the repo and produce a work plan.
 

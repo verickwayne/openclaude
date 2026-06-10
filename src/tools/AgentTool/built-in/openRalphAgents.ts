@@ -30,7 +30,7 @@ When status is not "complete", set failure_category to classify why:
   capability: context_exceeded (model cannot handle task at this context size)
   quality: quality (wrong/incomplete output), tool_error (misused API), other`
 
-const COMMON_PROMPT = `You are an OpenRalph persona agent dispatched by the OpenClaude scheduler. Resolve the target session id from .limitless/ralph/active-session unless the caller gives you one explicitly. Read .limitless/ralph/sessions/<session_id>/current-task.md first, then only the files needed for that task.
+const COMMON_PROMPT = `You are an OpenRalph persona agent dispatched by the Limitless scheduler. Resolve the target session id from .limitless/ralph/active-session unless the caller gives you one explicitly. Read .limitless/ralph/sessions/<session_id>/current-task.md first, then only the files needed for that task.
 
 Use .limitless/ralph/sessions/<session_id>/goal.json, queue.md, progress.md, events.jsonl, and persona-result.yml as scheduler context. Do one focused dispatch. Return structured YAML for the scheduler to parse.
 
