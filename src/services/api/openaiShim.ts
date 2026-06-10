@@ -780,6 +780,79 @@ function convertMessages(
   return coalesced
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * OpenAI's strict function-calling schema validation requires every
+ * object-typed JSON schema inside a tool's `parameters` to explicitly carry
+ * `additionalProperties: false`. Anthropic-style tool definitions (including
+ * MCP tools such as Gmail) frequently omit it, so OpenAI rejects the whole
+ * request with `invalid_function_parameters`.
+ *
+ * This is a pure function: it operates on a deep copy and never mutates the
+ * input. For every node that is an object schema — `type === 'object'` OR a
+ * node carrying a `properties` key — it sets `additionalProperties: false`
+ * unless the key is already present (any existing value is preserved). It
+ * recurses into `properties.*`, `items` (object or tuple-array), `$defs`,
+ * `definitions`, and the `anyOf`/`oneOf`/`allOf` array members. Schemas that
+ * are not objects (e.g. `{ type: 'string' }`) are left untouched.
+ */
+export function enforceNoAdditionalProperties(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  return walkSchema(structuredCloneCompat(schema)) as Record<string, unknown>
+}
+
+function structuredCloneCompat<T>(value: T): T {
+  if (typeof structuredClone === 'function') return structuredClone(value)
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function walkSchema(node: unknown): unknown {
+  if (Array.isArray(node)) {
+    return node.map(walkSchema)
+  }
+  if (!isPlainObject(node)) {
+    return node
+  }
+
+  const isObjectSchema = node.type === 'object' || 'properties' in node
+
+  if ('properties' in node && isPlainObject(node.properties)) {
+    const props = node.properties as Record<string, unknown>
+    for (const key of Object.keys(props)) {
+      props[key] = walkSchema(props[key])
+    }
+  }
+
+  if ('items' in node) {
+    node.items = walkSchema(node.items)
+  }
+
+  for (const defsKey of ['$defs', 'definitions'] as const) {
+    if (defsKey in node && isPlainObject(node[defsKey])) {
+      const defs = node[defsKey] as Record<string, unknown>
+      for (const key of Object.keys(defs)) {
+        defs[key] = walkSchema(defs[key])
+      }
+    }
+  }
+
+  for (const combinator of ['anyOf', 'oneOf', 'allOf'] as const) {
+    if (combinator in node && Array.isArray(node[combinator])) {
+      node[combinator] = (node[combinator] as unknown[]).map(walkSchema)
+    }
+  }
+
+  if (isObjectSchema && !('additionalProperties' in node)) {
+    node.additionalProperties = false
+  }
+
+  return node
+}
+
 /**
  * OpenAI requires every key in `properties` to also appear in `required`.
  * Anthropic schemas often mark fields as optional (omitted from `required`),
@@ -870,12 +943,19 @@ function convertTools(
         }
       }
 
+      const parameters = normalizeSchemaForOpenAI(schema, strict)
+
       return {
         type: 'function' as const,
         function: {
           name: t.name,
           description: t.description ?? '',
-          parameters: normalizeSchemaForOpenAI(schema, strict),
+          // OpenAI strict mode requires additionalProperties:false on EVERY
+          // object schema in the tool's parameters (incl. nested objects in
+          // MCP tools like Gmail). normalizeSchemaForOpenAI only covers the
+          // top-level/properties path; this closes the remaining cases
+          // ($defs, bare-object nodes, items/combinator members).
+          parameters: strict ? enforceNoAdditionalProperties(parameters) : parameters,
         },
       }
     })
