@@ -106,7 +106,7 @@ export const OPENRALPH_REFINER_AGENT: BuiltInAgentDefinition = {
 export const OPENRALPH_RESEARCHER_AGENT: BuiltInAgentDefinition = {
   agentType: 'openralph-researcher',
   whenToUse:
-    'OpenRalph persona for bounded research that writes compact findings under .openclaude/ralph/research.',
+    'OpenRalph persona for bounded research that writes compact findings under .openclaude/ralph/sessions/<session_id>/research/.',
   source: 'built-in',
   baseDir: 'built-in',
   disallowedTools: [

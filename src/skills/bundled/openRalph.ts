@@ -145,18 +145,19 @@ next_action: null
 notes: null
 EOF
 
-if [[ -f .gitignore ]] && ! grep -q '^\\.openclaude/ralph/events\\.jsonl$' .gitignore; then
-  {
-    echo ""
-    echo "# OpenRalph local scheduler state"
-    echo ".openclaude/ralph/enabled"
-    echo ".openclaude/ralph/active-session"
-    echo ".openclaude/ralph/active-session.json"
-    echo ".openclaude/ralph/bridges/"
-    echo ".openclaude/ralph/events.jsonl"
-    echo ".openclaude/ralph/logs/"
-    echo ".openclaude/ralph/sessions/"
-  } >> .gitignore
+if [[ -f .gitignore ]]; then
+  for _entry in \
+    "# OpenRalph local scheduler state" \
+    ".openclaude/ralph/enabled" \
+    ".openclaude/ralph/active-session" \
+    ".openclaude/ralph/active-session.json" \
+    ".openclaude/ralph/bridges/" \
+    ".openclaude/ralph/events.jsonl" \
+    ".openclaude/ralph/logs/" \
+    ".openclaude/ralph/sessions/" \
+  ; do
+    grep -qF "$_entry" .gitignore || echo "$_entry" >> .gitignore
+  done
 fi
 
 echo "OpenRalph engaged"
@@ -198,16 +199,13 @@ TRANSCRIPT="$(read_json_field transcript_path)"
 [[ -n "$SESSION_ID" ]] || SESSION_ID="\${CLAUDE_CODE_SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 SESSION_STATE_DIR="$RALPH_DIR/sessions/$SESSION_ID"
 ACTIVE_SESSION="$(cat "$RALPH_DIR/active-session" 2>/dev/null || true)"
-ACTIVE_STATE_DIR="$RALPH_DIR/sessions/$ACTIVE_SESSION"
-if [[ ! -d "$SESSION_STATE_DIR" && -n "$ACTIVE_SESSION" && -d "$ACTIVE_STATE_DIR" ]]; then
-  SESSION_STATE_DIR="$ACTIVE_STATE_DIR"
-fi
-mkdir -p "$SESSION_STATE_DIR"
 export SESSION_ID SESSION_STATE_DIR EVENT TOOL_NAME CWD_VALUE TRANSCRIPT
 
-python3 - "$RALPH_DIR/bridges/$SESSION_ID.json" "$RALPH_DIR/events.jsonl" "$SESSION_STATE_DIR/events.jsonl" <<'PY'
+# Always write bridge and project-level log (unconditional).
+# Session-level log and Stop gate only fire when this session owns a state dir.
+python3 - "$RALPH_DIR/bridges/$SESSION_ID.json" "$RALPH_DIR/events.jsonl" <<'PY'
 import json, os, sys, time
-bridge_path, project_log_path, session_log_path = sys.argv[1], sys.argv[2], sys.argv[3]
+bridge_path, project_log_path = sys.argv[1], sys.argv[2]
 event = {
   "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
   "session_id": os.environ.get("SESSION_ID"),
@@ -220,13 +218,30 @@ event = {
 with open(bridge_path, "w", encoding="utf-8") as f:
   json.dump(event, f, indent=2)
   f.write("\\n")
-for path in (project_log_path, session_log_path):
-  with open(path, "a", encoding="utf-8") as f:
-    f.write(json.dumps(event, separators=(",", ":")) + "\\n")
+with open(project_log_path, "a", encoding="utf-8") as f:
+  f.write(json.dumps(event, separators=(",", ":")) + "\\n")
 PY
 
-if [[ "$EVENT" == "Stop" && -f "$SESSION_STATE_DIR/goal.json" ]]; then
-  STATUS="$(python3 - "$SESSION_STATE_DIR/goal.json" <<'PY'
+# Session-scoped effects only when this session has its own state dir (created by engage).
+if [[ -d "$SESSION_STATE_DIR" ]]; then
+  python3 - "$SESSION_STATE_DIR/events.jsonl" <<'PY'
+import json, os, sys, time
+session_log_path = sys.argv[1]
+event = {
+  "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+  "session_id": os.environ.get("SESSION_ID"),
+  "session_state_dir": os.environ.get("SESSION_STATE_DIR"),
+  "event": os.environ.get("EVENT") or "unknown",
+  "tool_name": os.environ.get("TOOL_NAME") or None,
+  "cwd": os.environ.get("CWD_VALUE") or None,
+  "transcript_path": os.environ.get("TRANSCRIPT") or None,
+}
+with open(session_log_path, "a", encoding="utf-8") as f:
+  f.write(json.dumps(event, separators=(",", ":")) + "\\n")
+PY
+
+  if [[ "$EVENT" == "Stop" && "$SESSION_ID" == "$ACTIVE_SESSION" && -f "$SESSION_STATE_DIR/goal.json" ]]; then
+    STATUS="$(python3 - "$SESSION_STATE_DIR/goal.json" <<'PY'
 import json, sys
 try:
   print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", "running"))
@@ -234,8 +249,8 @@ except Exception:
   print("running")
 PY
 )"
-  if [[ "$STATUS" != "complete" && "$STATUS" != "completed" ]]; then
-    python3 - <<'PY'
+    if [[ "$STATUS" != "complete" && "$STATUS" != "completed" && "$STATUS" != "disengaged" ]]; then
+      python3 - <<'PY'
 import json, os
 state_dir = os.environ.get("SESSION_STATE_DIR", ".openclaude/ralph/sessions/<session_id>")
 reason = (
@@ -246,6 +261,7 @@ reason = (
 )
 print(json.dumps({"decision": "block", "reason": reason}))
 PY
+    fi
   fi
 fi
 `
@@ -353,7 +369,7 @@ Installed project state lives in \`.openclaude/ralph/\`.
 Each workstream's mutable scheduler files live in \`.openclaude/ralph/sessions/<session_id>/\`; \`active-session\` is only a project-local pointer.
 `
 
-const OPENRALPH_FILES = {
+export const OPENRALPH_FILES = {
   'bin/openralph-bootstrap.sh': OPENRALPH_BOOTSTRAP_SH,
   'bin/openralph-hook.sh': OPENRALPH_HOOK_SH,
   'bin/openralph-status.sh': OPENRALPH_STATUS_SH,
