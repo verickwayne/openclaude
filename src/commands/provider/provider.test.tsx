@@ -286,19 +286,19 @@ test('wizard step remount prevents a typed API key from leaking into the next fi
   expect(output).not.toContain('sk-secret-12345678')
 })
 
-test('buildProviderManagerCompletion records provider switch event and model-visible reminder', () => {
+test('buildProviderManagerCompletion records provider activation event and model-visible reminder', () => {
   const completion = buildProviderManagerCompletion({
     action: 'activated',
     activeProviderName: 'Sadaf Provider',
     activeProviderModel: 'sadaf-model',
-    message: 'Provider switched to Sadaf Provider (sadaf-model)',
+    message: 'Provider activated: Sadaf Provider (sadaf-model)',
   })
 
   expect(completion.message).toBe(
-    'Provider switched to Sadaf Provider (sadaf-model)',
+    'Provider activated: Sadaf Provider (sadaf-model)',
   )
   expect(completion.metaMessages).toEqual([
-    '<system-reminder>Provider switched mid-session to Sadaf Provider using model sadaf-model. Use this provider/model for subsequent requests unless the user switches again.</system-reminder>',
+    '<system-reminder>Provider activated mid-session: Sadaf Provider using model sadaf-model. Use this provider/model for subsequent requests unless the user activates another provider.</system-reminder>',
   ])
 })
 
@@ -414,7 +414,7 @@ test('buildProfileSaveMessage reflects immediate Codex activation for existing c
   )
 
   expect(message).toContain('Saved Codex profile.')
-  expect(message).toContain('OpenClaude switched to it for this session.')
+  expect(message).toContain('OpenClaude activated it for this session.')
   expect(message).not.toContain('Restart OpenClaude to use it.')
 })
 
@@ -434,7 +434,7 @@ test('buildProfileSaveMessage reflects immediate Codex OAuth activation when the
   )
 
   expect(message).toContain('Saved Codex profile.')
-  expect(message).toContain('OpenClaude switched to it for this session.')
+  expect(message).toContain('OpenClaude activated it for this session.')
   expect(message).not.toContain('Restart OpenClaude to use it.')
 })
 

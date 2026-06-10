@@ -1455,7 +1455,7 @@ test('ProviderManager first-run OpenAI (Subscription) switches the current sessi
     expect.objectContaining({
       action: 'saved',
       message:
-        'OpenAI (Subscription) configured. OpenClaude switched to it for this session.',
+        'OpenAI (Subscription) configured. OpenClaude activated it for this session.',
     }),
   )
 
@@ -1700,7 +1700,7 @@ test('ProviderManager keeps OpenAI (Subscription) as next-startup only when acti
     mounted.getOutput,
     frame =>
       frame.includes('Provider manager') &&
-      frame.includes('Set active provider') &&
+      frame.includes('Activate Provider') &&
       frame.includes('Log out OpenAI (Subscription)'),
   )
 
@@ -1712,7 +1712,7 @@ test('ProviderManager keeps OpenAI (Subscription) as next-startup only when acti
 
   await waitForFrameOutput(
     mounted.getOutput,
-    frame => frame.includes('Set active provider') && frame.includes('OpenAI (Subscription)'),
+    frame => frame.includes('Activate Provider') && frame.includes('OpenAI (Subscription)'),
   )
 
   await Bun.sleep(25)
@@ -1726,7 +1726,7 @@ test('ProviderManager keeps OpenAI (Subscription) as next-startup only when acti
   const output = stripAnsi(extractLastFrame(mounted.getOutput()))
 
   expect(output).toContain(
-    'Active provider: OpenAI (Subscription). Saved for next startup. Warning: validation failed.',
+    'Activated provider: OpenAI (Subscription). Saved for next startup. Warning: validation failed.',
   )
   expect(applySavedProfileToCurrentSession).toHaveBeenCalled()
   expect(setActiveProviderProfile).toHaveBeenCalledWith('provider_codex_oauth')
@@ -1773,7 +1773,7 @@ test('ProviderManager activating a multi-model provider sets the session model t
     mounted.getOutput,
     frame =>
       frame.includes('Provider manager') &&
-      frame.includes('Set active provider'),
+      frame.includes('Activate Provider'),
   )
 
   mounted.stdin.write('j')
@@ -1785,7 +1785,7 @@ test('ProviderManager activating a multi-model provider sets the session model t
   await waitForFrameOutput(
     mounted.getOutput,
     frame =>
-      frame.includes('Set active provider') &&
+      frame.includes('Activate Provider') &&
       frame.includes('Multi Model Provider'),
   )
 
@@ -1992,7 +1992,7 @@ test('ProviderManager set-active list uses descriptor-backed provider type label
     mounted.getOutput,
     frame =>
       frame.includes('Provider manager') &&
-      frame.includes('Set active provider'),
+      frame.includes('Activate Provider'),
   )
 
   mounted.stdin.write('j')
@@ -2004,7 +2004,7 @@ test('ProviderManager set-active list uses descriptor-backed provider type label
   const output = await waitForFrameOutput(
     mounted.getOutput,
     frame =>
-      frame.includes('Set active provider') &&
+      frame.includes('Activate Provider') &&
       frame.includes('Gemini Work') &&
       frame.includes('Gemini API'),
   )

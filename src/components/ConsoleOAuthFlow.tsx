@@ -19,6 +19,7 @@ import { Spinner } from './Spinner.js';
 import TextInput from './TextInput.js';
 export type ConsoleOAuthFlowResult = {
   type: 'oauth';
+  loginWithClaudeAi: boolean;
 } | {
   type: 'provider-setup';
   message: string;
@@ -129,7 +130,8 @@ export function ConsoleOAuthFlow({
       loginWithClaudeAi
     });
     onDone({
-      type: 'oauth'
+      type: 'oauth',
+      loginWithClaudeAi
     });
   }, {
     context: 'Confirmation',

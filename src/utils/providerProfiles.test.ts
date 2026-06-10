@@ -1161,6 +1161,55 @@ describe('getProviderPresetDefaults', () => {
     expect(defaults.requiresApiKey).toBe(false)
   })
 
+  test('ensureClaudeMaxOAuthProxyProfileActive creates and activates the subscription profile', async () => {
+    const { ensureClaudeMaxOAuthProxyProfileActive } =
+      await importFreshProviderProfileModules()
+
+    const profile = ensureClaudeMaxOAuthProxyProfileActive({
+      configDir: testConfigDir ?? undefined,
+    })
+
+    expect(profile?.provider).toBe('claude-max-proxy')
+    expect(profile?.name).toBe('Anthropic (Subscription)')
+    expect(profile?.baseUrl).toBe('http://127.0.0.1:8031')
+    expect(profile?.model).toBe('claude-sonnet-4-5')
+    expect(profile?.apiKey).toBeUndefined()
+    expect(mockConfigState.providerProfiles).toHaveLength(1)
+    expect(mockConfigState.activeProviderProfileId).toBe(profile?.id)
+    expect(process.env.ANTHROPIC_BASE_URL).toBe('http://127.0.0.1:8031')
+    expect(process.env.ANTHROPIC_MODEL).toBe('claude-sonnet-4-5')
+    expect(process.env.ANTHROPIC_API_KEY).toBeUndefined()
+    expect(process.env.CLAUDE_CODE_USE_OPENAI).toBeUndefined()
+  })
+
+  test('ensureClaudeMaxOAuthProxyProfileActive reuses an existing subscription profile', async () => {
+    const { ensureClaudeMaxOAuthProxyProfileActive } =
+      await importFreshProviderProfileModules()
+    saveMockGlobalConfig(current => ({
+      ...current,
+      providerProfiles: [
+        buildProfile({
+          id: 'existing_claude_max',
+          name: 'Old Name',
+          provider: 'claude-max-proxy',
+          baseUrl: 'http://127.0.0.1:8031',
+          model: 'claude-sonnet-4-5',
+          apiKey: 'stale-key',
+        }),
+      ],
+    }))
+
+    const profile = ensureClaudeMaxOAuthProxyProfileActive({
+      configDir: testConfigDir ?? undefined,
+    })
+
+    expect(profile?.id).toBe('existing_claude_max')
+    expect(profile?.name).toBe('Anthropic (Subscription)')
+    expect(profile?.apiKey).toBeUndefined()
+    expect(mockConfigState.providerProfiles).toHaveLength(1)
+    expect(mockConfigState.activeProviderProfileId).toBe('existing_claude_max')
+  })
+
   test('kimi-code preset defaults to the Kimi Code coding endpoint', async () => {
     const { getProviderPresetDefaults } = await importFreshProviderProfileModules()
 

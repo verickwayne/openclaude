@@ -36,6 +36,7 @@ import { isRunningOnHomespace } from '../../utils/envUtils.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
 import { getAPIProvider } from '../../utils/model/providers.js'
+import { ensureClaudeMaxOAuthProxyProfileActive } from '../../utils/providerProfiles.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import {
@@ -109,6 +110,19 @@ export async function installOAuthTokens(tokens: OAuthTokens): Promise<void> {
   await clearAuthRelatedCaches()
 }
 
+async function activateClaudeMaxOAuthOverlayAfterLogin(): Promise<string | null> {
+  const activeProfile = ensureClaudeMaxOAuthProxyProfileActive()
+  if (!activeProfile) {
+    return 'Claude Max OAuth proxy provider profile could not be activated. Run /provider and select Anthropic (Subscription).'
+  }
+
+  const { ensureClaudeMaxProxyRunning, describeEnsureResult } = await import(
+    '../../integrations/anthropicProxies/claudeMaxProxyRuntime.js'
+  )
+  const result = await ensureClaudeMaxProxyRunning()
+  return describeEnsureResult(result)
+}
+
 export async function authLogin({
   email,
   sso,
@@ -173,6 +187,13 @@ export async function authLogin({
       logEvent('tengu_oauth_success', {
         loginWithClaudeAi: shouldUseClaudeAIAuth(tokens.scopes),
       })
+      if (shouldUseClaudeAIAuth(tokens.scopes)) {
+        const warning = await activateClaudeMaxOAuthOverlayAfterLogin()
+        if (warning) {
+          process.stdout.write(`Login successful, but ${warning}\n`)
+          process.exit(0)
+        }
+      }
       process.stdout.write('Login successful.\n')
       process.exit(0)
     } catch (err) {
@@ -214,6 +235,18 @@ export async function authLogin({
     }
 
     logEvent('tengu_oauth_success', { loginWithClaudeAi })
+
+    if (loginWithClaudeAi) {
+      const warning = await activateClaudeMaxOAuthOverlayAfterLogin()
+      if (warning) {
+        process.stdout.write(`Login successful, but ${warning}\n`)
+        process.exit(0)
+      }
+      process.stdout.write(
+        'Login successful. Anthropic (Subscription) is active and the Claude Max proxy is running.\n',
+      )
+      process.exit(0)
+    }
 
     process.stdout.write('Login successful.\n')
     process.exit(0)

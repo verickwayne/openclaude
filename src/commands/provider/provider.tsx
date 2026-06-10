@@ -90,11 +90,11 @@ export function buildProviderManagerCompletion(result?: ProviderManagerResult): 
   const metaMessages =
     result?.action === 'activated' && result.activeProviderName
       ? [
-          `<system-reminder>Provider switched mid-session to ${result.activeProviderName}${
+          `<system-reminder>Provider activated mid-session: ${result.activeProviderName}${
             result.activeProviderModel
               ? ` using model ${result.activeProviderModel}`
               : ''
-          }. Use this provider/model for subsequent requests unless the user switches again.</system-reminder>`,
+          }. Use this provider/model for subsequent requests unless the user activates another provider.</system-reminder>`,
         ]
       : undefined
 
@@ -507,7 +507,7 @@ export function buildProfileSaveMessage(
 
   lines.push(`Profile: ${filePath}`)
   if (options?.activatedInSession) {
-    lines.push('OpenClaude switched to it for this session.')
+    lines.push('OpenClaude activated it for this session.')
   } else if (options?.activationWarning) {
     lines.push(
       `Saved for next startup. Warning: could not activate it in this session (${options.activationWarning}).`,
@@ -1800,7 +1800,7 @@ export const call: LocalJSXCommandCall = async (onDone, _context, args) => {
     trimmedArgs === '-h'
   ) {
     onDone(
-      'Run /provider to add, edit, delete, or activate provider profiles. The active provider controls base URL, model, and API key.',
+      'Run /provider to add, edit, delete, or activate provider profiles. The default provider controls fallback base URL, model, and API key.',
       { display: 'system' },
     )
     return

@@ -52,6 +52,7 @@ import {
   addModelsToProviderProfile,
   addProviderProfile,
   applyActiveProviderProfileFromConfig,
+  ANTHROPIC_SUBSCRIPTION_PROVIDER_NAME,
   deleteProviderProfile,
   getActiveProviderProfile,
   getProviderPresetDefaults,
@@ -221,7 +222,6 @@ const GITHUB_PROVIDER_ID = '__github_models__'
 const GITHUB_PROVIDER_LABEL = 'GitHub Models'
 const GITHUB_PROVIDER_DEFAULT_MODEL = 'github:copilot'
 const GITHUB_PROVIDER_DEFAULT_BASE_URL = 'https://models.github.ai/inference'
-const ANTHROPIC_SUBSCRIPTION_PROVIDER_NAME = 'Anthropic (Subscription)'
 const OPENAI_SUBSCRIPTION_PROVIDER_NAME = 'OpenAI (Subscription)'
 const CODEX_OAUTH_PROVIDER_NAME = OPENAI_SUBSCRIPTION_PROVIDER_NAME
 const CODEX_OAUTH_PROVIDER_MODEL = 'codexplan'
@@ -863,8 +863,8 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       },
       {
         value: 'activate',
-        label: 'Set active provider',
-        description: 'Switch the active provider profile',
+        label: 'Activate Provider',
+        description: 'Make a provider available and set it as the default',
         disabled: !hasSelectableProviders,
       },
       {
@@ -1144,10 +1144,10 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     }
 
     if (options.warnings.length > 0) {
-      return `${options.prefix}. OpenClaude switched to it for this session with warnings: ${options.warnings.join('; ')}.`
+      return `${options.prefix}. OpenClaude activated it for this session with warnings: ${options.warnings.join('; ')}.`
     }
 
-    return `${options.prefix}. OpenClaude switched to it for this session.`
+    return `${options.prefix}. OpenClaude activated it for this session.`
   }
 
   function buildXaiOAuthActivationMessage(options: {
@@ -1159,9 +1159,9 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       return `${options.prefix}. Saved for next startup. Warning: ${options.warnings.join('; ')}.`
     }
     if (options.warnings.length > 0) {
-      return `${options.prefix}. OpenClaude switched to it for this session with warnings: ${options.warnings.join('; ')}.`
+      return `${options.prefix}. OpenClaude activated it for this session with warnings: ${options.warnings.join('; ')}.`
     }
-    return `${options.prefix}. OpenClaude switched to it for this session.`
+    return `${options.prefix}. OpenClaude activated it for this session.`
   }
 
   async function activateXaiOAuthSession(options?: {
@@ -1245,13 +1245,13 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
           mainLoopModelForSession: null,
         }))
         refreshProfiles()
-        setStatusMessage(`Active provider: ${GITHUB_PROVIDER_LABEL}`)
+        setStatusMessage(`Activated provider: ${GITHUB_PROVIDER_LABEL}`)
         setIsActivating(false)
         onDone({
           action: 'activated',
           activeProviderName: GITHUB_PROVIDER_LABEL,
           activeProviderModel: GITHUB_PROVIDER_DEFAULT_MODEL,
-          message: `Provider switched to ${GITHUB_PROVIDER_LABEL} (${GITHUB_PROVIDER_DEFAULT_MODEL})`,
+          message: `Provider activated: ${GITHUB_PROVIDER_LABEL} (${GITHUB_PROVIDER_DEFAULT_MODEL})`,
         })
         returnToMenu()
         return
@@ -1259,7 +1259,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
 
       const active = setActiveProviderProfile(profileId)
       if (!active) {
-        setErrorMessage('Could not change active provider.')
+        setErrorMessage('Could not activate provider.')
         setIsActivating(false)
         returnToMenu()
         return
@@ -1297,7 +1297,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       refreshProfiles()
       const activationMessage = isActiveCodexOAuth
         ? buildCodexOAuthActivationMessage({
-            prefix: `Active provider: ${active.name}`,
+            prefix: `Activated provider: ${active.name}`,
             activationWarning,
             warnings: [
               activationWarning,
@@ -1308,7 +1308,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
           })
         : isActiveXaiOAuth
           ? buildXaiOAuthActivationMessage({
-              prefix: `Active provider: ${active.name}`,
+              prefix: `Activated provider: ${active.name}`,
               activationWarning,
               warnings: [
                 activationWarning,
@@ -1318,8 +1318,8 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
               ].filter((warning): warning is string => Boolean(warning)),
             })
           : settingsOverrideError
-            ? `Active provider: ${active.name}. Warning: could not clear startup provider override (${settingsOverrideError}).`
-            : `Active provider: ${active.name}`
+            ? `Activated provider: ${active.name}. Warning: could not clear startup provider override (${settingsOverrideError}).`
+            : `Activated provider: ${active.name}`
       setStatusMessage(activationMessage)
       setIsActivating(false)
       onDone({
@@ -1327,7 +1327,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
         activeProfileId: active.id,
         activeProviderName: active.name,
         activeProviderModel: newModel,
-        message: `Provider switched to ${active.name} (${newModel})`,
+        message: `Provider activated: ${active.name} (${newModel})`,
       })
       returnToMenu()
     } catch (error) {
@@ -2720,7 +2720,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       break
     case 'select-active':
       content = renderProfileSelection(
-        'Set active provider',
+        'Activate Provider',
         'No providers available. Add one first.',
         profileId => {
           void activateSelectedProvider(profileId)

@@ -27,6 +27,7 @@ import {
   resetAutoModeGateCheck,
   resetBypassPermissionsCheck,
 } from '../../utils/permissions/bypassPermissionsKillswitch.js'
+import { ensureClaudeMaxOAuthProxyProfileActive } from '../../utils/providerProfiles.js'
 import { resetUserCache } from '../../utils/user.js'
 import { resolveLoginTarget } from './loginTarget.js'
 
@@ -161,19 +162,27 @@ export async function call(
           authVersion: prev.authVersion + 1,
         }))
 
-        if (claudeMaxTarget) {
+        if (result.loginWithClaudeAi) {
+          const activeProfile = ensureClaudeMaxOAuthProxyProfileActive()
+          if (!activeProfile) {
+            onDone(
+              'Login successful, but the Claude Max OAuth proxy provider profile could not be activated. Use /provider and select Anthropic (Subscription).',
+            )
+            return
+          }
+
           const { ensureClaudeMaxProxyRunning, describeEnsureResult } =
             await import(
               '../../integrations/anthropicProxies/claudeMaxProxyRuntime.js'
             )
-          const result = await ensureClaudeMaxProxyRunning()
-          const warning = describeEnsureResult(result)
+          const ensureResult = await ensureClaudeMaxProxyRunning()
+          const warning = describeEnsureResult(ensureResult)
           if (warning) {
             onDone(`Login successful, but ${warning}`)
             return
           }
           onDone(
-            'Login successful. The Claude Max proxy is running and will use these credentials.',
+            `Login successful. ${activeProfile.name} is active and the Claude Max proxy is running.`,
           )
           return
         }

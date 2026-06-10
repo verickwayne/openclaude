@@ -305,6 +305,35 @@ export function getProviderPresetDefaults(
   }
 }
 
+export const ANTHROPIC_SUBSCRIPTION_PROVIDER_NAME = 'Anthropic (Subscription)'
+export const CLAUDE_MAX_OAUTH_PROXY_PRESET = 'claude-max-proxy' as const
+
+export function ensureClaudeMaxOAuthProxyProfileActive(options?: {
+  configDir?: string
+}): ProviderProfile | null {
+  const defaults = getProviderPresetDefaults(CLAUDE_MAX_OAUTH_PROXY_PRESET)
+  const payload: ProviderProfileInput = {
+    provider: defaults.provider,
+    name: ANTHROPIC_SUBSCRIPTION_PROVIDER_NAME,
+    baseUrl: defaults.baseUrl,
+    model: defaults.model,
+    apiKey: '',
+  }
+  const existing = getProviderProfiles().find(
+    profile => profile.provider === CLAUDE_MAX_OAUTH_PROXY_PRESET,
+  )
+
+  const saved = existing
+    ? updateProviderProfile(existing.id, payload)
+    : addProviderProfile(payload, { makeActive: false })
+
+  if (!saved) {
+    return null
+  }
+
+  return setActiveProviderProfile(saved.id, options)
+}
+
 export function getProviderProfiles(
   config = getGlobalConfig(),
 ): ProviderProfile[] {
