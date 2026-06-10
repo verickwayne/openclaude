@@ -101,7 +101,7 @@ function setupOpenAIMode(baseUrl: string, model: string): void {
 }
 
 describe('printStartupScreen logo', () => {
-  test('renders CLAUDE with a D-shaped D instead of an O-shaped block', () => {
+  test('renders the LIMITLESS wordmark with an infinity flourish', () => {
     ;(globalThis as Record<string, unknown>).MACRO = { VERSION: 'test-version' }
     Object.defineProperty(process.stdout, 'isTTY', {
       configurable: true,
@@ -117,10 +117,14 @@ describe('printStartupScreen logo', () => {
     printStartupScreen()
 
     const plainOutput = stripAnsi(output)
-    expect(plainOutput).toContain('███████╗ ████████╗')
-    expect(plainOutput).toContain('██╔═══██╗ ██╔═════╝')
-    expect(plainOutput).toContain('███████╔╝ ████████╗')
-    expect(plainOutput).not.toContain('████████║ ████████╗')
+    // LIMIT — the M crest and the T cap appear on the top row.
+    expect(plainOutput).toContain('███╗   ███╗ ██╗ ████████╗')
+    // LESS — the E mid-bar feeds into the two S tops.
+    expect(plainOutput).toContain('█████╗   ███████╗ ███████╗')
+    // Infinity flourish ties the two stacked words into the wordmark.
+    expect(plainOutput).toContain('∞')
+    // The old OPEN CLAUDE banner is fully gone.
+    expect(plainOutput).not.toContain('███████╔╝ ████████╗')
   })
 })
 
