@@ -610,3 +610,91 @@ test('hook appends one well-formed JSONL ledger record for a valid persona YAML'
   expect(stderr).not.toContain('SyntaxError')
   expect(stderr).not.toContain('Traceback')
 })
+
+// ── Loop lineage tests ────────────────────────────────────────────────────────
+
+test('bootstrap initializes session.json with an empty lineage array', () => {
+  const bootstrap = OPENRALPH_FILES['bin/openralph-bootstrap.sh']
+  // The Python block that writes session.json must include the lineage key.
+  expect(bootstrap).toContain('"lineage"')
+  expect(bootstrap).toContain('"lineage": []')
+})
+
+test('adopt script is registered in OPENRALPH_FILES', () => {
+  const key = 'bin/openralph-adopt.sh'
+  expect(key in OPENRALPH_FILES).toBe(true)
+  const script = (OPENRALPH_FILES as Record<string, string>)[key]
+  // Must be a valid bash script.
+  expect(script).toContain('#!/usr/bin/env bash')
+  expect(script).toContain('set -euo pipefail')
+})
+
+test('adopt script uses copy-not-move semantics — cp, never mv or rename, for orphan files', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-adopt.sh']
+  // Files must be copied into the new dir, NOT moved or renamed.
+  expect(script).toContain('cp "$ORPHAN_STATE_DIR/')
+  // Explicit absence: no mv or rename of the orphan files.
+  expect(script).not.toMatch(/mv "\$ORPHAN_STATE_DIR/)
+  expect(script).not.toMatch(/rename.*ORPHAN/)
+  // The originals-preserved note must be in the script (as comment or echo).
+  expect(script).toContain('preserved')
+})
+
+test('adopt script appends to lineage — composing ancestor chain from orphan', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-adopt.sh']
+  // Must read the orphan's existing lineage array and carry it forward.
+  expect(script).toContain('ancestor_lineage')
+  // Must append the adoption event with ancestor and adopted_at fields.
+  expect(script).toContain('"ancestor"')
+  expect(script).toContain('"adopted_at"')
+  // Must use the orphan session id as the ancestor value.
+  expect(script).toContain('orphan_sid')
+})
+
+test('adopt script updates active-session pointer to the new session', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-adopt.sh']
+  // active-session file must be updated to the NEW session id.
+  expect(script).toContain('> "$RALPH_DIR/active-session"')
+  // enabled marker must be created/touched.
+  expect(script).toContain('touch "$RALPH_DIR/enabled"')
+  // active-session.json must be updated from the new session dir.
+  expect(script).toContain('active-session.json')
+})
+
+test('adopt script liveness heuristic: blocks adoption when orphan is active AND enabled', () => {
+  const script = (OPENRALPH_FILES as Record<string, string>)['bin/openralph-adopt.sh']
+  // Must check the active-session pointer.
+  expect(script).toContain('ACTIVE_SESSION')
+  // Must check the enabled marker.
+  expect(script).toContain('ENABLED')
+  // Both conditions together trigger the block (AND logic).
+  expect(script).toContain('"$ACTIVE_SESSION" == "$ORPHAN_SID" && -f "$ENABLED"')
+  // Error message must point to the disengage script.
+  expect(script).toContain('openralph-disengage.sh')
+})
+
+test('status script prints lineage chain when session has non-empty lineage', () => {
+  const status = OPENRALPH_FILES['bin/openralph-status.sh']
+  // Must read lineage from session.json.
+  expect(status).toContain('lineage')
+  // Must print a "lineage:" labelled line.
+  expect(status).toContain('"lineage: "')
+  // Must use ancestor fields to build the chain.
+  expect(status).toContain('"ancestor"')
+})
+
+test('scheduler contract mentions adopt script and treats adopted progress.md/queue.md as authoritative', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Must name the adopt script.
+  expect(text).toContain('openralph-adopt.sh')
+
+  // Must describe the adopted files as authoritative history (not stale data to re-derive).
+  expect(text).toMatch(/authoritative|authoritative history/i)
+
+  // Must mention lineage field.
+  expect(text).toContain('lineage')
+})

@@ -73,6 +73,7 @@ data = {
   "start_commit": os.environ.get("START_COMMIT") or None,
   "completion_condition": os.environ.get("COMPLETION_CONDITION") or None,
   "proof_command": os.environ.get("PROOF_COMMAND") or None,
+  "lineage": [],
   "status": "running",
   "prompt": os.environ["PROMPT"],
 }
@@ -406,6 +407,19 @@ for file in session.json goal.json; do
     python3 -m json.tool "$SESSION_STATE_DIR/$file" 2>/dev/null || cat "$SESSION_STATE_DIR/$file"
   fi
 done
+if [[ -f "$SESSION_STATE_DIR/session.json" ]]; then
+  python3 - "$SESSION_STATE_DIR/session.json" <<'PY'
+import json, sys
+try:
+  data = json.load(open(sys.argv[1], encoding="utf-8"))
+  lineage = data.get("lineage") or []
+  if lineage:
+    chain = " -> ".join(entry.get("ancestor", "?") for entry in lineage)
+    print("lineage: " + chain)
+except Exception:
+  pass
+PY
+fi
 echo "-- queue --"
 sed -n '1,80p' "$SESSION_STATE_DIR/queue.md" 2>/dev/null || true
 echo "-- progress --"
@@ -464,6 +478,111 @@ if [[ "$(cat "$RALPH_DIR/active-session" 2>/dev/null || true)" == "$SESSION_ID" 
 fi
 echo "OpenRalph session disengaged: $SESSION_ID"
 echo "State preserved at $SESSION_STATE_DIR"
+`
+
+const OPENRALPH_ADOPT_SH = `#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+openralph-adopt.sh <orphan_session_id>
+
+Adopt an orphaned OpenRalph session into the current new session.
+The orphan's files are COPIED (not moved) so the ancestor's history
+is preserved unchanged.  The new session gets a fresh session_id,
+carries forward the orphan's lineage chain, and becomes the active session.
+EOF
+}
+
+ORPHAN_SID="\${1:-}"
+if [[ -z "$ORPHAN_SID" ]]; then
+  echo "Usage: openralph-adopt.sh <orphan_session_id>" >&2
+  usage >&2
+  exit 2
+fi
+
+PROJECT_ROOT="$(pwd)"
+RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
+SESSION_DIR="$RALPH_DIR/sessions"
+ORPHAN_STATE_DIR="$SESSION_DIR/$ORPHAN_SID"
+
+if [[ ! -d "$ORPHAN_STATE_DIR" ]]; then
+  echo "Orphan session not found: $ORPHAN_STATE_DIR" >&2
+  exit 2
+fi
+
+# Liveness check: the orphan must not be the current active session of a live loop.
+# A loop is live when BOTH conditions hold:
+#   1. active-session points to this session id, AND
+#   2. the enabled marker exists (the disengager removes enabled when it matches active-session).
+# If either condition is missing the session is considered orphaned and safe to adopt.
+ACTIVE_SESSION="$(cat "$RALPH_DIR/active-session" 2>/dev/null || true)"
+ENABLED="$RALPH_DIR/enabled"
+if [[ "$ACTIVE_SESSION" == "$ORPHAN_SID" && -f "$ENABLED" ]]; then
+  echo "Cannot adopt: session $ORPHAN_SID is the current active session of a live loop." >&2
+  echo "Disengage it first with: bash .openclaude/ralph/bin/openralph-disengage.sh" >&2
+  exit 2
+fi
+
+NEW_SESSION_ID="\${CLAUDE_CODE_SESSION_ID:-\${CLAUDE_SESSION_ID:-}}"
+if [[ -z "$NEW_SESSION_ID" ]]; then
+  NEW_SESSION_ID="$(python3 - <<'PY'
+import uuid
+print(uuid.uuid4())
+PY
+)"
+fi
+NEW_STATE_DIR="$SESSION_DIR/$NEW_SESSION_ID"
+mkdir -p "$NEW_STATE_DIR"
+
+NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+export ORPHAN_SID NEW_SESSION_ID NEW_STATE_DIR ORPHAN_STATE_DIR NOW
+
+# Copy the orphan's work files into the new session dir.
+# Originals are NOT touched — this is copy-not-move semantics.
+for src_file in session.json goal.json queue.md progress.md; do
+  if [[ -f "$ORPHAN_STATE_DIR/$src_file" ]]; then
+    cp "$ORPHAN_STATE_DIR/$src_file" "$NEW_STATE_DIR/$src_file"
+  fi
+done
+
+# Update session.json: set new session_id, updated_at, and compose the lineage chain.
+python3 - "$NEW_STATE_DIR/session.json" <<'PY'
+import json, os, sys, time
+session_path = sys.argv[1]
+orphan_sid = os.environ["ORPHAN_SID"]
+new_sid = os.environ["NEW_SESSION_ID"]
+now = os.environ["NOW"]
+
+try:
+  data = json.load(open(session_path, encoding="utf-8"))
+except Exception:
+  data = {}
+
+# Inherit the ancestor's lineage and append this adoption event.
+ancestor_lineage = data.get("lineage") or []
+ancestor_lineage.append({"ancestor": orphan_sid, "adopted_at": now})
+
+data["session_id"] = new_sid
+data["lineage"] = ancestor_lineage
+data["updated_at"] = now
+data["status"] = "running"
+
+with open(session_path, "w", encoding="utf-8") as f:
+  json.dump(data, f, indent=2)
+  f.write("\\n")
+PY
+
+# Update the active-session pointer and write active-session.json.
+printf '%s\n' "$NEW_SESSION_ID" > "$RALPH_DIR/active-session"
+cp "$NEW_STATE_DIR/session.json" "$RALPH_DIR/active-session.json"
+touch "$RALPH_DIR/enabled"
+
+echo "OpenRalph session adopted"
+echo "Ancestor: $ORPHAN_SID"
+echo "New session: $NEW_SESSION_ID"
+echo "State: $NEW_STATE_DIR/session.json"
+echo "Ancestor state preserved at: $ORPHAN_STATE_DIR"
 `
 
 const OPENRALPH_ROUTE_STATS_SH = `#!/usr/bin/env bash
@@ -548,6 +667,7 @@ export const OPENRALPH_FILES = {
   'bin/openralph-hook.sh': OPENRALPH_HOOK_SH,
   'bin/openralph-status.sh': OPENRALPH_STATUS_SH,
   'bin/openralph-disengage.sh': OPENRALPH_DISENGAGE_SH,
+  'bin/openralph-adopt.sh': OPENRALPH_ADOPT_SH,
   'bin/openralph-route-stats.sh': OPENRALPH_ROUTE_STATS_SH,
   'README.md': OPENRALPH_README,
 }
@@ -632,7 +752,11 @@ i. Parse the winner's persona-result YAML into \`$OPENRALPH_SESSION_DIR/persona-
 9. Before writing \`goal.json.status\` to \`complete\` or \`completed\`, dispatch \`openralph-checker\` via the Agent tool. Pass in the dispatch context: the goal condition text, the proof_command (or null), and \`worker_model\` set to the \`provider_model_used\` value from the most recent worker persona result. The checker MUST use a different provider and model family than worker_model — instruct it explicitly: "Do not use [worker_model provider]. Use a model from a different provider." Only mark goal.json complete if the checker's returned YAML has \`goal_met: true\`. If the checker returns \`goal_met: false\`, extract its \`gaps\` list and push each gap as a new queue item before continuing the loop. The checker's YAML verdict carries \`task_slug\`, \`provider_model_used\`, and \`status: complete\` (indicating the check itself ran) so the routing ledger automatically records the verification dispatch via the PostToolUse hook.
 10. Stop only when \`goal.json.status\` is \`complete\` and the proof is visible in \`progress.md\`.
 
-The Stop hook records session bridges and blocks a stop while the active session's \`goal.json.status\` is still running, so future turns resume from session-scoped OpenRalph files instead of relying on memory.`
+The Stop hook records session bridges and blocks a stop while the active session's \`goal.json.status\` is still running, so future turns resume from session-scoped OpenRalph files instead of relying on memory.
+
+### Adopting an orphaned session
+
+When engaging into a repo that has orphaned sessions (sessions in \`.openclaude/ralph/sessions/\` whose \`session.json.status\` is not \`complete\` or \`disengaged\`, and which are not the current active session of a live loop), the scheduler MAY adopt one via \`bash .openclaude/ralph/bin/openralph-adopt.sh <orphan_session_id>\` instead of starting fresh. The adopt script copies the orphan's \`session.json\`, \`goal.json\`, \`queue.md\`, and \`progress.md\` into a new session directory without touching the originals, records the adoption in the new session's \`lineage\` field (composing any ancestor chain the orphan already carried), and updates the \`active-session\` pointer to the new session. The adopted \`progress.md\` and \`queue.md\` are authoritative history — treat their completed and in-flight entries as ground truth rather than re-deriving task state from scratch.`
 }
 
 function buildStatusPrompt(): string {
