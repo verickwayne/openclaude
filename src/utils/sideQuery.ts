@@ -14,6 +14,8 @@ import { logEvent } from '../services/analytics/index.js'
 import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../services/analytics/metadata.js'
 import { getAPIMetadata } from '../services/api/claude.js'
 import { getAnthropicClient } from '../services/api/client.js'
+import type { ModelClass } from '../services/api/modelRegistry.js'
+import { resolveTopCandidateForClass } from './sideQueryRegistry.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
 import { modelSupportsAdaptiveThinking } from './thinking.js'
 import { computeFingerprint } from './fingerprint.js'
@@ -30,6 +32,15 @@ type BetaThinkingConfigParam = Anthropic.Beta.Messages.BetaThinkingConfigParam
 export type SideQueryOptions = {
   /** Model to use for the query */
   model: string
+  /**
+   * When present (and OPENCLAUDE_SIDEQUERY_ROUTING != "0"), resolve the actual
+   * provider/model via the multi-provider registry before sending the request.
+   * Absent → current first-party behavior, byte-for-byte.
+   *
+   * Most sideQuery calls are 'fast'-class work (classifiers, memory scans,
+   * session search).  Set this to opt a call site into registry-aware routing.
+   */
+  modelClass?: ModelClass
   /**
    * System prompt - string or array of text blocks (will be prefixed with CLI attribution).
    *
@@ -107,7 +118,8 @@ function extractFirstUserMessageText(messages: MessageParam[]): string {
  */
 export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
   const {
-    model,
+    model: requestedModel,
+    modelClass,
     system,
     messages,
     tools,
@@ -122,10 +134,43 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
     stop_sequences,
   } = opts
 
+  // ── Registry-aware routing (opt-in, dark by default) ────────────────────────
+  // When modelClass is provided AND the kill switch is not set to "0", attempt
+  // to resolve a provider/model via the multi-provider registry.  Falls back to
+  // the requested model on any failure so side-calls never error out due to
+  // routing issues.
+  let resolvedModel = requestedModel
+  let resolvedProviderOverride: import('../services/api/resolvedProvider.js').ResolvedProvider | undefined
+
+  if (
+    modelClass !== undefined &&
+    process.env.OPENCLAUDE_SIDEQUERY_ROUTING !== '0'
+  ) {
+    try {
+      const top = resolveTopCandidateForClass(modelClass)
+      if (top !== null) {
+        resolvedModel = top.model
+        // Only pass a providerOverride when the resolved provider is NOT first-party.
+        // First-party goes through the normal getAnthropicClient path.
+        if (top.profileId !== 'first-party') {
+          resolvedProviderOverride = top
+        }
+      }
+    } catch {
+      // Resolution failure → fall back to requestedModel, no providerOverride.
+      resolvedModel = requestedModel
+      resolvedProviderOverride = undefined
+    }
+  }
+
+  const model = resolvedModel
+  // ── End routing ─────────────────────────────────────────────────────────────
+
   const client = await getAnthropicClient({
     maxRetries,
     model,
     source: 'side_query',
+    ...(resolvedProviderOverride ? { providerOverride: resolvedProviderOverride } : {}),
   })
   const betas = [...getModelBetas(model)]
   // Add structured-outputs beta if using output_format and provider supports it

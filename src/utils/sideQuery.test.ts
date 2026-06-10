@@ -63,6 +63,11 @@ beforeEach(async () => {
   mock.module('./model/model.js', () => ({
     normalizeModelStringForAPI: (m: string) => m,
   }))
+  // Default: routing disabled (no modelClass passed in existing tests).
+  // Tests in the 'modelClass routing' suite override this mock per-test.
+  mock.module('./sideQueryRegistry.js', () => ({
+    resolveTopCandidateForClass: () => null,
+  }))
 })
 
 afterEach(() => {
@@ -153,5 +158,108 @@ describe('sideQuery thinking field — thinking:undefined', () => {
 
     expect(capturedArgs).toHaveLength(1)
     expect(capturedArgs[0]).not.toHaveProperty('thinking')
+  })
+})
+
+// ── modelClass routing tests ──────────────────────────────────────────────────
+
+describe('sideQuery modelClass routing', () => {
+  // These tests layer additional mocks on top of the shared beforeEach.
+  // Each test sets up its own module mocks before importing a fresh sideQuery.
+
+  test('modelClass absent → uses requested model, no registry call', async () => {
+    // If modelClass is not passed, resolveTopCandidateForClass should never be called.
+    let registryCalled = false
+    mock.module('./sideQueryRegistry.js', () => ({
+      resolveTopCandidateForClass: () => {
+        registryCalled = true
+        return null
+      },
+    }))
+    mock.module('./thinking.js', () => ({
+      modelSupportsAdaptiveThinking: () => false,
+    }))
+
+    const { sideQuery } = await importFreshSideQuery()
+    await sideQuery({ ...BASE_OPTS, model: NON_ADAPTIVE_MODEL })
+
+    expect(registryCalled).toBe(false)
+    expect(capturedArgs).toHaveLength(1)
+    expect((capturedArgs[0] as Record<string, unknown>).model).toBe(NON_ADAPTIVE_MODEL)
+  })
+
+  test('modelClass present → resolved model used, thinking guard keys off resolved model', async () => {
+    const RESOLVED_MODEL = 'resolved-fast-model'
+    // Registry resolves to a first-party model named RESOLVED_MODEL.
+    mock.module('./sideQueryRegistry.js', () => ({
+      resolveTopCandidateForClass: () => ({
+        profileId: 'first-party',
+        kind: 'anthropic-native',
+        model: RESOLVED_MODEL,
+        modelClass: 'fast',
+        ledgerSuccessRate: null,
+        ledgerN: 0,
+      }),
+    }))
+    // RESOLVED_MODEL is adaptive; if the guard keys off requestedModel (NON_ADAPTIVE_MODEL)
+    // it would wrongly send { type: 'disabled' }.  Keyed off resolved model → no thinking field.
+    mock.module('./thinking.js', () => ({
+      modelSupportsAdaptiveThinking: (m: string) => m === RESOLVED_MODEL,
+    }))
+
+    const { sideQuery } = await importFreshSideQuery()
+    await sideQuery({ ...BASE_OPTS, model: NON_ADAPTIVE_MODEL, modelClass: 'fast', thinking: false })
+
+    expect(capturedArgs).toHaveLength(1)
+    // Model in the API request must be the registry-resolved one.
+    expect((capturedArgs[0] as Record<string, unknown>).model).toBe(RESOLVED_MODEL)
+    // Thinking guard correctly saw RESOLVED_MODEL as adaptive → no thinking field sent.
+    expect(capturedArgs[0]).not.toHaveProperty('thinking')
+  })
+
+  test('resolution failure → falls back to requested model, no error thrown', async () => {
+    mock.module('./sideQueryRegistry.js', () => ({
+      resolveTopCandidateForClass: () => {
+        throw new Error('registry unavailable')
+      },
+    }))
+    mock.module('./thinking.js', () => ({
+      modelSupportsAdaptiveThinking: () => false,
+    }))
+
+    const { sideQuery } = await importFreshSideQuery()
+    // Must not throw; must use the originally-requested model.
+    await expect(sideQuery({ ...BASE_OPTS, model: NON_ADAPTIVE_MODEL, modelClass: 'fast' })).resolves.toBeDefined()
+    expect((capturedArgs[0] as Record<string, unknown>).model).toBe(NON_ADAPTIVE_MODEL)
+  })
+
+  test('kill switch OPENCLAUDE_SIDEQUERY_ROUTING=0 → ignores modelClass, uses requested model', async () => {
+    const originalEnv = process.env.OPENCLAUDE_SIDEQUERY_ROUTING
+    process.env.OPENCLAUDE_SIDEQUERY_ROUTING = '0'
+
+    let registryCalled = false
+    mock.module('./sideQueryRegistry.js', () => ({
+      resolveTopCandidateForClass: () => {
+        registryCalled = true
+        return null
+      },
+    }))
+    mock.module('./thinking.js', () => ({
+      modelSupportsAdaptiveThinking: () => false,
+    }))
+
+    try {
+      const { sideQuery } = await importFreshSideQuery()
+      await sideQuery({ ...BASE_OPTS, model: NON_ADAPTIVE_MODEL, modelClass: 'fast' })
+
+      expect(registryCalled).toBe(false)
+      expect((capturedArgs[0] as Record<string, unknown>).model).toBe(NON_ADAPTIVE_MODEL)
+    } finally {
+      if (originalEnv === undefined) {
+        delete process.env.OPENCLAUDE_SIDEQUERY_ROUTING
+      } else {
+        process.env.OPENCLAUDE_SIDEQUERY_ROUTING = originalEnv
+      }
+    }
   })
 })
