@@ -39,7 +39,11 @@ export {
 } from './providerSecrets.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 
-export const PROFILE_FILE_NAME = '.openclaude-profile.json'
+export const PROFILE_FILE_NAME = '.limitless-profile.json'
+// Previous-brand profile filename; still read (and cleaned up) when no
+// `.limitless-profile.json` exists, so existing users' provider profiles
+// keep loading after the rename.
+export const LEGACY_PROFILE_FILE_NAME = '.openclaude-profile.json'
 export const DEFAULT_GEMINI_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta/openai'
 export const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview'
@@ -227,10 +231,27 @@ function resolveProfileFilePath(options?: ProfileFileLocation): string {
   return getDefaultProfileFilePath(options?.configDir)
 }
 
+// Given a profile path, also surface its previous-brand sibling in the same
+// directory (`.openclaude-profile.json`) so existing profiles keep loading and
+// get cleaned up after the rename to `.limitless-profile.json`.
+function withBrandLegacy(paths: string[]): string[] {
+  const out: string[] = []
+  for (const p of paths) {
+    if (!out.includes(p)) out.push(p)
+    const legacy = join(dirname(p), LEGACY_PROFILE_FILE_NAME)
+    if (!out.includes(legacy)) out.push(legacy)
+  }
+  return out
+}
+
 function resolveProfileFileReadPaths(options?: ProfileFileLocation): string[] {
   const primary = resolveProfileFilePath(options)
-  if (options?.filePath || (options?.cwd && !options?.configDir)) {
+  if (options?.filePath) {
     return [primary]
+  }
+
+  if (options?.cwd && !options?.configDir) {
+    return withBrandLegacy([primary])
   }
 
   if (existsSync(primary)) {
@@ -238,17 +259,23 @@ function resolveProfileFileReadPaths(options?: ProfileFileLocation): string[] {
   }
 
   const legacy = resolveLegacyProfileFilePath(options?.cwd)
-  return legacy === primary ? [primary] : [primary, legacy]
+  const base = legacy === primary ? [primary] : [primary, legacy]
+  return withBrandLegacy(base)
 }
 
 function resolveProfileFileCleanupPaths(options?: ProfileFileLocation): string[] {
   const primary = resolveProfileFilePath(options)
-  if (options?.filePath || (options?.cwd && !options?.configDir)) {
+  if (options?.filePath) {
     return [primary]
   }
 
+  if (options?.cwd && !options?.configDir) {
+    return withBrandLegacy([primary])
+  }
+
   const legacy = resolveLegacyProfileFilePath(options?.cwd)
-  return legacy === primary ? [primary] : [primary, legacy]
+  const base = legacy === primary ? [primary] : [primary, legacy]
+  return withBrandLegacy(base)
 }
 
 function ensureProfileDirectory(filePath: string): void {

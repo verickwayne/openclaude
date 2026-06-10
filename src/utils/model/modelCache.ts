@@ -13,7 +13,7 @@ import { getAPIProvider } from './providers.js'
 
 const CACHE_VERSION = '1'
 const CACHE_TTL_HOURS = 24
-const CACHE_DIR_NAME = '.openclaude-model-cache'
+const CACHE_DIR_NAME = '.limitless-model-cache'
 
 interface ModelCache {
   version: string
