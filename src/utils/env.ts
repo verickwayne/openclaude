@@ -8,6 +8,7 @@ import {
   getClaudeConfigHomeDir,
   isEnvTruthy,
   migrateLegacyClaudeConfigHome,
+  migrateLegacyOpenClaudeGlobalConfigFiles,
 } from './envUtils.js'
 import { findExecutable } from './findExecutable.js'
 import { getFsImplementation } from './fsOperations.js'
@@ -25,8 +26,8 @@ export function resolveGlobalClaudeFile(options: {
   const oauthSuffix = options.oauthSuffix ?? ''
   const configDir = options.configDirEnv || options.homeDir || homedir()
   const hasExplicitConfigDir = Boolean(options.configDirEnv)
-  const newFilename = `.openclaude${oauthSuffix}.json`
-  const legacyFilename = `.claude${oauthSuffix}.json`
+  const newFilename = `.limitless${oauthSuffix}.json`
+  const legacyFilename = `.openclaude${oauthSuffix}.json`
 
   if (
     (hasExplicitConfigDir || options.migrationSucceeded === false) &&
@@ -56,9 +57,15 @@ export const getGlobalClaudeFile = memoize((): string => {
 
   if (!hasExplicitConfigDir) {
     migrationSucceeded = migrateLegacyClaudeConfigHome({ homeDir: configDir })
+    // Second step: carry the previous-brand global config files forward to
+    // .limitless*.json (copy-only, idempotent, non-destructive). Failure here
+    // does not flip migrationSucceeded — that flag governs the .claude fallback
+    // chain, and the .openclaude → .limitless resolver below handles its own
+    // fallback when the copy did not happen.
+    migrateLegacyOpenClaudeGlobalConfigFiles({ homeDir: configDir })
   }
 
-  // Default installs hard-cut to .openclaude.json after the migration above.
+  // Default installs hard-cut to .limitless.json after the migration above.
   // Explicit CLAUDE_CONFIG_DIR users keep the legacy filename fallback because
   // that env var is the opt-out for automatic migration.
   return resolveGlobalClaudeFile({

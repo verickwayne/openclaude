@@ -10,7 +10,7 @@ import { EXPLORE_AGENT } from './exploreAgent.js'
 const PERSONA_RESULT_SCHEMA = `End with this YAML block and no extra prose after it:
 
 \`\`\`yaml
-task_slug: "<from .openclaude/ralph/sessions/<session_id>/current-task.md>"
+task_slug: "<from .limitless/ralph/sessions/<session_id>/current-task.md>"
 task_category: "<implementation|debugging|research|refactoring|verification|other or null if not in brief>"
 status: "complete" | "partial" | "blocked"
 failure_category: "<rate_limited|auth|server_error|timeout|context_exceeded|quality|tool_error|other or null if status is complete>"
@@ -30,9 +30,9 @@ When status is not "complete", set failure_category to classify why:
   capability: context_exceeded (model cannot handle task at this context size)
   quality: quality (wrong/incomplete output), tool_error (misused API), other`
 
-const COMMON_PROMPT = `You are an OpenRalph persona agent dispatched by the OpenClaude scheduler. Resolve the target session id from .openclaude/ralph/active-session unless the caller gives you one explicitly. Read .openclaude/ralph/sessions/<session_id>/current-task.md first, then only the files needed for that task.
+const COMMON_PROMPT = `You are an OpenRalph persona agent dispatched by the OpenClaude scheduler. Resolve the target session id from .limitless/ralph/active-session unless the caller gives you one explicitly. Read .limitless/ralph/sessions/<session_id>/current-task.md first, then only the files needed for that task.
 
-Use .openclaude/ralph/sessions/<session_id>/goal.json, queue.md, progress.md, events.jsonl, and persona-result.yml as scheduler context. Do one focused dispatch. Return structured YAML for the scheduler to parse.
+Use .limitless/ralph/sessions/<session_id>/goal.json, queue.md, progress.md, events.jsonl, and persona-result.yml as scheduler context. Do one focused dispatch. Return structured YAML for the scheduler to parse.
 
 Record which provider/model or model class was used. If the assigned task is too large, return status: "partial" with the next atomic action.`
 
@@ -59,11 +59,11 @@ const RESEARCHER_PROMPT = `${COMMON_PROMPT}
 
 Role: bounded researcher.
 
-Answer the research question in the session-scoped current-task.md using primary sources when possible. Write compact findings to .openclaude/ralph/sessions/<session_id>/research/<slug>.md and return only the YAML summary. Do not edit implementation files.
+Answer the research question in the session-scoped current-task.md using primary sources when possible. Write compact findings to .limitless/ralph/sessions/<session_id>/research/<slug>.md and return only the YAML summary. Do not edit implementation files.
 
 ${PERSONA_RESULT_SCHEMA.replace(
   'files_changed:\n  - "path/to/file"',
-  'findings_file: ".openclaude/ralph/sessions/<session_id>/research/<slug>.md"',
+  'findings_file: ".limitless/ralph/sessions/<session_id>/research/<slug>.md"',
 )}`
 
 const TEST_ANALYZER_PROMPT = `${COMMON_PROMPT}
@@ -75,7 +75,7 @@ Read the failing output referenced by the session-scoped current-task.md, the fa
 End with this YAML block and no extra prose after it:
 
 \`\`\`yaml
-task_slug: "<from .openclaude/ralph/sessions/<session_id>/current-task.md>"
+task_slug: "<from .limitless/ralph/sessions/<session_id>/current-task.md>"
 task_category: "<implementation|debugging|research|refactoring|verification|other or null if not in brief>"
 status: "diagnosed" | "blocked"
 failing_tests:
@@ -99,7 +99,7 @@ The scheduler will pass the following in the dispatch context:
 PROVIDER RULE — enforced without exception: you MUST NOT be the same provider or model family as worker_model. If the worker used any Anthropic model (claude-*), you must use a non-Anthropic model. If the worker used any OpenAI model (gpt-*, o*), use a non-OpenAI model. If the worker used a local/offline model, use any cloud provider. Pick the cheapest model class from the different provider that can read files and run shell commands. Record which model you actually used in provider_model_used.
 
 Verification steps:
-1. Read goal.json at .openclaude/ralph/sessions/<session_id>/goal.json to confirm condition and proof_command.
+1. Read goal.json at .limitless/ralph/sessions/<session_id>/goal.json to confirm condition and proof_command.
 2. If proof_command is present and non-null, run it and capture its output. A non-zero exit code is evidence the goal is NOT met.
 3. Read progress.md and the files the worker claims to have changed. Evaluate whether the condition stated in goal.json is concretely satisfied by visible evidence (passing tests, committed files, proof_command output, etc.).
 4. List the specific evidence observed and any gaps — criteria in the condition that are not yet demonstrably satisfied.
@@ -126,7 +126,7 @@ notes: "<brief context>"
 export const OPENRALPH_BUILDER_AGENT: BuiltInAgentDefinition = {
   agentType: 'openralph-builder',
   whenToUse:
-    'OpenRalph persona for one atomic implementation task from the active .openclaude/ralph/sessions/<session_id>/current-task.md.',
+    'OpenRalph persona for one atomic implementation task from the active .limitless/ralph/sessions/<session_id>/current-task.md.',
   source: 'built-in',
   baseDir: 'built-in',
   tools: ['*'],
@@ -148,7 +148,7 @@ export const OPENRALPH_REFINER_AGENT: BuiltInAgentDefinition = {
 export const OPENRALPH_RESEARCHER_AGENT: BuiltInAgentDefinition = {
   agentType: 'openralph-researcher',
   whenToUse:
-    'OpenRalph persona for bounded research that writes compact findings under .openclaude/ralph/sessions/<session_id>/research/.',
+    'OpenRalph persona for bounded research that writes compact findings under .limitless/ralph/sessions/<session_id>/research/.',
   source: 'built-in',
   baseDir: 'built-in',
   disallowedTools: [

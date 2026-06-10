@@ -14,7 +14,7 @@ Use this skill when the work is large enough that a future context window may ne
 
 ## Artifact
 
-Create or update \`.openclaude/longtask.json\` in the current repo. Keep it valid JSON:
+Create or update \`.limitless/longtask.json\` in the current repo (if a legacy \`.openclaude/longtask.json\` already exists, keep updating that file in place instead). Keep it valid JSON:
 
 \`\`\`json
 {
@@ -36,7 +36,7 @@ Create or update \`.openclaude/longtask.json\` in the current repo. Keep it vali
 
 ## Operating Rules
 
-1. Inspect existing artifacts first: \`.openclaude/longtask.json\`, git status, recent git log, project instructions, and test scripts.
+1. Inspect existing artifacts first: \`.limitless/longtask.json\` (or a legacy \`.openclaude/longtask.json\`), git status, recent git log, project instructions, and test scripts.
 2. Treat \`required_items\` as the mechanical source of truth. After each milestone, re-read it and continue while any item is not complete.
 3. Work on one item at a time unless independent items can be delegated cleanly.
 4. Use available providers and models intentionally: fast models for read-only search and summarization, stronger models for architecture, implementation, and review.

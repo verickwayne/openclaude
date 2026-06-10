@@ -34,7 +34,7 @@ test('/openralph registers engage/status/resume/disengage skills', async () => {
 
   expect(text).toContain('# /openralph')
   expect(text).toContain('ship the harness')
-  expect(text).toContain('.openclaude/ralph/bin/openralph-hook.sh')
+  expect(text).toContain('.limitless/ralph/bin/openralph-hook.sh')
   expect(text).toContain('.claude/settings.local.json')
   expect(text).toContain('goal.json')
   expect(text).toContain('openralph-builder')
@@ -101,15 +101,17 @@ test('engage script gitignore section uses per-entry idempotent appends', () => 
   expect(bootstrap).toContain('grep -qF "$_entry" .gitignore || echo "$_entry" >> .gitignore')
   // The old single-shot guard pattern must be gone.
   expect(bootstrap).not.toContain("! grep -q '^\\.openclaude/ralph/events\\.jsonl$' .gitignore")
-  // Every required entry must still be present.
+  // Every required entry must still be present. Entries are written against the
+  // resolved state dir ($RALPH_REL), which is .limitless/ralph for fresh repos
+  // and .openclaude/ralph when a live legacy session is kept in place.
   const requiredEntries = [
-    '.openclaude/ralph/enabled',
-    '.openclaude/ralph/active-session',
-    '.openclaude/ralph/active-session.json',
-    '.openclaude/ralph/bridges/',
-    '.openclaude/ralph/events.jsonl',
-    '.openclaude/ralph/logs/',
-    '.openclaude/ralph/sessions/',
+    '$RALPH_REL/enabled',
+    '$RALPH_REL/active-session',
+    '$RALPH_REL/active-session.json',
+    '$RALPH_REL/bridges/',
+    '$RALPH_REL/events.jsonl',
+    '$RALPH_REL/logs/',
+    '$RALPH_REL/sessions/',
   ]
   for (const entry of requiredEntries) {
     expect(bootstrap).toContain(entry)
@@ -1484,7 +1486,7 @@ test('LedgerEntry type accepts all six new token/billing fields', () => {
 
   const dir = mkdtempSync(join(tmpdir(), 'openralph-ledger-shape-'))
   const ledgerPath = join(dir, LEDGER_RELATIVE_PATH)
-  mkdirSync(join(dir, '.openclaude', 'ralph', 'ledger'), { recursive: true })
+  mkdirSync(join(dir, '.limitless', 'ralph', 'ledger'), { recursive: true })
 
   const entry = {
     ts: '2026-06-10T00:00:00Z',

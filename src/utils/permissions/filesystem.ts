@@ -11,6 +11,7 @@ import {
   FILE_EDIT_TOOL_NAME,
   GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
   LEGACY_GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
+  LEGACY_GLOBAL_OPENCLAUDE_FOLDER_PERMISSION_PATTERN,
 } from 'src/tools/FileEditTool/constants.js'
 import type { z } from 'zod/v4'
 import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js'
@@ -1291,8 +1292,8 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   if (claudeFolderAllowRule) {
     // Check if this rule is scoped under a Claude config folder.
     // Accepts broad project/global patterns ('/.claude/**',
-    // '~/.openclaude/**', and legacy '~/.claude/**') plus narrowed skill
-    // patterns like '~/.openclaude/skills/my-skill/**' so users can grant
+    // '~/.limitless/**', and legacy '~/.openclaude/**' / '~/.claude/**') plus
+    // narrowed skill patterns like '~/.limitless/skills/my-skill/**' so users can grant
     // session access to a single skill without also exposing settings.json
     // or hooks/. The rule already matched the path via matchingRuleForInput;
     // this is an additional scope check. Reject '..' to prevent a rule like
@@ -1303,6 +1304,9 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
       (ruleContent.startsWith(CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2)) ||
         ruleContent.startsWith(
           GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2),
+        ) ||
+        ruleContent.startsWith(
+          LEGACY_GLOBAL_OPENCLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2),
         ) ||
         ruleContent.startsWith(
           LEGACY_GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2),

@@ -14,6 +14,11 @@ import { dirname, join } from 'path'
 const LEGACY_GLOBAL_CONFIG_FILE_RE =
   /^\.claude(?:-(?:custom|local|staging)-oauth)?\.json$/
 
+// Previous-brand global config files (`.openclaude.json`,
+// `.openclaude-custom-oauth.json`, etc.) that migrate forward to `.limitless*`.
+const LEGACY_OPENCLAUDE_GLOBAL_CONFIG_FILE_RE =
+  /^\.openclaude(?:-(?:custom|local|staging)-oauth)?\.json$/
+
 function getErrnoCode(error: unknown): string | undefined {
   if (
     error &&
@@ -102,6 +107,60 @@ function getLegacyGlobalConfigFiles(homeDir: string): string[] {
       return []
     }
     throw error
+  }
+}
+
+function getLegacyOpenClaudeGlobalConfigFiles(homeDir: string): string[] {
+  try {
+    return readdirSync(homeDir).filter(file =>
+      LEGACY_OPENCLAUDE_GLOBAL_CONFIG_FILE_RE.test(file),
+    )
+  } catch (error) {
+    if (getErrnoCode(error) === 'ENOENT') {
+      return []
+    }
+    throw error
+  }
+}
+
+/**
+ * Migrate previous-brand global config FILES (`~/.openclaude.json` and its
+ * `-*-oauth.json` variants) forward to `~/.limitless*.json`.
+ *
+ * Mirrors the `.claude* → .openclaude*` file migration above: copy-only,
+ * idempotent (skips when the destination already exists), and non-destructive
+ * (the legacy file is left in place). Explicit CLAUDE_CONFIG_DIR opts out, same
+ * as the existing migration. This intentionally does NOT touch the
+ * `~/.openclaude` config DIRECTORY — that is governed by CLAUDE_CONFIG_DIR.
+ *
+ * Returns true on success (including the no-op case), false if copying threw.
+ */
+export function migrateLegacyOpenClaudeGlobalConfigFiles(options?: {
+  configDirEnv?: string
+  homeDir?: string
+}): boolean {
+  if (options?.configDirEnv) {
+    return true
+  }
+
+  const homeDir = options?.homeDir ?? homedir()
+
+  try {
+    const legacyFiles = getLegacyOpenClaudeGlobalConfigFiles(homeDir)
+    if (legacyFiles.length === 0) {
+      return true
+    }
+
+    for (const legacyFile of legacyFiles) {
+      const limitlessFile = legacyFile.replace(/^\.openclaude/, '.limitless')
+      copyMissingPathSync(
+        join(homeDir, legacyFile),
+        join(homeDir, limitlessFile),
+      )
+    }
+    return true
+  } catch {
+    return false
   }
 }
 

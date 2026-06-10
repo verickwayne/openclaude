@@ -448,7 +448,7 @@ describe('aggregateLedgerStats — failure_category policy', () => {
 
 describe('constants', () => {
   test('LEDGER_RELATIVE_PATH matches expected location', () => {
-    expect(LEDGER_RELATIVE_PATH).toBe('.openclaude/ralph/ledger/outcomes.jsonl')
+    expect(LEDGER_RELATIVE_PATH).toBe('.limitless/ralph/ledger/outcomes.jsonl')
   })
 
   test('MIN_RELIABLE_N is 3 (epsilon-greedy threshold)', () => {

@@ -1,8 +1,9 @@
 import { createHash } from 'crypto'
 import { statSync } from 'fs'
-import { join, resolve } from 'path'
+import { resolve } from 'path'
 import { HOOK_EVENTS } from 'src/entrypoints/agentSdkTypes.js'
 import { getOriginalCwd } from '../bootstrap/state.js'
+import { resolveProjectStatePath } from './productStateDir.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
@@ -24,7 +25,7 @@ type HookEvent = (typeof HOOK_EVENTS)[number]
 
 const HOOK_CHAINS_CONFIG_ENV_PATH = 'CLAUDE_CODE_HOOK_CHAINS_CONFIG_PATH'
 const HOOK_CHAINS_ENABLED_ENV = 'CLAUDE_CODE_ENABLE_HOOK_CHAINS'
-const DEFAULT_HOOK_CHAINS_RELATIVE_PATH = join('.openclaude', 'hook-chains.json')
+const HOOK_CHAINS_FILENAME = 'hook-chains.json'
 const DEFAULT_MAX_CHAIN_DEPTH = 2
 const DEFAULT_RULE_COOLDOWN_MS = 30_000
 const DEFAULT_DEDUP_WINDOW_MS = 30_000
@@ -307,7 +308,9 @@ function getConfigPath(pathOverride?: string): string {
     return resolve(getSafeOriginalCwd(), configuredPath)
   }
 
-  return join(getSafeOriginalCwd(), DEFAULT_HOOK_CHAINS_RELATIVE_PATH)
+  // Prefer `.limitless/hook-chains.json`, falling back to an existing
+  // `.openclaude/hook-chains.json` so the user's hook chains survive the rename.
+  return resolveProjectStatePath(getSafeOriginalCwd(), HOOK_CHAINS_FILENAME)
 }
 
 function getSafeOriginalCwd(): string {

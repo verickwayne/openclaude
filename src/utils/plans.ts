@@ -19,6 +19,7 @@ import { isENOENT } from './errors.js'
 import { getEnvironmentKind } from './filePersistence/outputsScanner.js'
 import { getFsImplementation } from './fsOperations.js'
 import { logError } from './log.js'
+import { resolveProjectStatePath } from './productStateDir.js'
 import { getInitialSettings } from './settings/settings.js'
 import { generateWordSlug } from './words.js'
 
@@ -34,7 +35,9 @@ export function getDefaultPlansDirectory({
   if (configDirEnv) {
     return join(configDirEnv.normalize('NFC'), 'plans')
   }
-  return join(homeDir, '.openclaude', 'plans').normalize('NFC')
+  // Prefer `~/.limitless/plans`, but keep an existing `~/.openclaude/plans`
+  // (and its saved plan files) live until a `.limitless` dir is created.
+  return resolveProjectStatePath(homeDir, 'plans').normalize('NFC')
 }
 
 /**

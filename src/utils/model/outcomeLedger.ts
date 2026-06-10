@@ -1,11 +1,17 @@
 // src/utils/model/outcomeLedger.ts
 //
-// Pure reader for .openclaude/ralph/ledger/outcomes.jsonl.
+// Pure reader for the routing ledger at <stateDir>/ralph/ledger/outcomes.jsonl,
+// where <stateDir> is .limitless (preferred) or a legacy .openclaude.
 // Tolerates missing file (→ empty results) and malformed lines (→ skip).
 // No caching, no fs watching — every call reads fresh.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import {
+  LEGACY_OPENCLAUDE_DIRNAME,
+  LIMITLESS_DIRNAME,
+  resolveProjectStateDirname,
+} from '../productStateDir.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,8 +150,14 @@ export type LedgerStats = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Relative path from project root to the ledger file. */
-export const LEDGER_RELATIVE_PATH = '.openclaude/ralph/ledger/outcomes.jsonl'
+/** Relative path (suffix below the product state dir) to the ledger file. */
+const LEDGER_SUFFIX = 'ralph/ledger/outcomes.jsonl'
+
+/** Canonical relative path from project root to the ledger file. */
+export const LEDGER_RELATIVE_PATH = `${LIMITLESS_DIRNAME}/${LEDGER_SUFFIX}`
+
+/** Legacy relative path read when no `.limitless` dir exists yet. */
+export const LEGACY_LEDGER_RELATIVE_PATH = `${LEGACY_OPENCLAUDE_DIRNAME}/${LEDGER_SUFFIX}`
 
 /** Minimum cell size before stats are considered reliable (epsilon-greedy
  *  exploration threshold used by resolveProviderForClass). */
@@ -261,12 +273,18 @@ export function joinCheckerVerdicts(entries: LedgerEntry[]): AnnotatedLedgerEntr
 // ─── Core functions ───────────────────────────────────────────────────────────
 
 /**
- * Read and parse outcomes.jsonl from `<projectRoot>/.openclaude/ralph/ledger/`.
+ * Read and parse outcomes.jsonl from `<projectRoot>/<stateDir>/ralph/ledger/`.
  * Returns an empty array when the file is absent.
  * Malformed lines are silently skipped.
  */
 export function readLedgerEntries(projectRoot: string): LedgerEntry[] {
-  const ledgerPath = path.join(projectRoot, LEDGER_RELATIVE_PATH)
+  // Prefer `.limitless/ralph/ledger`, falling back to an existing
+  // `.openclaude/ralph/ledger` so historical routing outcomes survive.
+  const ledgerPath = path.join(
+    projectRoot,
+    resolveProjectStateDirname(projectRoot),
+    LEDGER_SUFFIX,
+  )
   let raw: string
   try {
     raw = fs.readFileSync(ledgerPath, 'utf8')

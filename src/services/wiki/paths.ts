@@ -1,11 +1,13 @@
 import { join } from 'path'
+import { resolveProjectStateDirname } from '../../utils/productStateDir.js'
 import type { WikiPaths } from './types.js'
 
-export const OPENCLAUDE_DIRNAME = '.openclaude'
 export const WIKI_DIRNAME = 'wiki'
 
 export function getWikiPaths(cwd: string): WikiPaths {
-  const root = join(cwd, OPENCLAUDE_DIRNAME, WIKI_DIRNAME)
+  // Prefer `.limitless/wiki`, but keep reading an existing `.openclaude/wiki`
+  // so a project's wiki survives the rename without a move.
+  const root = join(cwd, resolveProjectStateDirname(cwd), WIKI_DIRNAME)
 
   return {
     root,

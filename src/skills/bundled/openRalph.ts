@@ -34,7 +34,10 @@ if [[ -z "$PROMPT_FILE" || ! -f "$PROMPT_FILE" ]]; then
 fi
 
 PROJECT_ROOT="$(pwd)"
-RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
+if [[ -d "$PROJECT_ROOT/.limitless/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"
+elif [[ -d "$PROJECT_ROOT/.openclaude/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
+else RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"; fi
+RALPH_REL="\${RALPH_DIR#"$PROJECT_ROOT/"}"
 SESSION_DIR="$RALPH_DIR/sessions"
 mkdir -p "$SESSION_DIR" "$RALPH_DIR/bridges" "$RALPH_DIR/logs" "$RALPH_DIR/ledger"
 
@@ -151,21 +154,24 @@ notes: null
 EOF
 
 if [[ -f .gitignore ]]; then
+  # Entries track the resolved state dir ($RALPH_REL is .limitless/ralph for new
+  # repos, .openclaude/ralph when an existing legacy session was kept live).
+  # grep -qF per-entry keeps this idempotent across reruns and across the rename.
   for _entry in \
     "# OpenRalph local scheduler state" \
-    ".openclaude/ralph/enabled" \
-    ".openclaude/ralph/active-session" \
-    ".openclaude/ralph/active-session.json" \
-    ".openclaude/ralph/bridges/" \
-    ".openclaude/ralph/events.jsonl" \
-    ".openclaude/ralph/logs/" \
-    ".openclaude/ralph/sessions/" \
+    "$RALPH_REL/enabled" \
+    "$RALPH_REL/active-session" \
+    "$RALPH_REL/active-session.json" \
+    "$RALPH_REL/bridges/" \
+    "$RALPH_REL/events.jsonl" \
+    "$RALPH_REL/logs/" \
+    "$RALPH_REL/sessions/" \
   ; do
     grep -qF "$_entry" .gitignore || echo "$_entry" >> .gitignore
   done
-  # .openclaude/ralph/ledger/outcomes.jsonl is NOT gitignored by default.
+  # $RALPH_REL/ledger/outcomes.jsonl is NOT gitignored by default.
   # Routing knowledge is a data asset worth committing (see openRalph §3 / Angle E).
-  # To opt out: manually add .openclaude/ralph/ledger/ to your .gitignore.
+  # To opt out: manually add $RALPH_REL/ledger/ to your .gitignore.
 fi
 
 echo "OpenRalph engaged"
@@ -180,7 +186,9 @@ const OPENRALPH_HOOK_SH = `#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT="\${OPENRALPH_PROJECT_ROOT:-$(pwd)}"
-RALPH_DIR="$ROOT/.openclaude/ralph"
+if [[ -d "$ROOT/.limitless/ralph" ]]; then RALPH_DIR="$ROOT/.limitless/ralph"
+elif [[ -d "$ROOT/.openclaude/ralph" ]]; then RALPH_DIR="$ROOT/.openclaude/ralph"
+else RALPH_DIR="$ROOT/.limitless/ralph"; fi
 [[ -f "$RALPH_DIR/enabled" ]] || exit 0
 
 INPUT="$(cat || true)"
@@ -518,7 +526,7 @@ PY
     if [[ "$STATUS" != "complete" && "$STATUS" != "completed" && "$STATUS" != "disengaged" ]]; then
       python3 - <<'PY'
 import json, os
-state_dir = os.environ.get("SESSION_STATE_DIR", ".openclaude/ralph/sessions/<session_id>")
+state_dir = os.environ.get("SESSION_STATE_DIR", ".limitless/ralph/sessions/<session_id>")
 reason = (
   "OpenRalph goal is still running for this session. "
   f"Read {state_dir}/session.json, goal.json, queue.md, progress.md, "
@@ -534,7 +542,9 @@ fi
 
 const OPENRALPH_STATUS_SH = `#!/usr/bin/env bash
 set -euo pipefail
-RALPH_DIR="$(pwd)/.openclaude/ralph"
+if [[ -d "$(pwd)/.limitless/ralph" ]]; then RALPH_DIR="$(pwd)/.limitless/ralph"
+elif [[ -d "$(pwd)/.openclaude/ralph" ]]; then RALPH_DIR="$(pwd)/.openclaude/ralph"
+else RALPH_DIR="$(pwd)/.limitless/ralph"; fi
 if [[ ! -d "$RALPH_DIR" ]]; then
   echo "No OpenRalph state in $(pwd)"
   exit 0
@@ -584,7 +594,9 @@ tail -20 "$SESSION_STATE_DIR/events.jsonl" 2>/dev/null || tail -20 "$RALPH_DIR/e
 
 const OPENRALPH_DISENGAGE_SH = `#!/usr/bin/env bash
 set -euo pipefail
-RALPH_DIR="$(pwd)/.openclaude/ralph"
+if [[ -d "$(pwd)/.limitless/ralph" ]]; then RALPH_DIR="$(pwd)/.limitless/ralph"
+elif [[ -d "$(pwd)/.openclaude/ralph" ]]; then RALPH_DIR="$(pwd)/.openclaude/ralph"
+else RALPH_DIR="$(pwd)/.limitless/ralph"; fi
 if [[ ! -d "$RALPH_DIR" ]]; then
   echo "No OpenRalph state in $(pwd)"
   exit 0
@@ -671,7 +683,9 @@ if [[ -z "$ORPHAN_SID" ]]; then
 fi
 
 PROJECT_ROOT="$(pwd)"
-RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
+if [[ -d "$PROJECT_ROOT/.limitless/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"
+elif [[ -d "$PROJECT_ROOT/.openclaude/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
+else RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"; fi
 SESSION_DIR="$RALPH_DIR/sessions"
 ORPHAN_STATE_DIR="$SESSION_DIR/$ORPHAN_SID"
 
@@ -712,7 +726,7 @@ PY
       echo "Cannot adopt: session $ORPHAN_SID looks live — bridge heartbeat is \${BRIDGE_AGE}s old (fresh, <= \${STALE_SECONDS}s threshold)." >&2
       echo "Options: wait until the bridge heartbeat exceeds OPENRALPH_ADOPT_STALE_SECONDS (default 600)," >&2
       echo "rerun with --force to override, or disengage the loop first:" >&2
-      echo "  bash .openclaude/ralph/bin/openralph-disengage.sh" >&2
+      echo "  bash .limitless/ralph/bin/openralph-disengage.sh" >&2
       exit 2
     fi
   fi
@@ -781,7 +795,9 @@ echo "Ancestor state preserved at: $ORPHAN_STATE_DIR"
 
 const OPENRALPH_ROUTE_STATS_SH = `#!/usr/bin/env bash
 set -euo pipefail
-RALPH_DIR="$(pwd)/.openclaude/ralph"
+if [[ -d "$(pwd)/.limitless/ralph" ]]; then RALPH_DIR="$(pwd)/.limitless/ralph"
+elif [[ -d "$(pwd)/.openclaude/ralph" ]]; then RALPH_DIR="$(pwd)/.openclaude/ralph"
+else RALPH_DIR="$(pwd)/.limitless/ralph"; fi
 LEDGER="$RALPH_DIR/ledger/outcomes.jsonl"
 if [[ ! -f "$LEDGER" ]]; then
   echo "No routing ledger found at $LEDGER"
@@ -986,7 +1002,9 @@ if [[ -z "$SESSION_ARG" ]]; then
 fi
 
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
-RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
+if [[ -d "$PROJECT_ROOT/.limitless/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"
+elif [[ -d "$PROJECT_ROOT/.openclaude/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
+else RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"; fi
 SESSION_DIR="$RALPH_DIR/sessions"
 BOOTSTRAP="$RALPH_DIR/bin/openralph-bootstrap.sh"
 mkdir -p "$SESSION_DIR" "$RALPH_DIR/bridges" "$RALPH_DIR/logs"
@@ -1130,8 +1148,8 @@ It combines:
 - persona dispatch through built-in OpenRalph agents
 - provider/model routing notes in each persona result
 
-Installed project state lives in \`.openclaude/ralph/\`.
-Each workstream's mutable scheduler files live in \`.openclaude/ralph/sessions/<session_id>/\`; \`active-session\` is only a project-local pointer.
+Installed project state lives in \`.limitless/ralph/\`.
+Each workstream's mutable scheduler files live in \`.limitless/ralph/sessions/<session_id>/\`; \`active-session\` is only a project-local pointer.
 `
 
 export const OPENRALPH_FILES = {
@@ -1160,18 +1178,18 @@ OpenRalph is not internal harness code. It is a project-local skill/process laye
 ## Install support files
 
 1. Copy the support files from this skill base directory into the current repo:
-   - \`bin/*\` -> \`.openclaude/ralph/bin/*\`
-   - preserve executable mode with \`chmod +x .openclaude/ralph/bin/*.sh\`
+   - \`bin/*\` -> \`.limitless/ralph/bin/*\`
+   - preserve executable mode with \`chmod +x .limitless/ralph/bin/*.sh\`
 2. Create or merge these project hooks into \`.claude/settings.local.json\` without deleting existing hooks:
 
 \`\`\`json
 {
   "hooks": {
-    "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .openclaude/ralph/bin/openralph-hook.sh", "timeout": 10}]}],
-    "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .openclaude/ralph/bin/openralph-hook.sh", "timeout": 10}]}],
-    "PostToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .openclaude/ralph/bin/openralph-hook.sh", "timeout": 10}]}],
-    "PostToolUseFailure": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .openclaude/ralph/bin/openralph-hook.sh", "timeout": 10}]}],
-    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .openclaude/ralph/bin/openralph-hook.sh", "timeout": 10}]}]
+    "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .limitless/ralph/bin/openralph-hook.sh", "timeout": 10}]}],
+    "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .limitless/ralph/bin/openralph-hook.sh", "timeout": 10}]}],
+    "PostToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .limitless/ralph/bin/openralph-hook.sh", "timeout": 10}]}],
+    "PostToolUseFailure": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .limitless/ralph/bin/openralph-hook.sh", "timeout": 10}]}],
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "OPENRALPH_PROJECT_ROOT=$PWD bash .limitless/ralph/bin/openralph-hook.sh", "timeout": 10}]}]
   }
 }
 \`\`\`
@@ -1179,14 +1197,14 @@ OpenRalph is not internal harness code. It is a project-local skill/process laye
 3. Write the objective to a temp file and run:
 
 \`\`\`bash
-bash .openclaude/ralph/bin/openralph-bootstrap.sh --prompt-file /tmp/openralph-prompt.txt --mode build
+bash .limitless/ralph/bin/openralph-bootstrap.sh --prompt-file /tmp/openralph-prompt.txt --mode build
 \`\`\`
 
 ## Improved scheduler contract
 
 Use Ralph's persona scheduler, plus Claude Code's newer \`/goal\` idea:
 
-1. Resolve the active session id from \`.openclaude/ralph/active-session\`, then set \`OPENRALPH_SESSION_DIR=.openclaude/ralph/sessions/<session_id>\`.
+1. Resolve the active session id from \`.limitless/ralph/active-session\`, then set \`OPENRALPH_SESSION_DIR=.limitless/ralph/sessions/<session_id>\`.
 2. Keep \`$OPENRALPH_SESSION_DIR/goal.json\` as the completion condition. Make it concrete and verifiable.
 3. Keep \`$OPENRALPH_SESSION_DIR/queue.md\` as the ordered atomic-task source of truth. When writing a new queue item, classify it with an optional \`category:\` field using exactly one of: implementation | debugging | research | refactoring | verification | other.
 4. Before each dispatch, write one task brief to \`$OPENRALPH_SESSION_DIR/current-task.md\`. The brief MUST include a \`task_slug:\` field (a short kebab-case identifier unique to this task, e.g. \`task_slug: fix-auth-redirect\`) and the \`category:\` field from the queue item. Every persona echoes the EXACT task_slug from the brief in its result YAML — the routing ledger uses this slug to join checker verdicts to worker rows. Include task_slug and category in the brief header so the persona can echo them as \`task_slug\` and \`task_category\` in the result YAML.
@@ -1197,7 +1215,7 @@ Use Ralph's persona scheduler, plus Claude Code's newer \`/goal\` idea:
    - \`openralph-test-analyzer\` for failed test diagnosis
 6. Parse the returned YAML into \`$OPENRALPH_SESSION_DIR/persona-result.yml\`.
 7. Update \`progress.md\`, \`queue.md\`, and \`goal.json\` in that same session directory.
-8. Before each dispatch, run \`bash .openclaude/ralph/bin/openralph-route-stats.sh\` to read the routing outcome ledger. Pick the provider/model for this persona and workload by best confidence-adjusted success rate (status=="complete" and tests_passed!=false counts as success). If any candidate model has n < 3 recorded outcomes for this persona × workload cell, prefer trying it once over exploiting the current best — exploration prevents day-one lock-in. Record the chosen model as \`provider_model_used\` in the persona-result YAML. For long-running or overnight tasks, prefer subscription-billed candidates (Claude Max proxy, Codex OAuth) over metered API candidates within the same success-rate tier, and prefer metered candidates for short interactive dispatches — subscription quota is perishable and expires unspent if idle.
+8. Before each dispatch, run \`bash .limitless/ralph/bin/openralph-route-stats.sh\` to read the routing outcome ledger. Pick the provider/model for this persona and workload by best confidence-adjusted success rate (status=="complete" and tests_passed!=false counts as success). If any candidate model has n < 3 recorded outcomes for this persona × workload cell, prefer trying it once over exploiting the current best — exploration prevents day-one lock-in. Record the chosen model as \`provider_model_used\` in the persona-result YAML. For long-running or overnight tasks, prefer subscription-billed candidates (Claude Max proxy, Codex OAuth) over metered API candidates within the same success-rate tier, and prefer metered candidates for short interactive dispatches — subscription quota is perishable and expires unspent if idle.
 
 ### Adjudicated dispatch (optional mode — highest-value ledger entries)
 
@@ -1205,20 +1223,20 @@ Use Ralph's persona scheduler, plus Claude Code's newer \`/goal\` idea:
 
 **Procedure (N=2 cross-provider builds):**
 
-a. Read \`bash .openclaude/ralph/bin/openralph-route-stats.sh\` to enumerate available model candidates. Select exactly 2 candidate models from **different providers** — the highest-ranked model from provider A and the highest-ranked model from provider B (using the same success-rate selection rule defined in the routing instruction above). If route stats are empty, pick one Anthropic model and one non-Anthropic model. **Provider diversity wins over billing preference:** if the billing preference from step 8 cannot be satisfied for both candidates simultaneously (e.g. only one subscription-billed provider is available), candidate A takes the preferred-billing provider and candidate B takes the best-ranked candidate from any other provider regardless of billing model.
+a. Read \`bash .limitless/ralph/bin/openralph-route-stats.sh\` to enumerate available model candidates. Select exactly 2 candidate models from **different providers** — the highest-ranked model from provider A and the highest-ranked model from provider B (using the same success-rate selection rule defined in the routing instruction above). If route stats are empty, pick one Anthropic model and one non-Anthropic model. **Provider diversity wins over billing preference:** if the billing preference from step 8 cannot be satisfied for both candidates simultaneously (e.g. only one subscription-billed provider is available), candidate A takes the preferred-billing provider and candidate B takes the best-ranked candidate from any other provider regardless of billing model.
 b. For each candidate, create an isolated git worktree:
    \`\`\`bash
-   git worktree add .openclaude/ralph/adjudication/<slug>-candidate-A <base-branch>
-   git worktree add .openclaude/ralph/adjudication/<slug>-candidate-B <base-branch>
+   git worktree add .limitless/ralph/adjudication/<slug>-candidate-A <base-branch>
+   git worktree add .limitless/ralph/adjudication/<slug>-candidate-B <base-branch>
    \`\`\`
-c. Dispatch the **identical task brief** (the same \`current-task.md\` content, unmodified) to both candidates using the Agent tool — one dispatch per worktree. Each persona receives the identical brief so the comparison is decorrelated by model family, not by task framing. Instruct each: "Work inside the worktree at \`.openclaude/ralph/adjudication/<slug>-candidate-X\`. Do not commit to main. Return your standard persona-result YAML."
+c. Dispatch the **identical task brief** (the same \`current-task.md\` content, unmodified) to both candidates using the Agent tool — one dispatch per worktree. Each persona receives the identical brief so the comparison is decorrelated by model family, not by task framing. Instruct each: "Work inside the worktree at \`.limitless/ralph/adjudication/<slug>-candidate-X\`. Do not commit to main. Return your standard persona-result YAML."
 d. Dispatch \`openralph-checker\` **once per candidate result** to evaluate each independently. Pass each candidate's \`provider_model_used\` as \`worker_model\` so the checker uses a different provider. Collect each checker's verdict YAML (\`goal_met\`, \`gaps\`, \`tests_passed\`, evidence).
 e. **Compare verdicts — exactly one of three branches applies:**
    - **BOTH pass** (both checkers returned \`goal_met: true\`): tiebreak to pick the winner — prefer the candidate with fewer \`gaps\` items, then the one with \`tests_passed: true\`, then the one ranked higher by route-stats success rate. Proceed to (f).
    - **EXACTLY ONE passes** (\`goal_met: true\` from one checker only): that candidate is the winner. Proceed to (f).
    - **NEITHER passes** (no checker returned \`goal_met: true\`): merge nothing — do not merge either candidate's work. Discard both worktrees with \`git worktree remove --force\`, push the union of both checkers' \`gaps\` lists as new queue items (dedupe identical gap text before pushing), and resume the outer scheduler loop at the next queue item. Skip (f) through (i).
-f. **Merge the winner:** cherry-pick or merge the winner's worktree commits into the main working tree. Remove the winner's worktree: \`git worktree remove .openclaude/ralph/adjudication/<slug>-candidate-X\`.
-g. **Discard the loser:** remove the loser's worktree without merging: \`git worktree remove --force .openclaude/ralph/adjudication/<slug>-candidate-Y\`.
+f. **Merge the winner:** cherry-pick or merge the winner's worktree commits into the main working tree. Remove the winner's worktree: \`git worktree remove .limitless/ralph/adjudication/<slug>-candidate-X\`.
+g. **Discard the loser:** remove the loser's worktree without merging: \`git worktree remove --force .limitless/ralph/adjudication/<slug>-candidate-Y\`.
 h. **Ledger capture is automatic:** both persona dispatches return the standard persona-result YAML, and both checker dispatches return their verdict YAML. The PostToolUse hook captures all four YAML blocks to the routing ledger automatically — no extra steps needed. Both outcomes (winner AND loser) are recorded to the ledger. Adjudication events are the highest-value ledger entries because they are direct A/B comparisons on identical inputs — the loser's outcome is as valuable as the winner's for routing calibration.
 i. Parse the winner's persona-result YAML into \`$OPENRALPH_SESSION_DIR/persona-result.yml\`, update \`progress.md\` and \`queue.md\` as usual, then resume the outer scheduler loop at the next queue item.
 
@@ -1227,13 +1245,13 @@ i. Parse the winner's persona-result YAML into \`$OPENRALPH_SESSION_DIR/persona-
 
 The Stop hook records session bridges and blocks a stop while the active session's \`goal.json.status\` is still running, so future turns resume from session-scoped OpenRalph files instead of relying on memory.
 
-11. **Adopting an orphaned session:** When engaging into a repo that has orphaned sessions (sessions in \`.openclaude/ralph/sessions/\` whose \`session.json.status\` is not \`complete\` or \`disengaged\`, and which are not the current active session of a live loop), the scheduler MAY adopt one via \`bash .openclaude/ralph/bin/openralph-adopt.sh <orphan_session_id>\` instead of starting fresh. The adopt script copies the orphan's \`session.json\`, \`goal.json\`, \`queue.md\`, and \`progress.md\` into a new session directory without touching the originals, records the adoption in the new session's \`lineage\` field (composing any ancestor chain the orphan already carried), and updates the \`active-session\` pointer to the new session. The adopted \`progress.md\` and \`queue.md\` are authoritative history — treat their completed and in-flight entries as ground truth rather than re-deriving task state from scratch.`
+11. **Adopting an orphaned session:** When engaging into a repo that has orphaned sessions (sessions in \`.limitless/ralph/sessions/\` whose \`session.json.status\` is not \`complete\` or \`disengaged\`, and which are not the current active session of a live loop), the scheduler MAY adopt one via \`bash .limitless/ralph/bin/openralph-adopt.sh <orphan_session_id>\` instead of starting fresh. The adopt script copies the orphan's \`session.json\`, \`goal.json\`, \`queue.md\`, and \`progress.md\` into a new session directory without touching the originals, records the adoption in the new session's \`lineage\` field (composing any ancestor chain the orphan already carried), and updates the \`active-session\` pointer to the new session. The adopted \`progress.md\` and \`queue.md\` are authoritative history — treat their completed and in-flight entries as ground truth rather than re-deriving task state from scratch.`
 }
 
 function buildStatusPrompt(): string {
   return `# /openralph-status
 
-Run \`bash .openclaude/ralph/bin/openralph-status.sh\` if it exists.
+Run \`bash .limitless/ralph/bin/openralph-status.sh\` if it exists.
 
 Then report:
 - whether OpenRalph is enabled
@@ -1242,9 +1260,9 @@ Then report:
 - top queue item
 - in-flight, completed, and blocked entries
 - most recent hook bridge event
-- top routing stats (run \`bash .openclaude/ralph/bin/openralph-route-stats.sh\`)
+- top routing stats (run \`bash .limitless/ralph/bin/openralph-route-stats.sh\`)
 
-If support files are missing, inspect \`.openclaude/ralph/active-session\` and \`.openclaude/ralph/sessions/<session_id>/\` directly and report what exists.`
+If support files are missing, inspect \`.limitless/ralph/active-session\` and \`.limitless/ralph/sessions/<session_id>/\` directly and report what exists.`
 }
 
 function buildResumePrompt(): string {
@@ -1252,9 +1270,9 @@ function buildResumePrompt(): string {
 
 Resume an existing OpenRalph workstream.
 
-1. Resolve the session id from \`.openclaude/ralph/active-session\` unless the user names a session explicitly.
-2. Inspect \`.openclaude/ralph/sessions/<session_id>/session.json\`, \`goal.json\`, \`queue.md\`, \`progress.md\`, \`current-task.md\`, \`persona-result.yml\`, and recent \`events.jsonl\`.
-3. If \`.openclaude/ralph/enabled\` is missing, recreate it unless that session status is \`disengaged\`.
+1. Resolve the session id from \`.limitless/ralph/active-session\` unless the user names a session explicitly.
+2. Inspect \`.limitless/ralph/sessions/<session_id>/session.json\`, \`goal.json\`, \`queue.md\`, \`progress.md\`, \`current-task.md\`, \`persona-result.yml\`, and recent \`events.jsonl\`.
+3. If \`.limitless/ralph/enabled\` is missing, recreate it unless that session status is \`disengaged\`.
 4. Reinstall or verify the project hooks in \`.claude/settings.local.json\`.
 5. Pick the next unfinished queue item, write a focused \`current-task.md\` inside that session directory, dispatch the matching OpenRalph persona agent, and continue the scheduler loop.
 6. Update that session's \`goal.json\` only when the completion condition has visible proof.`
@@ -1263,7 +1281,7 @@ Resume an existing OpenRalph workstream.
 function buildDisengagePrompt(): string {
   return `# /openralph-disengage
 
-Run \`bash .openclaude/ralph/bin/openralph-disengage.sh\` if it exists.
+Run \`bash .limitless/ralph/bin/openralph-disengage.sh\` if it exists.
 
 Then write a concise handoff into the target session's \`progress.md\` with:
 - why the session was disengaged
@@ -1285,10 +1303,10 @@ Force OpenRalph loop state for a specific session from the project-local support
 Run:
 
 \`\`\`bash
-bash .openclaude/ralph/bin/openralph-kick.sh${suffix}
+bash .limitless/ralph/bin/openralph-kick.sh${suffix}
 \`\`\`
 
-Use this when a slash command was typed but the loop did not actually engage, or when a separate terminal needs to reactivate a session by id. For existing state, the script sets \`.openclaude/ralph/active-session\`, touches \`.openclaude/ralph/enabled\`, writes \`kick.json\`, and appends \`kick-log.jsonl\`/project events. For missing state, rerun with \`--prompt\` or \`--prompt-file\` so \`openralph-bootstrap.sh\` can create a concrete session objective.
+Use this when a slash command was typed but the loop did not actually engage, or when a separate terminal needs to reactivate a session by id. For existing state, the script sets \`.limitless/ralph/active-session\`, touches \`.limitless/ralph/enabled\`, writes \`kick.json\`, and appends \`kick-log.jsonl\`/project events. For missing state, rerun with \`--prompt\` or \`--prompt-file\` so \`openralph-bootstrap.sh\` can create a concrete session objective.
 
 Lifecycle verb reference: kick = shell-level re-entry markers for a loop that never started or whose hook never fired; resume = model-driven continuation of a loop that ran and has existing session state; disengage = close the loop and preserve its state for future reference.`
 }
