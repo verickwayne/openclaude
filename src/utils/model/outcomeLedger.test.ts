@@ -249,6 +249,50 @@ describe('getLedgerStats', () => {
   })
 })
 
+// ─── task_category field ──────────────────────────────────────────────────────
+
+describe('task_category on LedgerEntry', () => {
+  let dir: string
+  beforeEach(() => { dir = makeTmpDir() })
+  afterEach(() => { fs.rmSync(dir, { recursive: true }) })
+
+  test('task_category is accepted on LedgerEntry and survives round-trip through readLedgerEntries', () => {
+    const entryWithCategory = { ...GOOD_ENTRY, task_category: 'implementation' }
+    writeLedger(dir, [JSON.stringify(entryWithCategory)])
+    const [entry] = readLedgerEntries(dir)
+    // TypeScript allows optional task_category on LedgerEntry — access must not error
+    expect((entry as typeof entry & { task_category?: string | null }).task_category).toBe('implementation')
+  })
+
+  test('absent task_category parses as undefined (not an error)', () => {
+    writeLedger(dir, [JSON.stringify(GOOD_ENTRY)])
+    const [entry] = readLedgerEntries(dir)
+    // GOOD_ENTRY has no task_category — field should be undefined, not throw
+    expect('task_category' in (entry ?? {})).toBe(false)
+  })
+
+  test('null task_category is preserved through readLedgerEntries', () => {
+    const entryNullCategory = { ...GOOD_ENTRY, task_category: null }
+    writeLedger(dir, [JSON.stringify(entryNullCategory)])
+    const [entry] = readLedgerEntries(dir)
+    expect((entry as typeof entry & { task_category?: string | null }).task_category).toBeNull()
+  })
+
+  test('aggregateLedgerStats produces same cell count with or without task_category — field is NOT a key dimension', () => {
+    // Two entries that differ only in task_category must map to the same cell.
+    const base = { persona: 'openralph-builder', workload: 'long-running', provider_model_used: 'model-z', status: 'complete', tests_passed: true }
+    const entries = [
+      { ...base, task_category: 'implementation' },
+      { ...base, task_category: 'debugging' },
+      { ...base, task_category: null },
+    ]
+    const stats = aggregateLedgerStats(entries)
+    // All three belong to the same (persona, workload, model) cell
+    expect(stats).toHaveLength(1)
+    expect(stats[0]?.n).toBe(3)
+  })
+})
+
 // ─── Constants exported ───────────────────────────────────────────────────────
 
 describe('constants', () => {

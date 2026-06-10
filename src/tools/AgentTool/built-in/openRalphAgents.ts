@@ -11,6 +11,7 @@ const PERSONA_RESULT_SCHEMA = `End with this YAML block and no extra prose after
 
 \`\`\`yaml
 task_slug: "<from .openclaude/ralph/sessions/<session_id>/current-task.md>"
+task_category: "<implementation|debugging|research|refactoring|verification|other or null if not in brief>"
 status: "complete" | "partial" | "blocked"
 commit: "<hash or null>"
 files_changed:
@@ -69,6 +70,7 @@ End with this YAML block and no extra prose after it:
 
 \`\`\`yaml
 task_slug: "<from .openclaude/ralph/sessions/<session_id>/current-task.md>"
+task_category: "<implementation|debugging|research|refactoring|verification|other or null if not in brief>"
 status: "diagnosed" | "blocked"
 failing_tests:
   - "path/to/test::case"
@@ -101,6 +103,7 @@ End with this YAML block and no extra prose after it:
 
 \`\`\`yaml
 task_slug: "<from goal.json or current-task.md>"
+task_category: "<implementation|debugging|research|refactoring|verification|other or null if not in brief>"
 status: "complete"
 provider_model_used: "<the checker model actually used — must differ from worker_model>"
 goal_met: true | false

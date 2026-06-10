@@ -22,6 +22,12 @@ export type LedgerEntry = {
   tests_passed?: boolean | null
   new_gaps?: number | null
   duration_s?: number | null
+  /** Task category echoed from the dispatch brief. Vocabulary: implementation |
+   *  debugging | research | refactoring | verification | other. Null when the
+   *  brief did not carry the field.  Captured now for future per-category
+   *  stratification — not yet part of the aggregation cell key so cells stay
+   *  large enough to satisfy MIN_RELIABLE_N. */
+  task_category?: string | null
 }
 
 /** Aggregated success stats for one (persona, workload, provider_model_used) cell. */
@@ -117,6 +123,11 @@ export function readLedgerEntries(projectRoot: string): LedgerEntry[] {
  *
  * Entries that are missing any of the three key fields are excluded from
  * aggregation; they cannot be attributed to a cell.
+ *
+ * NOTE: task_category is intentionally excluded from the cell key. Adding it
+ * would fragment cells below MIN_RELIABLE_N at current dispatch volumes. The
+ * field is captured in each LedgerEntry so future analysis can stratify by
+ * category once cell sizes are large enough to support it.
  */
 export function aggregateLedgerStats(entries: LedgerEntry[]): LedgerStats[] {
   type CellKey = string

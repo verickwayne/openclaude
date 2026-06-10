@@ -137,6 +137,7 @@ EOF
 
 cat > "$SESSION_STATE_DIR/persona-result.yml" <<'EOF'
 task_slug: null
+task_category: null
 status: null
 commit: null
 files_changed: []
@@ -313,6 +314,7 @@ def parse_yaml_field(text, key):
   return None if val in ("null", "~", "") else val
 
 task_slug = parse_yaml_field(yaml_text, "task_slug")
+task_category = parse_yaml_field(yaml_text, "task_category")
 provider_model_used = parse_yaml_field(yaml_text, "provider_model_used")
 status = parse_yaml_field(yaml_text, "status")
 tests_passed_raw = parse_yaml_field(yaml_text, "tests_passed")
@@ -363,6 +365,7 @@ record = {
   "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
   "session_id": session_id,
   "task_slug": task_slug,
+  "task_category": task_category,
   "persona": persona,
   "workload": workload,
   "provider_model_used": provider_model_used,
@@ -812,8 +815,8 @@ Use Ralph's persona scheduler, plus Claude Code's newer \`/goal\` idea:
 
 1. Resolve the active session id from \`.openclaude/ralph/active-session\`, then set \`OPENRALPH_SESSION_DIR=.openclaude/ralph/sessions/<session_id>\`.
 2. Keep \`$OPENRALPH_SESSION_DIR/goal.json\` as the completion condition. Make it concrete and verifiable.
-3. Keep \`$OPENRALPH_SESSION_DIR/queue.md\` as the ordered atomic-task source of truth.
-4. Before each dispatch, write one task brief to \`$OPENRALPH_SESSION_DIR/current-task.md\`.
+3. Keep \`$OPENRALPH_SESSION_DIR/queue.md\` as the ordered atomic-task source of truth. When writing a new queue item, classify it with an optional \`category:\` field using exactly one of: implementation | debugging | research | refactoring | verification | other.
+4. Before each dispatch, write one task brief to \`$OPENRALPH_SESSION_DIR/current-task.md\`. Include the \`category:\` field from the queue item in the brief so the persona can echo it as \`task_category\` in the result YAML.
 5. Dispatch one of these built-in agents with the Agent tool:
    - \`openralph-builder\` for implementation
    - \`openralph-refiner\` for completeness and edge cases

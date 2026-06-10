@@ -897,3 +897,108 @@ test('hook PreToolUse to PostToolUse round-trip produces integer duration_s in l
   expect(Number.isInteger(record.duration_s)).toBe(true)
   expect(record.duration_s as number).toBeGreaterThanOrEqual(0)
 })
+
+// ── task_category capture tests ───────────────────────────────────────────────
+
+test('scheduler contract step 3 instructs category: field when writing queue items', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Step 3 must reference the category field on queue items.
+  expect(text).toContain('category:')
+
+  // Vocabulary must be spelled out exactly so the scheduler can act without ambiguity.
+  for (const v of ['implementation', 'debugging', 'research', 'refactoring', 'verification', 'other']) {
+    expect(text).toContain(v)
+  }
+})
+
+test('PERSONA_RESULT_SCHEMA in openRalphAgents.ts contains task_category field', () => {
+  const source = readFileSync(
+    'src/tools/AgentTool/built-in/openRalphAgents.ts',
+    'utf8',
+  )
+  // The shared PERSONA_RESULT_SCHEMA constant must include the task_category field.
+  expect(source).toContain('task_category:')
+  // The vocabulary comment must be present so personas know valid values.
+  expect(source).toMatch(/implementation.*debugging.*research.*refactoring|debugging.*implementation/)
+})
+
+test('hook extractor round-trip: task_category in persona YAML flows through to JSONL record', () => {
+  const personaYaml = [
+    '```yaml',
+    'task_slug: "add-category-field"',
+    'task_category: "implementation"',
+    'status: "complete"',
+    'commit: "def5678"',
+    'files_changed:',
+    '  - "src/bar.ts"',
+    'tests_run: "bun test src/bar.test.ts"',
+    'tests_passed: true',
+    'provider_model_used: "anthropic/claude-sonnet-4-6"',
+    'new_gaps: []',
+    'next_action: "none"',
+    'notes: "task_category round-trip"',
+    '```',
+  ].join('\n')
+
+  const { root, exitCode, stderr } = runHookSubprocess({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'openralph-builder', prompt: 'implement the thing' },
+    tool_response: `Done.\n\n${personaYaml}\n`,
+    session_id: 'cat-sess',
+    cwd: 'test-cwd',
+    transcript_path: 'test-transcript',
+  })
+
+  expect(exitCode).toBe(0)
+  expect(stderr).not.toContain('Traceback')
+
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  expect(existsSync(ledgerPath)).toBe(true)
+
+  const lines = readFileSync(ledgerPath, 'utf8').trim().split('\n')
+  expect(lines).toHaveLength(1)
+
+  const record = JSON.parse(lines[0]!) as Record<string, unknown>
+  expect(record.task_slug).toBe('add-category-field')
+  expect(record.task_category).toBe('implementation')
+  expect(record.status).toBe('complete')
+})
+
+test('hook extractor round-trip: absent task_category in YAML → null in JSONL record', () => {
+  const personaYaml = [
+    '```yaml',
+    'task_slug: "no-category-task"',
+    'status: "complete"',
+    'commit: null',
+    'files_changed: []',
+    'tests_run: null',
+    'tests_passed: true',
+    'provider_model_used: "anthropic/claude-haiku-4-5"',
+    'new_gaps: []',
+    'next_action: null',
+    'notes: "no category"',
+    '```',
+  ].join('\n')
+
+  const { root, exitCode } = runHookSubprocess({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'openralph-refiner', prompt: 'refine it' },
+    tool_response: `Refined.\n\n${personaYaml}\n`,
+    session_id: 'nocat-sess',
+    cwd: 'test-cwd',
+    transcript_path: 'test-transcript',
+  })
+
+  expect(exitCode).toBe(0)
+
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
+  // task_category absent in YAML → null in record (never fails the hook)
+  expect(record.task_category).toBeNull()
+})
