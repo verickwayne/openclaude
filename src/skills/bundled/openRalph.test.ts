@@ -247,6 +247,99 @@ test('status prompt reports top routing stats', async () => {
   expect(text).toContain('openralph-route-stats.sh')
 })
 
+// ── Cross-provider checker tests ──────────────────────────────────────────────
+
+test('openralph-checker persona is registered in openRalphAgents.ts', () => {
+  const source = readFileSync(
+    'src/tools/AgentTool/built-in/openRalphAgents.ts',
+    'utf8',
+  )
+  expect(source).toContain("agentType: 'openralph-checker'")
+  expect(source).toContain('OPENRALPH_CHECKER_AGENT')
+  expect(source).toContain('OPENRALPH_AGENTS')
+  // checker must be included in the exported array
+  const agentsArrayMatch = source.match(/OPENRALPH_AGENTS[^=]*=\s*\[([^\]]+)\]/s)
+  expect(agentsArrayMatch).not.toBeNull()
+  expect(agentsArrayMatch![1]).toContain('OPENRALPH_CHECKER_AGENT')
+})
+
+test('checker persona is read-only — disallows file-edit and write tools', () => {
+  const source = readFileSync(
+    'src/tools/AgentTool/built-in/openRalphAgents.ts',
+    'utf8',
+  )
+  // The checker definition block must include disallowedTools
+  expect(source).toContain('disallowedTools')
+  // The checker uses only BASH_TOOL_NAME (for running proof_command)
+  expect(source).toContain("tools: [BASH_TOOL_NAME]")
+  // omitClaudeMd: true keeps the checker's context clean
+  expect(source).toContain('omitClaudeMd: true')
+})
+
+test('checker prompt enforces different-provider rule in whenToUse and system prompt', () => {
+  const source = readFileSync(
+    'src/tools/AgentTool/built-in/openRalphAgents.ts',
+    'utf8',
+  )
+  // whenToUse must state the different-provider constraint
+  expect(source).toContain('different provider')
+  // system prompt must articulate the provider rule
+  expect(source).toContain('PROVIDER RULE')
+  // must reference worker_model
+  expect(source).toContain('worker_model')
+})
+
+test('checker verdict YAML fields align with ledger extractor (task_slug, provider_model_used, status, goal_met)', () => {
+  const source = readFileSync(
+    'src/tools/AgentTool/built-in/openRalphAgents.ts',
+    'utf8',
+  )
+  // Ledger extractor expects task_slug + provider_model_used + status in the YAML block
+  expect(source).toContain('task_slug:')
+  expect(source).toContain('provider_model_used:')
+  // status: "complete" signals the check itself ran (the ledger records it)
+  expect(source).toContain('status: "complete"')
+  // goal_met is the verdict payload — distinct from ledger status
+  expect(source).toContain('goal_met:')
+  // evidence and gaps must be present in the schema
+  expect(source).toContain('evidence:')
+  expect(source).toContain('gaps:')
+})
+
+test('scheduler contract step 9 dispatches checker before marking goal complete', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Step 9 must reference the checker persona
+  expect(text).toContain('openralph-checker')
+
+  // Must gate on goal_met: true before writing complete
+  expect(text).toContain('goal_met: true')
+
+  // Must explicitly pass worker_model to the checker dispatch
+  expect(text).toContain('worker_model')
+
+  // Must push gaps back to the queue when checker returns goal_met: false
+  expect(text).toContain('goal_met: false')
+
+  // Must instruct the scheduler to use a different provider/model family
+  expect(text).toContain('different provider')
+})
+
+test('scheduler contract step 10 is the stop gate (renumbered from 9 after checker insertion)', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // Step 10 is now the terminal stop gate
+  expect(text).toContain('10.')
+  // The stop gate text must reference goal.json.status being complete
+  expect(text).toMatch(/10\..*goal\.json/)
+})
+
 // ── Behavioral tests: run the real hook script in a subprocess ───────────────
 
 /**

@@ -81,6 +81,37 @@ confidence: "high" | "medium" | "low"
 notes: "<optional>"
 \`\`\``
 
+const CHECKER_PROMPT = `You are an OpenRalph checker — a verification-only persona dispatched by the scheduler to evaluate whether the goal condition has been met before the session can be marked complete. You are read-only: never edit files, never commit, never run the proof command with side effects.
+
+The scheduler will pass the following in the dispatch context:
+- The goal condition text (from goal.json "condition")
+- The proof_command (from goal.json "proof_command"), if any
+- The worker_model: the provider/model that produced the result being checked
+
+PROVIDER RULE — enforced without exception: you MUST NOT be the same provider or model family as worker_model. If the worker used any Anthropic model (claude-*), you must use a non-Anthropic model. If the worker used any OpenAI model (gpt-*, o*), use a non-OpenAI model. If the worker used a local/offline model, use any cloud provider. Pick the cheapest model class from the different provider that can read files and run shell commands. Record which model you actually used in provider_model_used.
+
+Verification steps:
+1. Read goal.json at .openclaude/ralph/sessions/<session_id>/goal.json to confirm condition and proof_command.
+2. If proof_command is present and non-null, run it and capture its output. A non-zero exit code is evidence the goal is NOT met.
+3. Read progress.md and the files the worker claims to have changed. Evaluate whether the condition stated in goal.json is concretely satisfied by visible evidence (passing tests, committed files, proof_command output, etc.).
+4. List the specific evidence observed and any gaps — criteria in the condition that are not yet demonstrably satisfied.
+5. Return the verdict YAML below. Do not add commentary after the closing fence.
+
+End with this YAML block and no extra prose after it:
+
+\`\`\`yaml
+task_slug: "<from goal.json or current-task.md>"
+status: "complete"
+provider_model_used: "<the checker model actually used — must differ from worker_model>"
+goal_met: true | false
+evidence:
+  - "<specific observation: file, test output line, proof_command exit code, etc.>"
+gaps:
+  - "<criterion from condition that is not yet satisfied, or empty list>"
+proof_command_exit_code: <integer or null>
+notes: "<brief context>"
+\`\`\``
+
 export const OPENRALPH_BUILDER_AGENT: BuiltInAgentDefinition = {
   agentType: 'openralph-builder',
   whenToUse:
@@ -140,9 +171,29 @@ export const OPENRALPH_TEST_ANALYZER_AGENT: BuiltInAgentDefinition = {
   getSystemPrompt: () => TEST_ANALYZER_PROMPT,
 }
 
+export const OPENRALPH_CHECKER_AGENT: BuiltInAgentDefinition = {
+  agentType: 'openralph-checker',
+  whenToUse:
+    'OpenRalph verification persona — dispatched by the scheduler before marking goal.json complete. Runs proof_command (if present), inspects evidence, and returns a goal_met verdict. MUST use a different provider/model family than the worker that produced the result.',
+  source: 'built-in',
+  baseDir: 'built-in',
+  disallowedTools: [
+    AGENT_TOOL_NAME,
+    EXIT_PLAN_MODE_TOOL_NAME,
+    FILE_EDIT_TOOL_NAME,
+    FILE_WRITE_TOOL_NAME,
+    NOTEBOOK_EDIT_TOOL_NAME,
+  ],
+  tools: [BASH_TOOL_NAME],
+  model: 'inherit',
+  omitClaudeMd: true,
+  getSystemPrompt: () => CHECKER_PROMPT,
+}
+
 export const OPENRALPH_AGENTS: BuiltInAgentDefinition[] = [
   OPENRALPH_BUILDER_AGENT,
   OPENRALPH_REFINER_AGENT,
   OPENRALPH_RESEARCHER_AGENT,
   OPENRALPH_TEST_ANALYZER_AGENT,
+  OPENRALPH_CHECKER_AGENT,
 ]
