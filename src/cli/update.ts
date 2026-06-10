@@ -262,7 +262,7 @@ export async function update() {
 
       if (result.latestVersion === MACRO.DISPLAY_VERSION) {
         writeToStdout(
-          chalk.green(`OpenClaude is up to date (${MACRO.DISPLAY_VERSION})`) + '\n',
+          chalk.green(`Limitless is up to date (${MACRO.DISPLAY_VERSION})`) + '\n',
         )
       } else {
         writeToStdout(

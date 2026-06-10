@@ -1,6 +1,6 @@
-# OpenClaude
+# Limitless ∞
 
-OpenClaude is an open-source coding-agent CLI for cloud and local model providers.
+Limitless is an open-source coding-agent CLI for cloud and local model providers.
 
 Use OpenAI-compatible APIs, Gemini, GitHub Models, Codex OAuth, Codex, Ollama, Atomic Chat, and other supported backends while keeping one terminal-first workflow: prompts, tools, agents, MCP, slash commands, and streaming output.
 

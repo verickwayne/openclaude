@@ -234,7 +234,7 @@ export function printStartupScreen(modelOverride?: string): void {
   out.push(boxRow(sRow, W, sLen, BORDER))
 
   out.push(`${ansiRgb(...BORDER)}\u255a${'\u2550'.repeat(W - 2)}\u255d${RESET}`)
-  out.push(`  ${DIM}${ansiRgb(...DIMCOL)}openclaude ${RESET}${ansiRgb(...ACCENT)}v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}${RESET}`)
+  out.push(`  ${DIM}${ansiRgb(...DIMCOL)}limitless ${RESET}${ansiRgb(...ACCENT)}v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}${RESET}`)
   out.push('')
 
   process.stdout.write(out.join('\n') + '\n')
