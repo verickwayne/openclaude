@@ -1,5 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
-import { readFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
 import { clearBundledSkills, getBundledSkills } from '../bundledSkills.js'
 import { OPENRALPH_FILES, registerOpenRalphSkills } from './openRalph.js'
@@ -234,4 +236,111 @@ test('ledger JSONL record shape contains all required fields', () => {
   for (const field of requiredFields) {
     expect(hook).toContain(field)
   }
+})
+
+test('status prompt reports top routing stats', async () => {
+  registerOpenRalphSkills()
+  const status = getBundledSkills().find(command => command.name === 'openralph-status')!
+  const blocks = await status.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+  expect(text).toContain('routing stats')
+  expect(text).toContain('openralph-route-stats.sh')
+})
+
+// ── Behavioral tests: run the real hook script in a subprocess ───────────────
+
+/**
+ * Writes the bundled hook script into a fresh temp project root, creates the
+ * `.openclaude/ralph/enabled` marker the hook requires, runs the hook with the
+ * given stdin JSON, and returns the temp root + exit code.
+ */
+function runHookSubprocess(stdinPayload: Record<string, unknown>): {
+  root: string
+  exitCode: number
+  stderr: string
+} {
+  const root = mkdtempSync(join(tmpdir(), 'openralph-hook-behavioral-'))
+  mkdirSync(join(root, '.openclaude', 'ralph'), { recursive: true })
+  writeFileSync(join(root, '.openclaude', 'ralph', 'enabled'), '')
+  const hookPath = join(root, 'openralph-hook.sh')
+  writeFileSync(hookPath, OPENRALPH_FILES['bin/openralph-hook.sh'])
+
+  const proc = Bun.spawnSync(['bash', hookPath], {
+    cwd: root,
+    env: { ...process.env, OPENRALPH_PROJECT_ROOT: root },
+    stdin: Buffer.from(JSON.stringify(stdinPayload)),
+  })
+  return {
+    root,
+    exitCode: proc.exitCode,
+    stderr: proc.stderr.toString(),
+  }
+}
+
+test('hook exits 0 and writes no ledger line when tool_response has no YAML block', () => {
+  const { root, exitCode } = runHookSubprocess({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'openralph-builder' },
+    tool_response: 'garbage no yaml here',
+    session_id: 'test-sess',
+    cwd: 'test-cwd',
+    transcript_path: 'test-transcript',
+  })
+
+  expect(exitCode).toBe(0)
+
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  if (existsSync(ledgerPath)) {
+    expect(readFileSync(ledgerPath, 'utf8').trim()).toBe('')
+  }
+})
+
+test('hook appends one well-formed JSONL ledger record for a valid persona YAML', () => {
+  const personaYaml = [
+    '```yaml',
+    'task_slug: "wire-route-stats"',
+    'status: "complete"',
+    'commit: "abc1234"',
+    'files_changed:',
+    '  - "src/foo.ts"',
+    'tests_run: "bun test src/foo.test.ts"',
+    'tests_passed: true',
+    'provider_model_used: "openai-compatible/gpt-5.3-codex"',
+    'new_gaps: []',
+    'next_action: "none"',
+    'notes: "ok"',
+    '```',
+  ].join('\n')
+
+  const { root, exitCode, stderr } = runHookSubprocess({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'openralph-builder', prompt: 'do the task' },
+    tool_response: `Work finished.\n\n${personaYaml}\n`,
+    session_id: 'test-sess',
+    cwd: 'test-cwd',
+    transcript_path: 'test-transcript',
+  })
+
+  expect(exitCode).toBe(0)
+
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  expect(existsSync(ledgerPath)).toBe(true)
+
+  const lines = readFileSync(ledgerPath, 'utf8').trim().split('\n')
+  expect(lines).toHaveLength(1)
+
+  const record = JSON.parse(lines[0]!) as Record<string, unknown>
+  expect(record.session_id).toBe('test-sess')
+  expect(record.task_slug).toBe('wire-route-stats')
+  expect(record.persona).toBe('openralph-builder')
+  expect(record.provider_model_used).toBe('openai-compatible/gpt-5.3-codex')
+  expect(record.status).toBe('complete')
+  expect(record.tests_passed).toBe(true)
+  expect(record.new_gaps).toBe(0)
+  expect(typeof record.ts).toBe('string')
+  // Sanity: stderr should not show a python traceback swallowed by || true.
+  expect(stderr).not.toContain('SyntaxError')
+  expect(stderr).not.toContain('Traceback')
 })

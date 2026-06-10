@@ -262,14 +262,14 @@ except Exception:
 # Extract the trailing YAML block from the tool response.
 # Build the backtick fence programmatically to avoid quoting issues.
 _bt3 = chr(96) * 3
-yaml_match = re.search(_bt3 + r"yaml\s*\n([\s\S]*?)" + _bt3, tool_response or "")
+yaml_match = re.search(_bt3 + r"yaml\\s*\\n([\\s\\S]*?)" + _bt3, tool_response or "")
 if not yaml_match:
   sys.exit(0)
 yaml_text = yaml_match.group(1)
 
 def parse_yaml_field(text, key):
   """Minimal key: value extractor — avoids a yaml dep."""
-  m = re.search(r"^" + re.escape(key) + r":\s*(.+)$", text, re.MULTILINE)
+  m = re.search(r"^" + re.escape(key) + r":\\s*(.+)$", text, re.MULTILINE)
   if not m:
     return None
   val = m.group(1).strip().strip('"').strip("'")
@@ -292,7 +292,7 @@ else:
 
 # new_gaps: count list items (lines starting with -) if the field is multi-line.
 new_gaps = 0
-gaps_block = re.search(r"^new_gaps:\s*\n((?:\s+-.*\n)*)", yaml_text, re.MULTILINE)
+gaps_block = re.search(r"^new_gaps:\\s*\\n((?:\\s+-.*\\n)*)", yaml_text, re.MULTILINE)
 if gaps_block:
   new_gaps = len([l for l in gaps_block.group(1).splitlines() if l.strip().startswith("-")])
 elif new_gaps_raw and new_gaps_raw not in ("[]", ""):
@@ -622,6 +622,7 @@ Then report:
 - top queue item
 - in-flight, completed, and blocked entries
 - most recent hook bridge event
+- top routing stats (run \`bash .openclaude/ralph/bin/openralph-route-stats.sh\`)
 
 If support files are missing, inspect \`.openclaude/ralph/active-session\` and \`.openclaude/ralph/sessions/<session_id>/\` directly and report what exists.`
 }
