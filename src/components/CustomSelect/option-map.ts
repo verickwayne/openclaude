@@ -5,6 +5,7 @@ type OptionMapItem<T> = {
   label: ReactNode
   value: T
   description?: string
+  disabled?: boolean
   previous: OptionMapItem<T> | undefined
   next: OptionMapItem<T> | undefined
   index: number
@@ -18,7 +19,7 @@ export default class OptionMap<T> extends Map<T, OptionMapItem<T>> {
     const items: Array<[T, OptionMapItem<T>]> = []
     let firstItem: OptionMapItem<T> | undefined
     let lastItem: OptionMapItem<T> | undefined
-    let previous: OptionMapItem<T> | undefined
+    let previousSelectable: OptionMapItem<T> | undefined
     let index = 0
 
     for (const option of options) {
@@ -26,21 +27,24 @@ export default class OptionMap<T> extends Map<T, OptionMapItem<T>> {
         label: option.label,
         value: option.value,
         description: option.description,
-        previous,
+        disabled: option.disabled,
+        previous: option.disabled ? undefined : previousSelectable,
         next: undefined,
         index,
       }
 
-      if (previous) {
-        previous.next = item
+      if (!option.disabled && previousSelectable) {
+        previousSelectable.next = item
       }
 
-      firstItem ||= item
-      lastItem = item
+      if (!option.disabled) {
+        firstItem ||= item
+        lastItem = item
+        previousSelectable = item
+      }
 
       items.push([option.value, item])
       index++
-      previous = item
     }
 
     super(items)

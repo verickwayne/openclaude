@@ -16,6 +16,12 @@ function toDescription(
     parts.push('Recommended')
   }
   parts.push(`Provider: ${routeLabel}`)
+  if (entry.notes?.trim()) {
+    parts.push(entry.notes.trim())
+  }
+  if (entry.contextWindow) {
+    parts.push(`context ${entry.contextWindow.toLocaleString()}`)
+  }
 
   return parts.join(' · ')
 }

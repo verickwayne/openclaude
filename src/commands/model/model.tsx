@@ -24,6 +24,7 @@ import {
   getRouteDescriptor,
   resolveRouteCredentialValue,
   resolveActiveRouteIdFromEnv,
+  resolveRouteIdFromBaseUrl,
 } from '../../integrations/routeMetadata.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -108,7 +109,6 @@ export function buildMultiProviderOptionsOverride(input: {
   firstPartyOptions: ModelOption[]
   profiles: ProviderProfile[]
 }): ModelOption[] | null {
-  if (input.profiles.length === 0) return null
   return getGroupedProviderModelOptions(input)
 }
 
@@ -134,6 +134,23 @@ function haveSameModelOptions(left: ModelOption[], right: ModelOption[]): boolea
       option.descriptionForModel === other.descriptionForModel
     )
   })
+}
+
+function mergeModelOptions(
+  left: ModelOption[],
+  right: ModelOption[],
+): ModelOption[] {
+  const seen = new Set<string>()
+  const merged: ModelOption[] = []
+  for (const option of [...left, ...right]) {
+    const value = String(option.value).trim()
+    if (!value || seen.has(value.toLowerCase())) {
+      continue
+    }
+    seen.add(value.toLowerCase())
+    merged.push(option)
+  }
+  return merged
 }
 
 function getActiveRouteId(): string | null {
@@ -276,7 +293,7 @@ async function loadDescriptorDiscoveryContext(
 
 async function loadModelDiscoveryContext(): Promise<ModelDiscoveryContext | null> {
   const routeId = getActiveRouteId()
-  if (routeId && routeId !== 'anthropic') {
+  if (routeId && routeId !== 'anthropic' && getProviderProfiles().length === 0) {
     const descriptorContext = await loadDescriptorDiscoveryContext(routeId)
     if (descriptorContext) {
       return descriptorContext
@@ -293,23 +310,20 @@ async function loadModelDiscoveryContext(): Promise<ModelDiscoveryContext | null
     }
   }
 
-  // Multi-provider: when provider profiles are configured, aggregate all
-  // logged-in providers' models into one picker list.
+  // Multi-provider: always show the same stable provider-ordered model list.
   const profiles = getProviderProfiles()
-  if (profiles.length > 0) {
-    const multiOverride = buildMultiProviderOptionsOverride({
-      firstPartyOptions: getModelOptions(false),
-      profiles,
-    })
-    if (multiOverride) {
-      return {
-        kind: 'descriptor',
-        autoRefresh: false,
-        canRefresh: false,
-        optionsOverride: multiOverride,
-        routeId: 'multi-provider',
-        routeLabel: 'All providers',
-      }
+  const multiOverride = buildMultiProviderOptionsOverride({
+    firstPartyOptions: getModelOptions(false),
+    profiles,
+  })
+  if (multiOverride) {
+    return {
+      kind: 'descriptor',
+      autoRefresh: false,
+      canRefresh: false,
+      optionsOverride: multiOverride,
+      routeId: 'multi-provider',
+      routeLabel: 'All providers',
     }
   }
 
@@ -620,6 +634,7 @@ function ModelPickerWrapper({
 }
 
 type ProviderModelToggleValue = `${string}\0${string}`
+type ProviderCatalogState = Record<string, ModelOption[]>
 
 function makeProviderModelToggleValue(
   profileId: string,
@@ -653,7 +668,78 @@ function ProviderModelManager({
 }) {
   const [query, setQuery] = React.useState('')
   const [version, setVersion] = React.useState(0)
+  const [catalogOptions, setCatalogOptions] = React.useState<ProviderCatalogState>({})
+  const [catalogStatus, setCatalogStatus] = React.useState<string | undefined>()
   const profiles = React.useMemo(() => getProviderProfiles(), [version])
+
+  React.useEffect(() => {
+    let cancelled = false
+
+    async function loadCatalogs(): Promise<void> {
+      const next: ProviderCatalogState = {}
+      let loaded = 0
+
+      await Promise.all(
+        profiles.map(async profile => {
+          const routeId =
+            resolveRouteIdFromBaseUrl(profile.baseUrl) ?? profile.provider
+          const descriptor = getRouteDescriptor(routeId)
+          if (!descriptor?.catalog) {
+            return
+          }
+
+          const staticOptions = buildRouteCatalogModelOptions(
+            descriptor.label,
+            descriptor.catalog.models ?? [],
+            'defaultModel' in descriptor ? descriptor.defaultModel : undefined,
+          )
+
+          let discoveredOptions: ModelOption[] = []
+          if (descriptor.catalog.discovery && !isEssentialTrafficOnly()) {
+            const result = await discoverModelsForRoute(routeId, {
+              baseUrl: profile.baseUrl,
+              apiKey: resolveRouteCredentialValue({
+                routeId,
+                baseUrl: profile.baseUrl,
+                processEnv: process.env,
+                activeProfileProvider: profile.provider,
+              }),
+            })
+
+            if (result && result.source !== 'error') {
+              discoveredOptions = buildRouteCatalogModelOptions(
+                descriptor.label,
+                result.models,
+                'defaultModel' in descriptor ? descriptor.defaultModel : undefined,
+              )
+            }
+          }
+
+          next[profile.id] = mergeModelOptions(staticOptions, discoveredOptions)
+          if (next[profile.id]!.length > 0) {
+            loaded += 1
+          }
+        }),
+      )
+
+      if (cancelled) {
+        return
+      }
+
+      setCatalogOptions(next)
+      setCatalogStatus(
+        loaded > 0
+          ? `Loaded searchable catalogs for ${loaded} provider${loaded === 1 ? '' : 's'}.`
+          : undefined,
+      )
+    }
+
+    void loadCatalogs()
+
+    return () => {
+      cancelled = true
+    }
+  }, [profiles])
 
   const options = React.useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -671,6 +757,7 @@ function ProviderModelManager({
 
       for (const option of [
         ...getCuratedModelOptionsForProfile(profile),
+        ...(catalogOptions[profile.id] ?? []),
         ...getProfileModelOptions(profile),
       ]) {
         const model = String(option.value).trim()
@@ -680,7 +767,7 @@ function ProviderModelManager({
         if (seen.has(dedupeKey)) continue
         seen.add(dedupeKey)
 
-        const haystack = `${profile.name} ${option.label} ${model}`.toLowerCase()
+        const haystack = `${profile.name} ${option.label} ${option.description} ${option.descriptionForModel ?? ''} ${model}`.toLowerCase()
         if (normalizedQuery && !haystack.includes(normalizedQuery)) {
           continue
         }
@@ -695,7 +782,7 @@ function ProviderModelManager({
     }
 
     return rows
-  }, [profiles, query])
+  }, [catalogOptions, profiles, query])
 
   function toggleModel(value: ProviderModelToggleValue): void {
     const parsed = parseProviderModelToggleValue(value)
@@ -744,6 +831,7 @@ function ProviderModelManager({
         showCursor
       />
       {status ? <Text color="success">{status}</Text> : null}
+      {catalogStatus ? <Text dimColor>{catalogStatus}</Text> : null}
       {options.length > 0 ? (
         <Select
           options={options}

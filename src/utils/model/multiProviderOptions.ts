@@ -3,6 +3,7 @@ import type { ProviderProfile } from '../config.js'
 import type { ModelOption } from './modelOptions.js'
 import type { ModelSetting } from './model.js'
 import { parseModelList } from '../providerModels.js' // verified path (one level up, NOT ./providerModels)
+import { isProviderAvailable } from '../providerAvailability.js'
 
 export type TaggedModelOption = ModelOption & {
   providerId: string
@@ -27,27 +28,28 @@ export const GROUP_HEADER_VALUE_PREFIX = '__provider_group_header__'
 export const ADD_REMOVE_MODELS_VALUE = '__add_remove_models__'
 
 const AVAILABLE_MARKER = '●'
+const UNAVAILABLE_MARKER = '○'
 
 export const ANTHROPIC_PICKER_MODELS: ModelOption[] = [
   {
     value: 'claude-opus-4-8',
     label: 'Opus 4.8',
-    description: 'Anthropic subscription',
+    description: 'Claude Max / Anthropic subscription',
   },
   {
     value: 'sonnet',
     label: 'Sonnet',
-    description: 'Anthropic subscription',
+    description: 'Claude Max / Anthropic subscription',
   },
   {
     value: 'haiku',
     label: 'Haiku',
-    description: 'Anthropic subscription',
+    description: 'Claude Max / Anthropic subscription',
   },
   {
     value: 'claude-fable-5',
     label: 'Fable 5',
-    description: 'Anthropic subscription',
+    description: 'Claude Max / Anthropic subscription',
   },
 ]
 
@@ -60,6 +62,11 @@ export const OPENAI_PICKER_MODELS: ModelOption[] = [
 ]
 
 export const OPENROUTER_PICKER_MODELS: ModelOption[] = [
+  {
+    value: 'openai/gpt-5-mini',
+    label: 'GPT-5 Mini',
+    description: 'OpenRouter',
+  },
   {
     value: 'google/gemini-2.5-pro',
     label: 'Gemini 2.5 Pro',
@@ -79,6 +86,19 @@ export const OPENROUTER_PICKER_MODELS: ModelOption[] = [
     value: 'meta-llama/llama-3.3-70b-instruct',
     label: 'Llama 3.3 70B Instruct',
     description: 'OpenRouter',
+  },
+]
+
+export const LOCAL_PICKER_MODELS: ModelOption[] = [
+  {
+    value: 'llama3.2:latest',
+    label: 'Llama 3.2',
+    description: 'Local provider',
+  },
+  {
+    value: 'phi4-mini:latest',
+    label: 'Phi 4 Mini',
+    description: 'Local provider',
   },
 ]
 
@@ -175,13 +195,16 @@ export function getAllProviderModelOptions(input: {
 }
 
 function withAvailabilityMarker(option: ModelOption, available: boolean): ModelOption {
-  if (!available || option.label.startsWith(AVAILABLE_MARKER)) {
-    return option
-  }
-
+  const marker = available ? AVAILABLE_MARKER : UNAVAILABLE_MARKER
+  const cleanLabel = option.label
+    .replace(new RegExp(`^[${AVAILABLE_MARKER}${UNAVAILABLE_MARKER}]\\s+`), '')
+    .trim()
   return {
     ...option,
-    label: `${AVAILABLE_MARKER} ${option.label}`,
+    label: `${marker} ${cleanLabel}`,
+    description: `${available ? 'Available' : 'Needs provider activation'} · ${
+      option.description
+    }`,
   }
 }
 
@@ -230,6 +253,51 @@ export function getCuratedModelOptionsForProfile(
   }
 }
 
+function getProfilesForGroup(
+  profiles: ProviderProfile[],
+  group: ProviderGroup,
+): ProviderProfile[] {
+  return profiles.filter(profile => classifyProviderGroup(profile.id, profile) === group)
+}
+
+function groupHasAvailableProfile(profiles: ProviderProfile[]): boolean {
+  return profiles.some(profile => isProviderAvailable(profile))
+}
+
+function getConfiguredOptionsForProfiles(profiles: ProviderProfile[]): ModelOption[] {
+  const configured: ModelOption[] = []
+  for (const profile of profiles) {
+    for (const model of parseModelList(profile.model ?? '')) {
+      configured.push({
+        value: model,
+        label: model,
+        description: `Provider: ${profile.name}`,
+      })
+    }
+  }
+  return configured
+}
+
+function getStableGroupModelOptions(
+  group: ProviderGroup,
+  profiles: ProviderProfile[],
+  firstPartyOptions: ModelOption[],
+): ModelOption[] {
+  const configured = getConfiguredOptionsForProfiles(profiles)
+  switch (group) {
+    case 'anthropic':
+      return [...ANTHROPIC_PICKER_MODELS, ...firstPartyOptions, ...configured]
+    case 'openai':
+      return [...OPENAI_PICKER_MODELS, ...configured]
+    case 'openrouter':
+      return [...OPENROUTER_PICKER_MODELS, ...configured]
+    case 'local':
+      return [...LOCAL_PICKER_MODELS, ...configured]
+    case 'other':
+      return configured
+  }
+}
+
 /**
  * Returns the same options as `getAllProviderModelOptions` but sorted by
  * provider group (Anthropic → OpenAI → OpenRouter → Local/Other) with a
@@ -248,41 +316,49 @@ export function getGroupedProviderModelOptions(input: {
     groups.set(g, [])
   }
 
-  const seen = new Set<string>()
-  const hasAnthropicProfile = input.profiles.some(
-    profile => classifyProviderGroup(profile.id, profile) === 'anthropic',
-  )
+  const globalSeen = new Set<string>()
 
-  const push = (
-    o: ModelOption,
-    providerId: string,
-    providerName: string,
-    group: ProviderGroup,
-    available = true,
-  ) => {
-    addModelOption(
-      groups.get(group)!,
-      seen,
-      o,
-      providerId,
-      providerName,
-      available,
-    )
+  for (const group of GROUP_ORDER) {
+    if (group === 'other') continue
+
+    const groupProfiles = getProfilesForGroup(input.profiles, group)
+    const providerId = groupProfiles[0]?.id ?? group
+    const providerName = groupProfiles[0]?.name ?? GROUP_DISPLAY_NAMES[group]
+    const available = groupHasAvailableProfile(groupProfiles)
+    const groupSeen = new Set<string>()
+
+    for (const option of getStableGroupModelOptions(
+      group,
+      groupProfiles,
+      input.firstPartyOptions,
+    )) {
+      const normalized = String(option.value).trim().toLowerCase()
+      if (!normalized || groupSeen.has(normalized) || globalSeen.has(normalized)) {
+        continue
+      }
+      groupSeen.add(normalized)
+      globalSeen.add(normalized)
+      addModelOption(
+        groups.get(group)!,
+        new Set<string>(),
+        option,
+        providerId,
+        providerName,
+        available,
+      )
+    }
   }
 
-  for (const o of [...ANTHROPIC_PICKER_MODELS, ...input.firstPartyOptions]) {
-    push(o, 'first-party', 'Anthropic', 'anthropic', hasAnthropicProfile)
-  }
-
-  for (const profile of input.profiles) {
-    const group = classifyProviderGroup(profile.id, profile)
-    for (const option of getCuratedModelOptionsForProfile(profile)) {
-      push(
+  const otherProfiles = getProfilesForGroup(input.profiles, 'other')
+  for (const profile of otherProfiles) {
+    for (const option of getConfiguredOptionsForProfiles([profile])) {
+      addModelOption(
+        groups.get('other')!,
+        globalSeen,
         option,
         profile.id,
         profile.name,
-        group,
-        true,
+        isProviderAvailable(profile),
       )
     }
   }
@@ -294,7 +370,7 @@ export function getGroupedProviderModelOptions(input: {
 
     // Insert a non-selectable header before the group
     const headerValue = makeGroupHeaderValue(g)
-    const headerLabel = `── ${GROUP_DISPLAY_NAMES[g]} ──`
+    const headerLabel = GROUP_DISPLAY_NAMES[g]
     result.push({
       value: headerValue as ModelSetting,
       label: headerLabel,
@@ -309,15 +385,13 @@ export function getGroupedProviderModelOptions(input: {
     result.push(...items)
   }
 
-  if (input.profiles.length > 0) {
-    result.push({
-      value: ADD_REMOVE_MODELS_VALUE as ModelSetting,
-      label: 'Add/Remove Models',
-      description: 'Search provider model catalogs and update picker entries',
-      providerId: '__action__',
-      providerName: '',
-    })
-  }
+  result.push({
+    value: ADD_REMOVE_MODELS_VALUE as ModelSetting,
+    label: 'Add models',
+    description: 'Search provider model catalogs and update picker entries',
+    providerId: '__action__',
+    providerName: '',
+  })
 
   return result
 }

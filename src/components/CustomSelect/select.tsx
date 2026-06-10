@@ -572,6 +572,9 @@ export function Select(t0) {
         const isFocused_3 = !isDisabled && state.focusedValue === option_4.value;
         const isSelected_3 = state.value === option_4.value;
         const isOptionDisabled_2 = option_4.disabled === true;
+        if (isOptionDisabled_2) {
+          return <Box key={String(option_4.value)} flexDirection="row" flexShrink={0} paddingTop={index_4 === 0 ? 0 : 1}><Text dimColor={true} bold={true}>{label_2}</Text></Box>;
+        }
         return <SelectOption key={String(option_4.value)} isFocused={isFocused_3} isSelected={isSelected_3} shouldShowDownArrow={areMoreOptionsBelow_3 && isLastVisibleOption_3} shouldShowUpArrow={areMoreOptionsAbove_3 && isFirstVisibleOption_3}><Box flexDirection="row" flexShrink={0}>{!hideIndexes && <Text dimColor={true}>{`${i_3}.`.padEnd(maxIndexWidth_1 + 2)}</Text>}<Text dimColor={isOptionDisabled_2} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 ? "suggestion" : undefined}>{label_2}{inlineDescriptions && option_4.description && <Text dimColor={isOptionDisabled_2 || option_4.dimDescription !== false}>{" "}{option_4.description}</Text>}</Text></Box>{!inlineDescriptions && option_4.description && <Box flexShrink={99} marginLeft={2}><Text wrap="wrap-trim" dimColor={isOptionDisabled_2 || option_4.dimDescription !== false} color={isOptionDisabled_2 ? undefined : isSelected_3 ? "success" : isFocused_3 ? "suggestion" : undefined}><Ansi>{option_4.description}</Ansi></Text></Box>}</SelectOption>;
       });
     }

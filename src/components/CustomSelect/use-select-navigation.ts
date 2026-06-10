@@ -305,7 +305,7 @@ const reducer = <T>(state: State<T>, action: Action<T>): State<T> => {
       }
 
       const item = state.optionMap.get(action.value)
-      if (!item) {
+      if (!item || item.disabled) {
         return state
       }
 
@@ -461,7 +461,9 @@ const createDefaultState = <T>({
   const optionMap = new OptionMap<T>(options)
   const focusedItem =
     initialFocusValue !== undefined && optionMap.get(initialFocusValue)
-  const focusedValue = focusedItem ? initialFocusValue : optionMap.first?.value
+  const focusedValue = focusedItem && !focusedItem.disabled
+    ? initialFocusValue
+    : optionMap.first?.value
 
   let visibleFromIndex = 0
   let visibleToIndex = visibleOptionCount
@@ -617,11 +619,12 @@ export function useSelectNavigation<T>({
       return undefined
     }
     const exists = options.some(opt => opt.value === state.focusedValue)
-    if (exists) {
+    const option = options.find(opt => opt.value === state.focusedValue)
+    if (exists && !option?.disabled) {
       return state.focusedValue
     }
-    // Fall back to first option if focused value doesn't exist
-    return options[0]?.value
+    // Fall back to first selectable option if focused value doesn't exist.
+    return options.find(opt => !opt.disabled)?.value
   }, [state.focusedValue, options])
 
   const isInInput = useMemo(() => {
