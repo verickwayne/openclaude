@@ -391,7 +391,7 @@ describe('OpenClaude paths', () => {
     )
   })
 
-  test('local installer uses openclaude wrapper path', async () => {
+  test('local installer uses limitless wrapper path', async () => {
     await acquireEnvMutex()
     // Force .openclaude config home so the test doesn't fall back to
     // ~/.claude when ~/.openclaude doesn't exist on this machine.
@@ -399,7 +399,7 @@ describe('OpenClaude paths', () => {
     const { getLocalClaudePath } = await importFreshLocalInstaller()
 
     expect(getLocalClaudePath()).toBe(
-      join(homedir(), '.openclaude', 'local', 'openclaude'),
+      join(homedir(), '.openclaude', 'local', 'limitless'),
     )
   })
 
