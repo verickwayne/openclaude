@@ -118,6 +118,8 @@ async function selectRelevantMemories(
       },
       signal,
       querySource: 'memdir_relevance',
+      // Pure JSON selection — 'fast' class is ideal; resolveProviderForClass silently falls back on any resolution failure.
+      modelClass: 'fast',
     })
 
     const textBlock = result.content.find(block => block.type === 'text')

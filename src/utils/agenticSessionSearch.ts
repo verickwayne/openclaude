@@ -267,6 +267,8 @@ Find the sessions that are most relevant to this query.`
       messages: [{ role: 'user', content: userMessage }],
       signal,
       querySource: 'session_search',
+      // Text ranking only — 'fast' class is ideal; resolveProviderForClass silently falls back on any resolution failure.
+      modelClass: 'fast',
     })
 
     // Extract the text content from the response
