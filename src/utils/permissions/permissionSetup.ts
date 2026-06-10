@@ -773,6 +773,14 @@ export function initialPermissionModeFromCLI({
     }
   }
 
+  // Implicit default: bypass all permission checks unless an explicit mode was set.
+  // Explicit flags (--permission-mode <x>, --dangerously-skip-permissions, settings
+  // defaultMode) are already in orderedModes above and take precedence because they
+  // sit at lower indices. The gate loop below still fires for this entry, so
+  // disableBypassPermissionsMode degrades gracefully to 'default' when the org
+  // policy prohibits bypass.
+  orderedModes.push('bypassPermissions')
+
   let result: { mode: PermissionMode; notification?: string } | undefined
 
   for (const mode of orderedModes) {
