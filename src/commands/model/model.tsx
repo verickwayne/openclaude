@@ -5,7 +5,10 @@ import {
   ModelPicker,
   type ModelPickerDiscoveryState,
 } from '../../components/ModelPicker.js'
+import { Select } from '../../components/CustomSelect/index.js'
+import TextInput from '../../components/TextInput.js'
 import { COMMON_HELP_ARGS, COMMON_INFO_ARGS } from '../../constants/xml.js'
+import { Box, Text } from '../../ink.js'
 import {
   clearDiscoveryCache,
   getCachedModels,
@@ -63,13 +66,19 @@ import {
   getActiveOpenAIModelOptionsCache,
   getActiveProviderProfile,
   getProviderProfiles,
+  getProfileModelOptions,
+  addModelsToProviderProfile,
+  removeModelsFromProviderProfile,
   setActiveOpenAIModelOptionsCache,
 } from '../../utils/providerProfiles.js'
 import { getModelOptions } from '../../utils/model/modelOptions.js'
 import {
+  getCuratedModelOptionsForProfile,
   getGroupedProviderModelOptions,
+  isAddRemoveModelsValue,
 } from '../../utils/model/multiProviderOptions.js'
 import type { ProviderProfile } from '../../utils/config.js'
+import { parseModelList } from '../../utils/providerModels.js'
 
 type ModelDiscoveryContext =
   | {
@@ -407,6 +416,8 @@ function ModelPickerWrapper({
     React.useState<ModelPickerDiscoveryState | undefined>(
       discoveryContext?.discoveryState,
     )
+  const [screen, setScreen] = React.useState<'picker' | 'manage-models'>('picker')
+  const [manageStatus, setManageStatus] = React.useState<string | undefined>()
 
   const handleCancel = () => {
     logEvent('tengu_model_command_menu', {
@@ -418,6 +429,11 @@ function ModelPickerWrapper({
   }
 
   const handleSelect = (model: string | null, effort: EffortLevel | undefined) => {
+    if (model && isAddRemoveModelsValue(model)) {
+      setScreen('manage-models')
+      return
+    }
+
     logEvent('tengu_model_command_menu', {
       action: String(model) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       from_model: String(mainLoopModel) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -559,6 +575,24 @@ function ModelPickerWrapper({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  if (screen === 'manage-models') {
+    return (
+      <ProviderModelManager
+        status={manageStatus}
+        onStatus={setManageStatus}
+        onBack={() => {
+          setOptionsOverride(
+            buildMultiProviderOptionsOverride({
+              firstPartyOptions: getModelOptions(false),
+              profiles: getProviderProfiles(),
+            }) ?? optionsOverride,
+          )
+          setScreen('picker')
+        }}
+      />
+    )
+  }
+
   return (
     <ModelPicker
       initial={mainLoopModel}
@@ -582,6 +616,146 @@ function ModelPickerWrapper({
           : undefined
       }
     />
+  )
+}
+
+type ProviderModelToggleValue = `${string}\0${string}`
+
+function makeProviderModelToggleValue(
+  profileId: string,
+  model: string,
+): ProviderModelToggleValue {
+  return `${profileId}\0${model}` as ProviderModelToggleValue
+}
+
+function parseProviderModelToggleValue(value: string): {
+  profileId: string
+  model: string
+} | null {
+  const separatorIndex = value.indexOf('\0')
+  if (separatorIndex < 0) {
+    return null
+  }
+  return {
+    profileId: value.slice(0, separatorIndex),
+    model: value.slice(separatorIndex + 1),
+  }
+}
+
+function ProviderModelManager({
+  status,
+  onStatus,
+  onBack,
+}: {
+  status?: string
+  onStatus: (status?: string) => void
+  onBack: () => void
+}) {
+  const [query, setQuery] = React.useState('')
+  const [version, setVersion] = React.useState(0)
+  const profiles = React.useMemo(() => getProviderProfiles(), [version])
+
+  const options = React.useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    const rows: Array<{
+      value: ProviderModelToggleValue
+      label: string
+      description: string
+    }> = []
+    const seen = new Set<string>()
+
+    for (const profile of profiles) {
+      const configured = new Set(
+        parseModelList(profile.model).map(model => model.toLowerCase()),
+      )
+
+      for (const option of [
+        ...getCuratedModelOptionsForProfile(profile),
+        ...getProfileModelOptions(profile),
+      ]) {
+        const model = String(option.value).trim()
+        if (!model) continue
+
+        const dedupeKey = `${profile.id}\0${model.toLowerCase()}`
+        if (seen.has(dedupeKey)) continue
+        seen.add(dedupeKey)
+
+        const haystack = `${profile.name} ${option.label} ${model}`.toLowerCase()
+        if (normalizedQuery && !haystack.includes(normalizedQuery)) {
+          continue
+        }
+
+        const isConfigured = configured.has(model.toLowerCase())
+        rows.push({
+          value: makeProviderModelToggleValue(profile.id, model),
+          label: `${isConfigured ? 'Remove' : 'Add'} ${option.label}`,
+          description: `${profile.name} · ${model}`,
+        })
+      }
+    }
+
+    return rows
+  }, [profiles, query])
+
+  function toggleModel(value: ProviderModelToggleValue): void {
+    const parsed = parseProviderModelToggleValue(value)
+    if (!parsed) return
+
+    const profile = profiles.find(candidate => candidate.id === parsed.profileId)
+    if (!profile) {
+      onStatus('Provider profile no longer exists.')
+      setVersion(current => current + 1)
+      return
+    }
+
+    const configured = parseModelList(profile.model).some(
+      model => model.toLowerCase() === parsed.model.toLowerCase(),
+    )
+    const updated = configured
+      ? removeModelsFromProviderProfile(profile.id, [parsed.model])
+      : addModelsToProviderProfile(profile.id, [parsed.model])
+
+    if (!updated) {
+      onStatus(`Could not update ${profile.name}.`)
+      setVersion(current => current + 1)
+      return
+    }
+
+    onStatus(
+      `${configured ? 'Removed' : 'Added'} ${parsed.model} ${
+        configured ? 'from' : 'to'
+      } ${updated.name}.`,
+    )
+    setVersion(current => current + 1)
+  }
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Text color="remember" bold>
+        Add/Remove Models
+      </Text>
+      <TextInput
+        value={query}
+        onChange={setQuery}
+        onSubmit={() => {}}
+        onExit={onBack}
+        placeholder="Search models or providers"
+        focus
+        showCursor
+      />
+      {status ? <Text color="success">{status}</Text> : null}
+      {options.length > 0 ? (
+        <Select
+          options={options}
+          onChange={toggleModel}
+          onCancel={onBack}
+          visibleOptionCount={10}
+        />
+      ) : (
+        <Text dimColor>No matching provider models.</Text>
+      )}
+      <Text dimColor>Press Esc to return to the model picker.</Text>
+    </Box>
   )
 }
 

@@ -1214,6 +1214,14 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     })
   }
 
+  async function activateClaudeMaxOAuthProxySession(): Promise<string | null> {
+    const { ensureClaudeMaxProxyRunning, describeEnsureResult } = await import(
+      '../integrations/anthropicProxies/claudeMaxProxyRuntime.js'
+    )
+    const result = await ensureClaudeMaxProxyRunning()
+    return describeEnsureResult(result)
+  }
+
   async function activateSelectedProvider(profileId: string): Promise<void> {
     let providerLabel = 'provider'
 
@@ -1292,34 +1300,44 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       const xaiActivationWarning = isActiveXaiOAuth
         ? await activateXaiOAuthSession({ model: newModel })
         : null
-      const activationWarning = codexActivationWarning ?? xaiActivationWarning
+      const claudeMaxProxyWarning =
+        active.provider === 'claude-max-proxy'
+          ? await activateClaudeMaxOAuthProxySession()
+          : null
+      const activationWarning =
+        codexActivationWarning ?? xaiActivationWarning ?? claudeMaxProxyWarning
 
       refreshProfiles()
-      const activationMessage = isActiveCodexOAuth
-        ? buildCodexOAuthActivationMessage({
-            prefix: `Activated provider: ${active.name}`,
+      let activationMessage: string
+      if (isActiveCodexOAuth) {
+        activationMessage = buildCodexOAuthActivationMessage({
+          prefix: `Activated provider: ${active.name}`,
+          activationWarning,
+          warnings: [
             activationWarning,
-            warnings: [
-              activationWarning,
-              settingsOverrideError
-                ? `could not clear startup provider override (${settingsOverrideError})`
-                : null,
-            ].filter((warning): warning is string => Boolean(warning)),
-          })
-        : isActiveXaiOAuth
-          ? buildXaiOAuthActivationMessage({
-              prefix: `Activated provider: ${active.name}`,
-              activationWarning,
-              warnings: [
-                activationWarning,
-                settingsOverrideError
-                  ? `could not clear startup provider override (${settingsOverrideError})`
-                  : null,
-              ].filter((warning): warning is string => Boolean(warning)),
-            })
-          : settingsOverrideError
-            ? `Activated provider: ${active.name}. Warning: could not clear startup provider override (${settingsOverrideError}).`
-            : `Activated provider: ${active.name}`
+            settingsOverrideError
+              ? `could not clear startup provider override (${settingsOverrideError})`
+              : null,
+          ].filter((warning): warning is string => Boolean(warning)),
+        })
+      } else if (isActiveXaiOAuth) {
+        activationMessage = buildXaiOAuthActivationMessage({
+          prefix: `Activated provider: ${active.name}`,
+          activationWarning,
+          warnings: [
+            activationWarning,
+            settingsOverrideError
+              ? `could not clear startup provider override (${settingsOverrideError})`
+              : null,
+          ].filter((warning): warning is string => Boolean(warning)),
+        })
+      } else if (claudeMaxProxyWarning) {
+        activationMessage = `Activated provider: ${active.name}. Warning: ${claudeMaxProxyWarning}`
+      } else if (settingsOverrideError) {
+        activationMessage = `Activated provider: ${active.name}. Warning: could not clear startup provider override (${settingsOverrideError}).`
+      } else {
+        activationMessage = `Activated provider: ${active.name}`
+      }
       setStatusMessage(activationMessage)
       setIsActivating(false)
       onDone({

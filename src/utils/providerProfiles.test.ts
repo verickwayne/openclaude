@@ -711,6 +711,36 @@ describe('getProviderProfiles', () => {
     expect(profiles).toHaveLength(1)
     expect(profiles[0]?.provider).toBe('moonshot')
   })
+
+  test('dedupes duplicate visible provider profiles while preserving the active duplicate', async () => {
+    const { getProviderProfiles } = await importFreshProviderProfileModules()
+
+    saveMockGlobalConfig(current => ({
+      ...current,
+      activeProviderProfileId: 'duplicate_active',
+      providerProfiles: [
+        buildProfile({
+          id: 'duplicate_old',
+          provider: 'openai',
+          name: 'OpenAI',
+          baseUrl: 'https://api.openai.com/v1/',
+          model: 'gpt-5.5',
+        }),
+        buildProfile({
+          id: 'duplicate_active',
+          provider: 'openai',
+          name: 'OpenAI',
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-5.5',
+        }),
+      ],
+    }))
+
+    const profiles = getProviderProfiles()
+
+    expect(profiles).toHaveLength(1)
+    expect(profiles[0]?.id).toBe('duplicate_active')
+  })
 })
 
 describe('applyActiveProviderProfileFromConfig', () => {
@@ -1119,6 +1149,44 @@ describe('addModelsToProviderProfile', () => {
     }))
 
     expect(addModelsToProviderProfile('missing', ['x'])).toBeNull()
+  })
+})
+
+describe('removeModelsFromProviderProfile', () => {
+  test('removes models from the target profile model list', async () => {
+    const { removeModelsFromProviderProfile, getProviderProfiles } =
+      await importFreshProviderProfileModules()
+    const profile = buildProfile({
+      id: 'profile_models',
+      provider: 'openai',
+      model: 'gpt-5.5; gpt-5.5-mini; gpt-5.4',
+    })
+
+    saveMockGlobalConfig(current => ({
+      ...current,
+      providerProfiles: [profile],
+      activeProviderProfileId: profile.id,
+    }))
+
+    const updated = removeModelsFromProviderProfile(profile.id, [
+      'gpt-5.5-mini',
+    ])
+
+    expect(updated?.model).toBe('gpt-5.5; gpt-5.4')
+    expect(getProviderProfiles()[0]?.model).toBe('gpt-5.5; gpt-5.4')
+  })
+
+  test('returns null when the profile does not exist', async () => {
+    const { removeModelsFromProviderProfile } =
+      await importFreshProviderProfileModules()
+
+    saveMockGlobalConfig(current => ({
+      ...current,
+      providerProfiles: [],
+      activeProviderProfileId: undefined,
+    }))
+
+    expect(removeModelsFromProviderProfile('missing', ['x'])).toBeNull()
   })
 })
 

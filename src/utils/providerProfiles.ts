@@ -191,16 +191,40 @@ function sanitizeProfile(profile: ProviderProfile): ProviderProfile | null {
   return sanitized
 }
 
-function sanitizeProfiles(profiles: ProviderProfile[] | undefined): ProviderProfile[] {
-  const seen = new Set<string>()
+function getProfileDuplicateKey(profile: ProviderProfile): string {
+  return [
+    profile.provider,
+    profile.name.trim().toLowerCase(),
+    profile.baseUrl.trim().replace(/\/+$/, '').toLowerCase(),
+    profile.model.trim().toLowerCase(),
+  ].join('\0')
+}
+
+function sanitizeProfiles(
+  profiles: ProviderProfile[] | undefined,
+  activeProfileId?: string,
+): ProviderProfile[] {
+  const seenIds = new Set<string>()
+  const seenDuplicateKeys = new Map<string, number>()
   const sanitized: ProviderProfile[] = []
 
   for (const profile of profiles ?? []) {
     const normalized = sanitizeProfile(profile)
-    if (!normalized || seen.has(normalized.id)) {
+    if (!normalized || seenIds.has(normalized.id)) {
       continue
     }
-    seen.add(normalized.id)
+    seenIds.add(normalized.id)
+
+    const duplicateKey = getProfileDuplicateKey(normalized)
+    const duplicateIndex = seenDuplicateKeys.get(duplicateKey)
+    if (duplicateIndex !== undefined) {
+      if (normalized.id === activeProfileId) {
+        sanitized[duplicateIndex] = normalized
+      }
+      continue
+    }
+
+    seenDuplicateKeys.set(duplicateKey, sanitized.length)
     sanitized.push(normalized)
   }
 
@@ -337,7 +361,7 @@ export function ensureClaudeMaxOAuthProxyProfileActive(options?: {
 export function getProviderProfiles(
   config = getGlobalConfig(),
 ): ProviderProfile[] {
-  return sanitizeProfiles(config.providerProfiles)
+  return sanitizeProfiles(config.providerProfiles, config.activeProviderProfileId)
 }
 
 export function hasProviderProfiles(config = getGlobalConfig()): boolean {
@@ -954,6 +978,70 @@ export function addModelsToProviderProfile(
       currentProfile.model,
       newModels,
     )
+
+    if (nextModelField === currentProfile.model) {
+      updatedProfile = currentProfile
+      return current
+    }
+
+    const nextProfile = { ...currentProfile, model: nextModelField }
+    const nextProfiles = [...currentProfiles]
+    nextProfiles[profileIndex] = nextProfile
+    updatedProfile = nextProfile
+
+    const cacheByProfile = {
+      ...(current.openaiAdditionalModelOptionsCacheByProfile ?? {}),
+    }
+    delete cacheByProfile[profileId]
+
+    shouldApply =
+      trimOrUndefined(current.activeProviderProfileId) === profileId
+
+    return {
+      ...current,
+      providerProfiles: nextProfiles,
+      openaiAdditionalModelOptionsCacheByProfile: cacheByProfile,
+    }
+  })
+
+  if (updatedProfile && shouldApply) {
+    applyProviderProfileToProcessEnv(updatedProfile)
+  }
+
+  return updatedProfile
+}
+
+export function removeModelsFromProviderProfile(
+  profileId: string,
+  removedModels: string[],
+): ProviderProfile | null {
+  const removed = new Set(
+    removedModels
+      .map(model => model.trim().toLowerCase())
+      .filter(model => model.length > 0),
+  )
+  if (removed.size === 0) {
+    return getProviderProfiles().find(profile => profile.id === profileId) ?? null
+  }
+
+  let updatedProfile: ProviderProfile | null = null
+  let shouldApply = false
+
+  saveGlobalConfig(current => {
+    const currentProfiles = getProviderProfiles(current)
+    const profileIndex = currentProfiles.findIndex(
+      profile => profile.id === profileId,
+    )
+
+    if (profileIndex < 0) {
+      return current
+    }
+
+    const currentProfile = currentProfiles[profileIndex]
+    const nextModels = parseModelList(currentProfile.model).filter(
+      model => !removed.has(model.toLowerCase()),
+    )
+    const nextModelField = nextModels.join('; ')
 
     if (nextModelField === currentProfile.model) {
       updatedProfile = currentProfile

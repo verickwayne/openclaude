@@ -319,6 +319,8 @@ function mockProviderManagerDependencies(
     updateProviderProfile?: (...args: any[]) => unknown
     setActiveProviderProfile?: (...args: any[]) => unknown
     addModelsToProviderProfile?: (...args: any[]) => unknown
+    ensureClaudeMaxProxyRunning?: (...args: any[]) => Promise<unknown>
+    describeClaudeMaxEnsureResult?: (...args: any[]) => string | null
     useCodexOAuthFlow?: (options: {
       onAuthenticated: (tokens: {
         accessToken: string
@@ -423,6 +425,19 @@ function mockProviderManagerDependencies(
 
   mock.module('../utils/settings/settings.js', () => ({
     updateSettingsForSource: () => ({ error: null }),
+  }))
+
+  mock.module('../integrations/anthropicProxies/claudeMaxProxyRuntime.js', () => ({
+    describeEnsureResult:
+      options?.describeClaudeMaxEnsureResult ?? (() => null),
+    ensureClaudeMaxProxyRunning:
+      options?.ensureClaudeMaxProxyRunning ??
+      (async () => ({ status: 'already-running' })),
+    isProxyHealthy: async () => true,
+    pythonHasModule: () => true,
+    resolveOverlayRoot: () => '/tmp/overlay',
+    resolveProxyBaseUrl: () => 'http://127.0.0.1:8031',
+    resolveProxyPython: () => 'python3',
   }))
 
   mock.module('./useCodexOAuthFlow.js', () => ({
@@ -1814,6 +1829,70 @@ test('ProviderManager activating a multi-model provider sets the session model t
       ({ newState }) => newState.mainLoopModel === 'gpt-5.4; gpt-5.4-mini',
     ),
   ).toBe(false)
+
+  await mounted.dispose()
+})
+
+test('ProviderManager starts the Claude Max proxy when activating Anthropic subscription', async () => {
+  delete process.env.CLAUDE_CODE_SIMPLE
+  delete process.env.CLAUDE_CODE_USE_GITHUB
+  delete process.env.GITHUB_TOKEN
+  delete process.env.GH_TOKEN
+
+  const anthropicSubscriptionProfile = {
+    id: 'provider_claude_max',
+    provider: 'claude-max-proxy',
+    name: 'Anthropic (Subscription)',
+    baseUrl: 'http://127.0.0.1:8031',
+    model: 'claude-fable-5',
+    apiKey: '',
+  }
+
+  const setActiveProviderProfile = mock(() => anthropicSubscriptionProfile)
+  const ensureClaudeMaxProxyRunning = mock(async () => ({ status: 'started' }))
+
+  mockProviderManagerDependencies(
+    () => undefined,
+    async () => undefined,
+    {
+      getProviderProfiles: () => [anthropicSubscriptionProfile],
+      setActiveProviderProfile,
+      ensureClaudeMaxProxyRunning,
+    },
+  )
+
+  const nonce = `${Date.now()}-${Math.random()}`
+  const { ProviderManager } = await import(`./ProviderManager.js?ts=${nonce}`)
+  const mounted = await mountProviderManager(ProviderManager)
+
+  await waitForFrameOutput(
+    mounted.getOutput,
+    frame =>
+      frame.includes('Provider manager') &&
+      frame.includes('Activate Provider'),
+  )
+
+  mounted.stdin.write('j')
+  await Bun.sleep(25)
+  mounted.stdin.write('j')
+  await Bun.sleep(25)
+  mounted.stdin.write('\r')
+
+  await waitForFrameOutput(
+    mounted.getOutput,
+    frame =>
+      frame.includes('Activate Provider') &&
+      frame.includes('Anthropic (Subscription)'),
+  )
+
+  await Bun.sleep(25)
+  mounted.stdin.write('\r')
+
+  await waitForCondition(() => setActiveProviderProfile.mock.calls.length > 0)
+  await waitForCondition(() => ensureClaudeMaxProxyRunning.mock.calls.length > 0)
+
+  expect(setActiveProviderProfile).toHaveBeenCalledWith('provider_claude_max')
+  expect(ensureClaudeMaxProxyRunning).toHaveBeenCalled()
 
   await mounted.dispose()
 })

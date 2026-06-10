@@ -1,9 +1,14 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { expect, test } from 'bun:test'
 
 import {
   describeEnsureResult,
   pythonHasModule,
   resolveOverlayRoot,
+  resolveProxyPython,
   resolveProxyBaseUrl,
 } from './claudeMaxProxyRuntime.js'
 
@@ -26,6 +31,27 @@ test('resolveOverlayRoot honors CLAUDE_MAX_OVERLAY_ROOT', () => {
 test('resolveOverlayRoot defaults under the home directory', () => {
   const root = resolveOverlayRoot({})
   expect(root.endsWith('Projects/research/ClaudeMax-OAuth-Overlay')).toBe(true)
+})
+
+test('resolveProxyPython prefers explicit env then overlay venv then python3', () => {
+  const root = mkdtempSync(join(tmpdir(), 'openclaude-overlay-'))
+  try {
+    expect(
+      resolveProxyPython({ CLAUDE_MAX_PROXY_PYTHON: '/custom/python' }, root),
+    ).toBe('/custom/python')
+
+    const venvBin = join(root, '.venv', 'bin')
+    mkdirSync(venvBin, { recursive: true })
+    const venvPython = join(venvBin, 'python')
+    writeFileSync(venvPython, '')
+    expect(resolveProxyPython({}, root)).toBe(venvPython)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+
+  expect(resolveProxyPython({}, join(tmpdir(), 'missing-overlay'))).toBe(
+    'python3',
+  )
 })
 
 test('describeEnsureResult is silent on success, actionable on failure', () => {

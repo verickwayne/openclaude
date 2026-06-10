@@ -1,6 +1,7 @@
 // src/utils/model/multiProviderOptions.test.ts
 import { expect, test, describe } from 'bun:test'
 import {
+  ADD_REMOVE_MODELS_VALUE,
   getAllProviderModelOptions,
   classifyProviderGroup,
   getGroupedProviderModelOptions,
@@ -161,6 +162,63 @@ describe('getGroupedProviderModelOptions', () => {
     ])
   })
 
+  test('adds curated defaults and availability marker for logged-in providers', () => {
+    const opts = getGroupedProviderModelOptions({
+      firstPartyOptions: [],
+      profiles: [
+        {
+          id: 'anthropic',
+          name: 'Anthropic (Subscription)',
+          provider: 'claude-max-proxy',
+          baseUrl: 'http://127.0.0.1:8031',
+          model: 'claude-fable-5',
+        },
+        {
+          id: 'openai',
+          name: 'OpenAI (Subscription)',
+          provider: 'openai',
+          baseUrl: 'https://chatgpt.com/backend-api/codex',
+          model: 'gpt-5.5',
+        },
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          provider: 'openrouter',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          model: 'openai/gpt-5-mini',
+        },
+      ] as any[],
+    })
+
+    expect(opts.some(o => o.value === 'claude-opus-4-8')).toBe(true)
+    expect(opts.some(o => o.value === 'sonnet')).toBe(true)
+    expect(opts.some(o => o.value === 'haiku')).toBe(true)
+    expect(opts.some(o => o.value === 'claude-fable-5')).toBe(true)
+    expect(opts.some(o => o.value === 'gpt-5.5-mini')).toBe(true)
+    expect(opts.some(o => o.value === 'deepseek/deepseek-chat-v3-0324')).toBe(true)
+    expect(opts.find(o => o.value === 'claude-opus-4-8')?.label).toStartWith('● ')
+    expect(opts.find(o => o.value === 'gpt-5.5-mini')?.label).toStartWith('● ')
+    expect(opts.find(o => o.value === 'deepseek/deepseek-chat-v3-0324')?.label).toStartWith('● ')
+  })
+
+  test('appends Add/Remove Models action when provider profiles exist', () => {
+    const opts = getGroupedProviderModelOptions({
+      firstPartyOptions: [],
+      profiles: [
+        {
+          id: 'openai',
+          name: 'OpenAI',
+          provider: 'openai',
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-5.5',
+        },
+      ] as any[],
+    })
+
+    expect(opts.at(-1)?.value).toBe(ADD_REMOVE_MODELS_VALUE)
+    expect(opts.at(-1)?.label).toBe('Add/Remove Models')
+  })
+
   test('header items are marked disabled', () => {
     const opts = getGroupedProviderModelOptions({
       firstPartyOptions: [{ value: 'claude-a', label: 'A', description: '' }],
@@ -198,8 +256,13 @@ describe('getGroupedProviderModelOptions', () => {
     expect(modelEntries.find(o => o.value === 'dup-model')?.providerId).toBe('first-party')
   })
 
-  test('returns empty list when no first-party options and no profiles', () => {
+  test('still includes pinned Anthropic models when no first-party options and no profiles are passed', () => {
     const opts = getGroupedProviderModelOptions({ firstPartyOptions: [], profiles: [] })
-    expect(opts).toEqual([])
+    expect(opts.some(o => o.value === 'claude-opus-4-8')).toBe(true)
+    expect(opts.some(o => o.value === 'claude-fable-5')).toBe(true)
+    expect(opts.find(o => o.value === 'claude-opus-4-8')?.label).toBe(
+      'Opus 4.8',
+    )
+    expect(opts.some(o => o.value === ADD_REMOVE_MODELS_VALUE)).toBe(false)
   })
 })

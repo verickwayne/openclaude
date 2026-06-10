@@ -104,6 +104,19 @@ function resolveBind(baseUrl: string): { host: string; port: string } {
   return { host: parsed.hostname, port: parsed.port || '80' }
 }
 
+export function resolveProxyPython(
+  processEnv: NodeJS.ProcessEnv,
+  overlayRoot: string,
+): string {
+  const explicit = processEnv.CLAUDE_MAX_PROXY_PYTHON?.trim()
+  if (explicit) return explicit
+
+  const venvPython = join(overlayRoot, '.venv', 'bin', 'python')
+  if (existsSync(venvPython)) return venvPython
+
+  return 'python3'
+}
+
 /**
  * Ensure the Claude Max overlay proxy is reachable, starting it if needed.
  * Idempotent: a healthy proxy short-circuits immediately. The spawned
@@ -128,7 +141,7 @@ export async function ensureClaudeMaxProxyRunning(options?: {
   }
 
   const bind = resolveBind(baseUrl)
-  const python = processEnv.CLAUDE_MAX_PROXY_PYTHON?.trim() || 'python3'
+  const python = resolveProxyPython(processEnv, overlayRoot)
 
   if (!pythonHasModule(python, 'curl_cffi')) {
     return { status: 'missing-curl-cffi', python }
