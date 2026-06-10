@@ -47,7 +47,11 @@ import {
   resolveRouteIdFromBaseUrl,
 } from '../integrations/index.js'
 import { openAIShimSupportsApiFormatForModel } from '../integrations/runtimeMetadata.js'
-import { probeRouteReadiness } from '../integrations/discoveryService.js'
+import {
+  discoverModelsForRoute,
+  probeRouteReadiness,
+} from '../integrations/discoveryService.js'
+import type { ModelCatalogEntry } from '../integrations/descriptors.js'
 import {
   addModelsToProviderProfile,
   addProviderProfile,
@@ -84,6 +88,7 @@ import {
   type OptionWithDescription,
   Select,
 } from './CustomSelect/index.js'
+import { FuzzyPicker } from './design-system/FuzzyPicker.js'
 import { Pane } from './design-system/Pane.js'
 import TextInput from './TextInput.js'
 import { useCodexOAuthFlow } from './useCodexOAuthFlow.js'
@@ -122,6 +127,7 @@ type Screen =
   | 'select-edit'
   | 'select-delete'
   | 'select-add-models-profile'
+  | 'add-models-search'
   | 'add-models-input'
 
 type DraftField =
@@ -155,6 +161,12 @@ type AtomicChatSelectionState =
       defaultValue?: string
     }
   | { state: 'unavailable'; message: string }
+
+type AddModelsCatalogState =
+  | { state: 'idle' }
+  | { state: 'loading'; profileName: string }
+  | { state: 'ready'; profileName: string; options: ModelCatalogEntry[] }
+  | { state: 'unavailable'; profileName: string; message: string }
 
 const FORM_STEPS: Array<{
   key: DraftField
@@ -761,6 +773,11 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     null,
   )
   const [addModelsInput, setAddModelsInput] = React.useState('')
+  const [addModelsCatalog, setAddModelsCatalog] =
+    React.useState<AddModelsCatalogState>({ state: 'idle' })
+  const [filteredAddModelOptions, setFilteredAddModelOptions] = React.useState<
+    ModelCatalogEntry[]
+  >([])
   const [draftProvider, setDraftProvider] = React.useState<ProviderProfile['provider']>(
     'openai',
   )
@@ -1880,6 +1897,8 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
   function handleBackFromAddModelsInput(): void {
     setErrorMessage(undefined)
     setAddModelsInput('')
+    setAddModelsCatalog({ state: 'idle' })
+    setFilteredAddModelOptions([])
     setCursorOffset(0)
     setScreen('select-add-models-profile')
   }
@@ -2207,13 +2226,98 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     )
   }
 
-  function startAddModelsForProfile(profileId: string): void {
+  function filterCatalogOptions(
+    options: ModelCatalogEntry[],
+    query: string,
+  ): ModelCatalogEntry[] {
+    const normalized = query.trim().toLowerCase()
+    if (!normalized) {
+      return options
+    }
+
+    return options.filter(option =>
+      [
+        option.apiName,
+        option.label,
+        option.notes,
+        option.modelDescriptorId,
+      ]
+        .filter(Boolean)
+        .some(value => String(value).toLowerCase().includes(normalized)),
+    )
+  }
+
+  function getAddModelsRouteId(profile: ProviderProfile): string | null {
+    return (
+      resolveProfileRoute(profile.provider).routeId ??
+      resolveRouteIdFromBaseUrl(profile.baseUrl)
+    )
+  }
+
+  function startManualAddModelsInput(profileId: string, seed?: string): void {
     setAddModelsProfileId(profileId)
-    const seeded = SUGGESTED_ADD_MODEL_IDS.join(', ')
+    const seeded = seed ?? SUGGESTED_ADD_MODEL_IDS.join(', ')
     setAddModelsInput(seeded)
     setCursorOffset(seeded.length)
     setErrorMessage(undefined)
     setScreen('add-models-input')
+  }
+
+  function startAddModelsForProfile(profileId: string): void {
+    setAddModelsProfileId(profileId)
+    setErrorMessage(undefined)
+    const profile = profiles.find(entry => entry.id === profileId)
+    if (!profile) {
+      setErrorMessage('No provider selected.')
+      return
+    }
+
+    const routeId = getAddModelsRouteId(profile)
+    const catalog = routeId ? getRouteDescriptor(routeId)?.catalog : null
+    if (!routeId || !catalog?.discovery) {
+      startManualAddModelsInput(profileId)
+      return
+    }
+
+    setAddModelsCatalog({ state: 'loading', profileName: profile.name })
+    setFilteredAddModelOptions([])
+    setScreen('add-models-search')
+
+    void discoverModelsForRoute(routeId, {
+      baseUrl: profile.baseUrl,
+      apiKey: profile.apiKey,
+      headers: profile.customHeaders,
+    })
+      .then(result => {
+        if (!result || result.models.length === 0) {
+          setAddModelsCatalog({
+            state: 'unavailable',
+            profileName: profile.name,
+            message: 'No model catalog entries were returned for this provider.',
+          })
+          return
+        }
+
+        const existing = new Set(
+          parseModelList(profile.model).map(model => model.toLowerCase()),
+        )
+        const options = result.models.filter(
+          model => !model.hidden && !existing.has(model.apiName.toLowerCase()),
+        )
+        setAddModelsCatalog({
+          state: 'ready',
+          profileName: profile.name,
+          options,
+        })
+        setFilteredAddModelOptions(options)
+      })
+      .catch(error => {
+        setAddModelsCatalog({
+          state: 'unavailable',
+          profileName: profile.name,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      })
   }
 
   function commitAddModels(rawInput: string): void {
@@ -2254,6 +2358,107 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
         : `No new models added to ${updated.name} (already present)`,
     )
     returnToMenu()
+  }
+
+  function renderAddModelsSearch(): React.ReactNode {
+    if (addModelsCatalog.state === 'loading') {
+      return (
+        <Box flexDirection="column" gap={1}>
+          <Text color="remember" bold>
+            Search provider models
+          </Text>
+          <Text dimColor>
+            Loading model catalog for {addModelsCatalog.profileName}...
+          </Text>
+        </Box>
+      )
+    }
+
+    if (addModelsCatalog.state === 'unavailable') {
+      return (
+        <Box flexDirection="column" gap={1}>
+          <Text color="remember" bold>
+            Search provider models
+          </Text>
+          <Text dimColor>{addModelsCatalog.message}</Text>
+          <Select
+            options={[
+              {
+                value: 'manual',
+                label: 'Enter manually',
+                description: 'Type one or more model IDs yourself',
+              },
+              {
+                value: 'back',
+                label: 'Back',
+                description: 'Choose another provider',
+              },
+            ]}
+            onChange={(value: string) => {
+              if (value === 'manual' && addModelsProfileId) {
+                startManualAddModelsInput(addModelsProfileId)
+                return
+              }
+              setScreen('select-add-models-profile')
+            }}
+            onCancel={() => setScreen('select-add-models-profile')}
+            visibleOptionCount={2}
+          />
+        </Box>
+      )
+    }
+
+    if (addModelsCatalog.state !== 'ready') {
+      return renderAddModelsInput()
+    }
+
+    return (
+      <FuzzyPicker
+        title={`Search ${addModelsCatalog.profileName} models`}
+        placeholder="Search by model, vendor, or price..."
+        items={filteredAddModelOptions}
+        getKey={item => item.apiName}
+        visibleCount={10}
+        onQueryChange={query => {
+          setFilteredAddModelOptions(
+            filterCatalogOptions(addModelsCatalog.options, query),
+          )
+        }}
+        onSelect={item => {
+          commitAddModels(item.apiName)
+        }}
+        onTab={{
+          action: 'manual entry',
+          handler: item => {
+            if (addModelsProfileId) {
+              startManualAddModelsInput(addModelsProfileId, item.apiName)
+            }
+          },
+        }}
+        onCancel={() => setScreen('select-add-models-profile')}
+        emptyMessage="No matching models"
+        matchLabel={`${filteredAddModelOptions.length} models`}
+        selectAction="add model"
+        renderItem={(item, isFocused) => (
+          <Text color={isFocused ? 'permission' : undefined}>
+            {item.label ?? item.apiName}
+            {item.notes ? <Text dimColor> · {item.notes}</Text> : null}
+          </Text>
+        )}
+        renderPreview={item => (
+          <Box flexDirection="column">
+            <Text bold>{item.label ?? item.apiName}</Text>
+            <Text dimColor>{item.apiName}</Text>
+            {item.notes ? <Text dimColor>{item.notes}</Text> : null}
+            {item.contextWindow ? (
+              <Text dimColor>
+                Context: {item.contextWindow.toLocaleString()} tokens
+              </Text>
+            ) : null}
+          </Box>
+        )}
+      />
+    )
   }
 
   function renderAddModelsInput(): React.ReactNode {
@@ -2846,6 +3051,9 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
           startAddModelsForProfile(profileId)
         },
       )
+      break
+    case 'add-models-search':
+      content = renderAddModelsSearch()
       break
     case 'add-models-input':
       content = renderAddModelsInput()

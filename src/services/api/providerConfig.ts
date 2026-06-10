@@ -745,7 +745,12 @@ export function resolveProviderRequest(options?: {
       ? normalizeGithubModelsApiModel(descriptor.baseModel)
       : descriptor.baseModel)
 
-  const reasoning = options?.reasoningEffortOverride
+  const isLocalRequestBaseUrl = finalBaseUrl
+    ? isLocalProviderUrl(finalBaseUrl)
+    : false
+  const reasoning = isLocalRequestBaseUrl
+    ? undefined
+    : options?.reasoningEffortOverride
     ? { effort: options.reasoningEffortOverride }
     : descriptor.reasoning
 

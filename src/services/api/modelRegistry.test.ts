@@ -34,6 +34,24 @@ test('resolveProviderForModel returns a ResolvedProvider for a known model', () 
   expect(rp?.model).toBe('openai/gpt-5.5')
 })
 
+test('claude-max-proxy profiles route as Anthropic proxy, not OpenAI-compatible', () => {
+  const rp = resolveProviderForModel('claude-sonnet-4-5', {
+    firstPartyModels: [],
+    profiles: [
+      {
+        id: 'claude-max',
+        name: 'Anthropic (Subscription)',
+        provider: 'claude-max-proxy',
+        baseUrl: 'http://127.0.0.1:8031',
+        model: 'claude-sonnet-4-5',
+      },
+    ] as any[],
+  })
+
+  expect(rp?.kind).toBe('anthropic-proxy')
+  expect(rp?.baseURL).toBe('http://127.0.0.1:8031')
+})
+
 test('resolveProviderForModel returns null for an unknown model', () => {
   const rp = resolveProviderForModel('mystery-model', { firstPartyModels: [], profiles: [] })
   expect(rp).toBeNull()

@@ -190,6 +190,66 @@ test('first-party Anthropic requests execute the configured fetch wrapper withou
   expect(capturedHeaders).toBeDefined()
 })
 
+test('local Anthropic proxy uses ANTHROPIC_BASE_URL without forwarding stale bearer token', async () => {
+  let capturedUrl: string | undefined
+  let capturedHeaders: Headers | undefined
+
+  delete process.env.CLAUDE_CODE_USE_GEMINI
+  delete process.env.GEMINI_API_KEY
+  delete process.env.GEMINI_MODEL
+  delete process.env.GEMINI_BASE_URL
+  delete process.env.GEMINI_AUTH_MODE
+  process.env.ANTHROPIC_BASE_URL = 'http://127.0.0.1:8031'
+  process.env.ANTHROPIC_AUTH_TOKEN = 'stale-env-token'
+
+  const fetchOverride = (async (input, init) => {
+    capturedUrl =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+    capturedHeaders = new Headers(init?.headers)
+
+    return new Response(
+      JSON.stringify({
+        id: 'msg_local_proxy_fetch',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-sonnet-4-5',
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        container: null,
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    )
+  }) as FetchType
+
+  const client = await getAnthropicClient({
+    maxRetries: 0,
+    model: 'claude-sonnet-4-5',
+    fetchOverride,
+  })
+
+  await client.messages.create({
+    model: 'claude-sonnet-4-5',
+    messages: [{ role: 'user', content: 'hello' }],
+    max_tokens: 64,
+  })
+
+  expect(capturedUrl).toStartWith('http://127.0.0.1:8031/')
+  expect(capturedHeaders?.get('authorization')).not.toBe('Bearer stale-env-token')
+})
+
 test('routes Gemini provider requests through the OpenAI-compatible shim', async () => {
   let capturedUrl: string | undefined
   let capturedHeaders: Headers | undefined

@@ -1,4 +1,60 @@
 import { defineGateway } from '../define.js'
+import type { ModelCatalogEntry } from '../descriptors.js'
+
+function formatOpenRouterUsdPerMillion(value: unknown): string | null {
+  const numeric = typeof value === 'string' ? Number(value) : Number.NaN
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return null
+  }
+
+  const perMillion = numeric * 1_000_000
+  if (perMillion === 0) {
+    return '$0'
+  }
+
+  return `$${perMillion >= 1 ? perMillion.toFixed(2) : perMillion.toPrecision(2)}`
+}
+
+function mapOpenRouterModel(raw: unknown): ModelCatalogEntry | null {
+  if (!raw || typeof raw !== 'object') {
+    return null
+  }
+
+  const model = raw as {
+    id?: unknown
+    name?: unknown
+    context_length?: unknown
+    pricing?: {
+      prompt?: unknown
+      completion?: unknown
+    }
+  }
+  if (typeof model.id !== 'string' || model.id.trim().length === 0) {
+    return null
+  }
+
+  const inputPrice = formatOpenRouterUsdPerMillion(model.pricing?.prompt)
+  const outputPrice = formatOpenRouterUsdPerMillion(model.pricing?.completion)
+  const priceNote =
+    inputPrice || outputPrice
+      ? `OpenRouter price: input ${inputPrice ?? '?'} / output ${outputPrice ?? '?'} per 1M tokens`
+      : undefined
+  const contextNote =
+    typeof model.context_length === 'number' && Number.isFinite(model.context_length)
+      ? `context ${model.context_length.toLocaleString()}`
+      : undefined
+  const notes = [priceNote, contextNote].filter(Boolean).join(' · ')
+
+  return {
+    id: model.id,
+    apiName: model.id,
+    label: typeof model.name === 'string' && model.name.trim() ? model.name : model.id,
+    ...(typeof model.context_length === 'number' && Number.isFinite(model.context_length)
+      ? { contextWindow: model.context_length }
+      : {}),
+    ...(notes ? { notes } : {}),
+  }
+}
 
 export default defineGateway({
   id: 'openrouter',
@@ -29,7 +85,10 @@ export default defineGateway({
   },
   catalog: {
     source: 'hybrid',
-    discovery: { kind: 'openai-compatible' },
+    discovery: {
+      kind: 'openai-compatible',
+      mapModel: mapOpenRouterModel,
+    },
     discoveryCacheTtl: '1d',
     discoveryRefreshMode: 'background-if-stale',
     allowManualRefresh: true,

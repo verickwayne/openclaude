@@ -94,6 +94,17 @@ export function isTrustedAnthropicBaseURL(baseURL?: string): boolean {
   }
 }
 
+function isLoopbackBaseURL(baseURL?: string): boolean {
+  if (!baseURL) return false
+  try {
+    const { hostname } = new URL(baseURL)
+    const host = hostname.toLowerCase()
+    return host === '127.0.0.1' || host === 'localhost' || host === '::1'
+  } catch {
+    return false
+  }
+}
+
 const importRuntimeModule = new Function(
   'specifier',
   'return import(specifier)',
@@ -292,6 +303,13 @@ export async function getAnthropicClient({
     defaultHeaders['x-anthropic-additional-protection'] = 'true'
   }
 
+  const anthropicBaseURL = process.env.ANTHROPIC_BASE_URL?.trim()
+  const isLocalAnthropicProxy =
+    isLoopbackBaseURL(anthropicBaseURL) ||
+    (
+      providerOverride?.kind === 'anthropic-proxy' &&
+      isLoopbackBaseURL(providerOverride.baseURL)
+    )
   const shouldUseFirstPartyAuth =
     shouldUseFirstPartyAnthropicAuth(providerOverride)
 
@@ -304,7 +322,7 @@ export async function getAnthropicClient({
   const isClaudeAiSubscriber =
     shouldUseFirstPartyAuth && isClaudeAISubscriber()
 
-  if (shouldUseFirstPartyAuth && !isClaudeAiSubscriber) {
+  if (shouldUseFirstPartyAuth && !isClaudeAiSubscriber && !isLocalAnthropicProxy) {
     await configureApiKeyHeaders(defaultHeaders, getIsNonInteractiveSession())
   }
 
@@ -348,19 +366,26 @@ export async function getAnthropicClient({
     // Anthropic credentials ONLY for trusted hosts (review #5) — a profile
     // pointed at an untrusted host gets only its own explicit credentials.
     const trusted = isTrustedAnthropicBaseURL(providerOverride.baseURL)
+    const isLocalAnthropicProxy =
+      providerOverride.kind === 'anthropic-proxy' &&
+      isLoopbackBaseURL(providerOverride.baseURL)
     const overrideArgs: ConstructorParameters<typeof Anthropic>[0] = {
       ...ARGS,
       ...(providerOverride.baseURL
         ? { baseURL: providerOverride.baseURL }
         : {}),
-      apiKey: trusted
-        ? (providerOverride.apiKey ?? getAnthropicApiKey() ?? null)
-        : (providerOverride.apiKey ?? null),
-      authToken: trusted
-        ? (providerOverride.oauthAccessToken ??
-          getClaudeAIOAuthTokens()?.accessToken ??
-          undefined)
-        : (providerOverride.oauthAccessToken ?? undefined),
+      apiKey: isLocalAnthropicProxy
+        ? 'local-claude-max-proxy'
+        : trusted
+          ? (providerOverride.apiKey ?? getAnthropicApiKey() ?? null)
+          : (providerOverride.apiKey ?? null),
+      authToken: isLocalAnthropicProxy
+        ? null
+        : trusted
+          ? (providerOverride.oauthAccessToken ??
+            getClaudeAIOAuthTokens()?.accessToken ??
+            undefined)
+          : (providerOverride.oauthAccessToken ?? undefined),
       ...(isDebugToStdErr() && { logger: createStderrLogger() }),
     }
     return new Anthropic(overrideArgs)
@@ -570,10 +595,17 @@ export async function getAnthropicClient({
 
   // Determine authentication method based on available tokens
   const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
-    apiKey: isClaudeAiSubscriber ? null : apiKey || getAnthropicApiKey(),
-    authToken: isClaudeAiSubscriber
-      ? getClaudeAIOAuthTokens()?.accessToken
-      : undefined,
+    apiKey: isLocalAnthropicProxy
+      ? 'local-claude-max-proxy'
+      : isClaudeAiSubscriber
+        ? null
+        : apiKey || getAnthropicApiKey(),
+    authToken: isLocalAnthropicProxy
+      ? null
+      : isClaudeAiSubscriber
+        ? getClaudeAIOAuthTokens()?.accessToken
+        : undefined,
+    ...(anthropicBaseURL ? { baseURL: anthropicBaseURL } : {}),
     // Set baseURL from OAuth config when using staging OAuth
     ...(process.env.USER_TYPE === 'ant' &&
     isEnvTruthy(process.env.USE_STAGING_OAUTH)

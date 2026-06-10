@@ -43,6 +43,9 @@ export function firstPartyResolvedProvider(model: string): ResolvedProvider {
 function kindFromProfile(profile: ProviderProfile): ResolvedProviderKind {
   const provider = profile.provider ?? 'openai'
   const baseUrl = (profile.baseUrl ?? '').toLowerCase()
+  if (provider === 'claude-max-proxy') {
+    return 'anthropic-proxy'
+  }
   if (provider === 'anthropic') {
     // A local/loopback Anthropic base URL is the Claude Max OAuth proxy.
     if (baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost')) {

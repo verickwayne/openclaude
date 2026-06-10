@@ -240,6 +240,46 @@ describe('discoverModelsForRoute', () => {
     expect(result?.models[0]?.label).toBe('GPT-5 Mini (via OpenRouter)')
   })
 
+  test('OpenRouter discovery maps pricing metadata into model notes', async () => {
+    const { discoverModelsForRoute } = await loadDiscoveryServiceModule()
+
+    process.env.OPENROUTER_API_KEY = 'or-key'
+    setMockFetch(mock(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'anthropic/claude-opus-expensive',
+                name: 'Claude Opus Expensive',
+                context_length: 200000,
+                pricing: {
+                  prompt: '0.000015',
+                  completion: '0.000075',
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    ) as unknown as typeof globalThis.fetch)
+
+    const result = await discoverModelsForRoute('openrouter', {
+      forceRefresh: true,
+    })
+
+    const opus = result?.models.find(
+      (model: { apiName: string }) =>
+        model.apiName === 'anthropic/claude-opus-expensive',
+    )
+    expect(opus?.label).toBe('Claude Opus Expensive')
+    expect(opus?.notes).toContain('input $15.00')
+    expect(opus?.notes).toContain('output $75.00')
+    expect(opus?.notes).toContain('per 1M tokens')
+    expect(opus?.contextWindow).toBe(200000)
+  })
+
   test('openai-compatible discovery applies descriptor static headers with auth', async () => {
     const { discoverModelsForRoute } = await loadDiscoveryServiceModule()
 
