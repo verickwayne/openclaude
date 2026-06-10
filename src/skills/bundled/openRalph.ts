@@ -200,12 +200,13 @@ PY
 SESSION_ID="$(read_json_field session_id)"
 EVENT="$(read_json_field hook_event_name)"
 TOOL_NAME="$(read_json_field tool_name)"
+TOOL_USE_ID="$(read_json_field tool_use_id)"
 CWD_VALUE="$(read_json_field cwd)"
 TRANSCRIPT="$(read_json_field transcript_path)"
 [[ -n "$SESSION_ID" ]] || SESSION_ID="\${CLAUDE_CODE_SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 SESSION_STATE_DIR="$RALPH_DIR/sessions/$SESSION_ID"
 ACTIVE_SESSION="$(cat "$RALPH_DIR/active-session" 2>/dev/null || true)"
-export SESSION_ID SESSION_STATE_DIR EVENT TOOL_NAME CWD_VALUE TRANSCRIPT
+export SESSION_ID SESSION_STATE_DIR EVENT TOOL_NAME TOOL_USE_ID CWD_VALUE TRANSCRIPT
 
 # Always write bridge and project-level log (unconditional).
 # Session-level log and Stop gate only fire when this session owns a state dir.
@@ -228,6 +229,33 @@ with open(project_log_path, "a", encoding="utf-8") as f:
   f.write(json.dumps(event, separators=(",", ":")) + "\\n")
 PY
 
+# ── Dispatch start-timestamp (PreToolUse Agent) ───────────────────────────────
+# Write a per-call start marker so PostToolUse can compute elapsed duration_s.
+#
+# Correlation: tool_use_id is present in both PreToolUse and PostToolUse hook
+# inputs (see PreToolUseHookInput / PostToolUseHookInput in coreTypes.generated.ts).
+# Each Agent tool call gets a unique tool_use_id, so a marker keyed by it is
+# exactly correlated with its PostToolUse counterpart even if two Agent calls
+# somehow ran in parallel. That said, the OpenRalph scheduler dispatches personas
+# serially — one Agent call per turn — so in practice at most one marker exists
+# at a time. A second PreToolUse arriving before its matching PostToolUse (which
+# cannot happen in normal serial dispatch) would simply overwrite the earlier
+# marker; the earlier PostToolUse would then find no marker and leave duration_s
+# null rather than producing a wrong value. All IO failures are silenced (|| true).
+if [[ "$EVENT" == "PreToolUse" && "$TOOL_NAME" == "Agent" && -n "$TOOL_USE_ID" ]]; then
+  python3 - "$RALPH_DIR/bridges/start-\${TOOL_USE_ID}.ts" <<'PY' || true
+import os, sys, time
+marker_path = sys.argv[1]
+try:
+  os.makedirs(os.path.dirname(marker_path), exist_ok=True)
+  with open(marker_path, "w", encoding="utf-8") as f:
+    f.write(str(time.time()))
+except Exception:
+  pass
+PY
+fi
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Routing Outcome Ledger capture ────────────────────────────────────────────
 # On PostToolUse where tool_name == Agent, extract the persona-result YAML block
 # from the tool response and append one JSONL record to the cross-session ledger.
@@ -246,7 +274,8 @@ except Exception:
   print("")
 PY
 )"
-  export TOOL_RESPONSE TOOL_INPUT_RAW
+  START_MARKER="$RALPH_DIR/bridges/start-\${TOOL_USE_ID}.ts"
+  export TOOL_RESPONSE TOOL_INPUT_RAW START_MARKER
   python3 - "$RALPH_DIR/ledger/outcomes.jsonl" "$SESSION_STATE_DIR/session.json" <<'PY' || true
 import json, os, re, sys, time
 ledger_path, session_json_path = sys.argv[1], sys.argv[2]
@@ -314,8 +343,21 @@ try:
 except Exception:
   pass
 
-# duration_s: not available from hook stdin; set null.
+# duration_s: read the PreToolUse start marker (keyed by tool_use_id) and
+# compute elapsed seconds as an integer using wall-clock time (time.time()).
+# The PreToolUse and PostToolUse hook invocations are separate subprocesses so
+# time.monotonic() would not correlate across them; time.time() is the right
+# instrument here and is precise enough for per-dispatch durations.
+# All failure paths leave duration_s None — the ledger record is never blocked.
 duration_s = None
+start_marker = os.environ.get("START_MARKER", "")
+if start_marker:
+  try:
+    with open(start_marker, "r", encoding="utf-8") as _mf:
+      start_ts = float(_mf.read().strip())
+    duration_s = int(time.time() - start_ts)
+  except Exception:
+    pass
 
 record = {
   "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -329,6 +371,14 @@ record = {
   "new_gaps": new_gaps,
   "duration_s": duration_s,
 }
+
+# Clean up the start marker regardless of whether we write a ledger row.
+# Silenced so a missing or unreadable marker never raises.
+if start_marker:
+  try:
+    os.remove(start_marker)
+  except Exception:
+    pass
 
 # Skip if we got no signal fields — nothing useful to record.
 if not any([task_slug, provider_model_used, status]):

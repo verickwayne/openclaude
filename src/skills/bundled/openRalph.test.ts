@@ -776,3 +776,124 @@ test('scheduler contract mentions adopt script and treats adopted progress.md/qu
   // Must mention lineage field.
   expect(text).toContain('lineage')
 })
+
+// ── duration_s capture tests ──────────────────────────────────────────────────
+
+test('hook PreToolUse Agent writes a start-marker file keyed by tool_use_id', () => {
+  const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
+  // PreToolUse block must be gated on EVENT==PreToolUse, TOOL_NAME==Agent, and
+  // a non-empty TOOL_USE_ID so it never fires for non-Agent events.
+  expect(hook).toContain('"$EVENT" == "PreToolUse" && "$TOOL_NAME" == "Agent"')
+  expect(hook).toContain('-n "$TOOL_USE_ID"')
+  // The marker path must be keyed by tool_use_id so pre/post pairs correlate exactly.
+  expect(hook).toMatch(/start-.*TOOL_USE_ID/)
+  // The write must use time.time() — wall-clock — because pre and post are separate
+  // subprocess invocations; time.monotonic() would not correlate across them.
+  expect(hook).toContain('time.time()')
+  // The entire block must be silenced (|| true) so a failing marker write never
+  // blocks the PreToolUse hook or causes a permission denial.
+  const preBlock = hook.slice(
+    hook.indexOf('"$EVENT" == "PreToolUse"'),
+    hook.indexOf('# ─────────────────────────────────────────────────────────────────────────────\n\n# ── Routing'),
+  )
+  expect(preBlock).toContain('|| true')
+})
+
+test('hook PostToolUse ledger block reads start-marker and computes integer duration_s', () => {
+  const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
+  // START_MARKER env var must be set from RALPH_DIR/bridges/start-${TOOL_USE_ID}
+  // before the Python ledger block runs.
+  expect(hook).toContain('START_MARKER=')
+  expect(hook).toContain('export TOOL_RESPONSE TOOL_INPUT_RAW START_MARKER')
+  // Python must read the marker and cast elapsed to int.
+  expect(hook).toContain('duration_s = int(time.time() - start_ts)')
+  // All failure paths must leave duration_s None (try/except wraps the read).
+  const afterStartMarker = hook.slice(hook.indexOf('duration_s = None'))
+  expect(afterStartMarker).toContain('except Exception:')
+  // The start marker must be deleted after duration capture (cleanup before ledger write).
+  expect(hook).toContain('os.remove(start_marker)')
+})
+
+test('hook serial-assumption comment is present in the PreToolUse block', () => {
+  const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
+  // The comment must document why tool_use_id keying is preferred over a serial slot,
+  // and note that the serial dispatch assumption is what makes the fallback safe.
+  expect(hook).toContain('serially')
+  expect(hook).toContain('tool_use_id')
+  // Comment must explain the overlap/overwrite behaviour for the non-serial edge case.
+  expect(hook).toMatch(/overwrite|second PreToolUse/)
+})
+
+test('hook PreToolUse to PostToolUse round-trip produces integer duration_s in ledger', () => {
+  // Build a shared temp project root so both hook invocations share the bridges dir.
+  const root = mkdtempSync(join(tmpdir(), 'openralph-duration-'))
+  mkdirSync(join(root, '.openclaude', 'ralph'), { recursive: true })
+  writeFileSync(join(root, '.openclaude', 'ralph', 'enabled'), '')
+  const hookPath = join(root, 'openralph-hook.sh')
+  writeFileSync(hookPath, OPENRALPH_FILES['bin/openralph-hook.sh'])
+
+  const spawnHook = (payload: Record<string, unknown>) =>
+    Bun.spawnSync(['bash', hookPath], {
+      cwd: root,
+      env: { ...process.env, OPENRALPH_PROJECT_ROOT: root },
+      stdin: Buffer.from(JSON.stringify(payload)),
+    })
+
+  const TOOL_USE_ID = 'tuid-duration-test-001'
+
+  // 1. PreToolUse — writes the start marker.
+  const pre = spawnHook({
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Agent',
+    tool_use_id: TOOL_USE_ID,
+    tool_input: { subagent_type: 'openralph-builder', prompt: 'build' },
+    session_id: 'dur-sess',
+    cwd: root,
+    transcript_path: '/dev/null',
+  })
+  expect(pre.exitCode).toBe(0)
+  // Marker file must exist after PreToolUse.
+  const markerPath = join(root, '.openclaude', 'ralph', 'bridges', `start-${TOOL_USE_ID}.ts`)
+  expect(existsSync(markerPath)).toBe(true)
+
+  // 2. PostToolUse — reads the marker and writes the ledger row.
+  const personaYaml = [
+    '```yaml',
+    'task_slug: "dur-test-task"',
+    'status: "complete"',
+    'commit: null',
+    'files_changed: []',
+    'tests_run: null',
+    'tests_passed: true',
+    'provider_model_used: "anthropic/claude-sonnet-4-5"',
+    'new_gaps: []',
+    'next_action: null',
+    'notes: "duration test"',
+    '```',
+  ].join('\n')
+
+  const post = spawnHook({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_use_id: TOOL_USE_ID,
+    tool_input: { subagent_type: 'openralph-builder', prompt: 'build' },
+    tool_response: `Work done.\n\n${personaYaml}\n`,
+    session_id: 'dur-sess',
+    cwd: root,
+    transcript_path: '/dev/null',
+  })
+  expect(post.exitCode).toBe(0)
+  expect(post.stderr.toString()).not.toContain('Traceback')
+
+  // Marker must be cleaned up after PostToolUse.
+  expect(existsSync(markerPath)).toBe(false)
+
+  // Ledger must contain one row with an integer duration_s >= 0.
+  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  expect(existsSync(ledgerPath)).toBe(true)
+  const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
+  expect(record.task_slug).toBe('dur-test-task')
+  expect(typeof record.duration_s).toBe('number')
+  expect(Number.isInteger(record.duration_s)).toBe(true)
+  expect(record.duration_s as number).toBeGreaterThanOrEqual(0)
+})
