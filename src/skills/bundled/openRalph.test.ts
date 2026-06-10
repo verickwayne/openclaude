@@ -133,6 +133,20 @@ test('hook captures ledger line on PostToolUse Agent dispatch', () => {
   expect(hook).toContain('|| true')
 })
 
+test('hook ledger capture is guarded by openralph- prefix on subagent_type', () => {
+  const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
+  // FINDING 10: a non-OpenRalph Agent whose response contains YAML must not
+  // write a spurious ledger row. The guard must check subagent_type starts with
+  // "openralph-" before proceeding to YAML extraction.
+  expect(hook).toContain('startswith("openralph-")')
+  // The guard must be placed before the YAML extraction (early exit on no match).
+  const guardIdx = hook.indexOf('startswith("openralph-")')
+  const yamlIdx = hook.indexOf('yaml_match = re.search')
+  expect(guardIdx).toBeGreaterThan(-1)
+  expect(yamlIdx).toBeGreaterThan(-1)
+  expect(guardIdx).toBeLessThan(yamlIdx)
+})
+
 test('hook ledger append uses safe shell variable references (ledger path uses RALPH_DIR)', () => {
   const hook = OPENRALPH_FILES['bin/openralph-hook.sh']
   // The ledger path must reference RALPH_DIR (not a hard-coded literal).
@@ -207,6 +221,16 @@ test('scheduler step 8 instructs billing-aware candidate preference for long-run
 
   // Must contrast long-running (subscription) with interactive/short (metered).
   expect(text).toContain('metered')
+})
+
+test('bootstrap writes workload key with LoopWorkloadClass vocabulary value', () => {
+  const bootstrap = OPENRALPH_FILES['bin/openralph-bootstrap.sh']
+  // FINDING 8: session.json must carry "workload" so the ledger hook's
+  // `sess.get("workload") or sess.get("mode")` returns a LoopWorkloadClass value
+  // ('direct' | 'bounded' | 'long-running') — not a scheduler mode string like "build".
+  // An OpenRalph loop is definitionally long-running autonomous work.
+  expect(bootstrap).toContain('"workload"')
+  expect(bootstrap).toContain('"workload": "long-running"')
 })
 
 test('bootstrap creates ledger dir and ledger is NOT gitignored by default', () => {
@@ -442,6 +466,22 @@ test('adjudicated dispatch step picks 2 candidates from DIFFERENT providers', as
   // Must reference the route-stats / resolveProviderForClass vocabulary for picking
   // candidates so it stays consistent with the existing step 8 routing contract.
   expect(text).toContain('openralph-route-stats.sh')
+})
+
+test('adjudication contract states provider diversity wins over billing preference', async () => {
+  registerOpenRalphSkills()
+  const engage = getBundledSkills().find(command => command.name === 'openralph')!
+  const blocks = await engage.getPromptForCommand('', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  // FINDING 4: when only one subscription-billed provider exists, it is
+  // impossible to satisfy both "prefer subscription billing" AND "different
+  // providers". The contract must explicitly state that provider diversity wins
+  // in this situation — candidate A takes the preferred billing, candidate B
+  // takes the best-ranked candidate from any other provider.
+  expect(text).toMatch(/[Pp]rovider diversity wins|diversity wins/i)
+  // Must name the fallback: candidate B takes the best-ranked from any OTHER provider.
+  expect(text).toMatch(/other provider/i)
 })
 
 test('adjudicated dispatch step isolates each candidate in its own worktree', async () => {

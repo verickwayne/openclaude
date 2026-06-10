@@ -382,10 +382,16 @@ export function resolveProviderForClass(
   // ranking group (proven/explorers/unknown). Within-group only: a preferred-
   // billing candidate never crosses a group boundary.
   if (preferBilling && env.OPENCLAUDE_BILLING_AWARE !== '0') {
+    // Build the group lookup once (O(n)) so the comparator is O(1) per pair,
+    // not O(n) per pair. Keyed on profileId so two profiles exposing the same
+    // model string are distinguished correctly.
+    const groupByProfileId = new Map<string, 0 | 1 | 2>(
+      ranked.map(r => [r.rp.profileId, r.group]),
+    )
     candidates.sort((a, b) => {
       // Primary key: group (already sorted correctly above — stable sort preserves it)
-      const aGroup = ranked.find(r => r.rp.model === a.model)?.group ?? 2
-      const bGroup = ranked.find(r => r.rp.model === b.model)?.group ?? 2
+      const aGroup = groupByProfileId.get(a.profileId) ?? 2
+      const bGroup = groupByProfileId.get(b.profileId) ?? 2
       if (aGroup !== bGroup) return aGroup - bGroup
       // Secondary key within group: preferred billing first
       const aPref = a.billingModel === preferBilling ? 0 : 1

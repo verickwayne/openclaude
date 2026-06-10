@@ -66,6 +66,8 @@ data = {
   "session_state_dir": os.environ["SESSION_STATE_DIR"],
   "cwd": os.environ["PROJECT_ROOT"],
   "mode": os.environ["MODE"],
+  # An OpenRalph loop is definitionally long-running autonomous work.
+  "workload": "long-running",
   "iteration": 0,
   "max_iterations": int(os.environ["MAX_ITERATIONS"] or "0"),
   "started_at": os.environ["NOW"],
@@ -252,13 +254,18 @@ tool_response = os.environ.get("TOOL_RESPONSE", "")
 tool_input_raw = os.environ.get("TOOL_INPUT_RAW", "")
 session_id = os.environ.get("SESSION_ID", "unknown")
 
-# Persona: prefer subagent_type from tool_input (the dispatched agent name).
+# Guard: only capture ledger entries for OpenRalph agents.
+# A non-OpenRalph Agent whose response happens to contain YAML would write a
+# spurious row — the subagent_type prefix is the first gate.
 persona = None
 try:
   tool_input = json.loads(tool_input_raw) if tool_input_raw else {}
   persona = tool_input.get("subagent_type") or None
 except Exception:
   pass
+
+if not (persona and persona.startswith("openralph-")):
+  sys.exit(0)
 
 # Extract the trailing YAML block from the tool response.
 # Build the backtick fence programmatically to avoid quoting issues.
@@ -772,7 +779,7 @@ Use Ralph's persona scheduler, plus Claude Code's newer \`/goal\` idea:
 
 **Procedure (N=2 cross-provider builds):**
 
-a. Read \`bash .openclaude/ralph/bin/openralph-route-stats.sh\` to enumerate available model candidates. Select exactly 2 candidate models from **different providers** — the highest-ranked model from provider A and the highest-ranked model from provider B (using the same success-rate selection rule defined in the routing instruction above). If route stats are empty, pick one Anthropic model and one non-Anthropic model.
+a. Read \`bash .openclaude/ralph/bin/openralph-route-stats.sh\` to enumerate available model candidates. Select exactly 2 candidate models from **different providers** — the highest-ranked model from provider A and the highest-ranked model from provider B (using the same success-rate selection rule defined in the routing instruction above). If route stats are empty, pick one Anthropic model and one non-Anthropic model. **Provider diversity wins over billing preference:** if the billing preference from step 8 cannot be satisfied for both candidates simultaneously (e.g. only one subscription-billed provider is available), candidate A takes the preferred-billing provider and candidate B takes the best-ranked candidate from any other provider regardless of billing model.
 b. For each candidate, create an isolated git worktree:
    \`\`\`bash
    git worktree add .openclaude/ralph/adjudication/<slug>-candidate-A <base-branch>
@@ -794,9 +801,7 @@ i. Parse the winner's persona-result YAML into \`$OPENRALPH_SESSION_DIR/persona-
 
 The Stop hook records session bridges and blocks a stop while the active session's \`goal.json.status\` is still running, so future turns resume from session-scoped OpenRalph files instead of relying on memory.
 
-### Adopting an orphaned session
-
-When engaging into a repo that has orphaned sessions (sessions in \`.openclaude/ralph/sessions/\` whose \`session.json.status\` is not \`complete\` or \`disengaged\`, and which are not the current active session of a live loop), the scheduler MAY adopt one via \`bash .openclaude/ralph/bin/openralph-adopt.sh <orphan_session_id>\` instead of starting fresh. The adopt script copies the orphan's \`session.json\`, \`goal.json\`, \`queue.md\`, and \`progress.md\` into a new session directory without touching the originals, records the adoption in the new session's \`lineage\` field (composing any ancestor chain the orphan already carried), and updates the \`active-session\` pointer to the new session. The adopted \`progress.md\` and \`queue.md\` are authoritative history — treat their completed and in-flight entries as ground truth rather than re-deriving task state from scratch.`
+11. **Adopting an orphaned session:** When engaging into a repo that has orphaned sessions (sessions in \`.openclaude/ralph/sessions/\` whose \`session.json.status\` is not \`complete\` or \`disengaged\`, and which are not the current active session of a live loop), the scheduler MAY adopt one via \`bash .openclaude/ralph/bin/openralph-adopt.sh <orphan_session_id>\` instead of starting fresh. The adopt script copies the orphan's \`session.json\`, \`goal.json\`, \`queue.md\`, and \`progress.md\` into a new session directory without touching the originals, records the adoption in the new session's \`lineage\` field (composing any ancestor chain the orphan already carried), and updates the \`active-session\` pointer to the new session. The adopted \`progress.md\` and \`queue.md\` are authoritative history — treat their completed and in-flight entries as ground truth rather than re-deriving task state from scratch.`
 }
 
 function buildStatusPrompt(): string {
