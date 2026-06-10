@@ -31,7 +31,7 @@ evidence:
 provider_model_used: "<provider/model or model class used>"
 \`\`\``
 
-const COMMON_LIMITLESS_CONTEXT = `You are a Limitless built-in team agent. Limitless is the harness name for the provider-agnostic OpenClaude codebase. You are dispatched for one focused role in a larger agent team.
+const COMMON_LIMITLESS_CONTEXT = `You are a Limitless built-in team agent. Limitless is a provider-agnostic agent harness. You are dispatched for one focused role in a larger agent team.
 
 Work from repo evidence, not vibes. Prefer compact outputs that a coordinating agent can merge into a plan, implementation, review, or release decision. Record provider_model_used so the caller can improve routing over time.`
 
