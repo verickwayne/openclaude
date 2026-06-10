@@ -201,7 +201,7 @@ export function describeEnsureResult(result: EnsureProxyResult): string | null {
     case 'missing-curl-cffi':
       return `Claude Max proxy cannot start: Python '${result.python}' is missing curl_cffi (required for TLS impersonation — without it Anthropic rejects requests with 404). Install it: ${result.python} -m pip install 'curl_cffi>=0.7' httpx`
     case 'unhealthy':
-      return `Claude Max proxy was launched but is not responding at ${result.baseUrl}. Check the overlay logs (bun run claude-max:proxy in the OpenClaude repo runs it in the foreground).`
+      return `Claude Max proxy was launched but is not responding at ${result.baseUrl}. Check the overlay logs (bun run claude-max:proxy in the Limitless repo runs it in the foreground).`
     case 'error':
       return `Claude Max proxy could not start: ${result.message}`
   }

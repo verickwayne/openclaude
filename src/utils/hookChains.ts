@@ -1060,7 +1060,7 @@ export async function executeWarmRemoteCapacityAction(args: {
       action.createDefaultEnvironmentIfMissing === true
     ) {
       const created = await envApi.createDefaultCloudEnvironment(
-        'OpenClaude Self-Healing Warmup',
+        'Limitless Self-Healing Warmup',
       )
       selection = {
         availableEnvironments: [created],

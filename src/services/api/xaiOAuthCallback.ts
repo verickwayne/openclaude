@@ -186,7 +186,7 @@ export async function startXaiOAuthCallback(params: {
         `<!doctype html><html><head><meta charset="utf-8"/><title>${safeTitle}</title></head>` +
           `<body style="font-family:sans-serif;padding:32px;line-height:1.5;color:#111827">` +
           `<h1 style="margin:0 0 12px;font-size:22px">${safeTitle}</h1>` +
-          `<p>You can return to OpenClaude — the CLI will finish setup automatically.</p>` +
+          `<p>You can return to Limitless — the CLI will finish setup automatically.</p>` +
           `</body></html>`,
       )
       settle(

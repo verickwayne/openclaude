@@ -34,16 +34,16 @@ export function registerMcpAddCommand(mcp: Command): void {
   mcp
     .command('add <name> <commandOrUrl> [args...]')
     .description(
-      'Add an MCP server to OpenClaude.\n\n' +
+      'Add an MCP server to Limitless.\n\n' +
         'Examples:\n' +
         '  # Add HTTP server:\n' +
-        '  openclaude mcp add --transport http sentry https://mcp.sentry.dev/mcp\n\n' +
+        '  limitless mcp add --transport http sentry https://mcp.sentry.dev/mcp\n\n' +
         '  # Add HTTP server with headers:\n' +
-        '  openclaude mcp add --transport http corridor https://app.corridor.dev/api/mcp --header "Authorization: Bearer ..."\n\n' +
+        '  limitless mcp add --transport http corridor https://app.corridor.dev/api/mcp --header "Authorization: Bearer ..."\n\n' +
         '  # Add stdio server with environment variables:\n' +
-        '  openclaude mcp add -e API_KEY=xxx my-server -- npx my-mcp-server\n\n' +
+        '  limitless mcp add -e API_KEY=xxx my-server -- npx my-mcp-server\n\n' +
         '  # Add stdio server with subprocess flags:\n' +
-        '  openclaude mcp add my-server -- my-command --some-flag arg1',
+        '  limitless mcp add my-server -- my-command --some-flag arg1',
     )
     .option(
       '-s, --scope <scope>',

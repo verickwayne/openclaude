@@ -1005,9 +1005,9 @@ export const connectToServer = memoize(
           // name stays 'claude-code' for compatibility with MCP servers that
           // gate features on the upstream client identifier.
           name: 'claude-code',
-          title: 'OpenClaude',
+          title: 'Limitless',
           version: MACRO.VERSION ?? 'unknown',
-          description: 'OpenClaude — open harness for driving local LLMs',
+          description: 'Limitless — open harness for driving local LLMs',
           websiteUrl: PRODUCT_URL,
         },
         {
@@ -3342,9 +3342,9 @@ export async function setupSdkMcpClients(
           // name stays 'claude-code' for compatibility with MCP servers that
           // gate features on the upstream client identifier.
           name: 'claude-code',
-          title: 'OpenClaude',
+          title: 'Limitless',
           version: MACRO.VERSION ?? 'unknown',
-          description: 'OpenClaude — open harness for driving local LLMs',
+          description: 'Limitless — open harness for driving local LLMs',
           websiteUrl: PRODUCT_URL,
         },
         {

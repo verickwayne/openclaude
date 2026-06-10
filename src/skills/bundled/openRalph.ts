@@ -956,7 +956,7 @@ openralph-kick.sh --session <id> --prompt "objective" [--project <path>] [bootst
 openralph-kick.sh --session <id> --prompt-file <path> [--project <path>] [bootstrap flags...]
 
 Options:
-  --session, -s <id>          Target OpenClaude session id or existing-session prefix.
+  --session, -s <id>          Target Limitless session id or existing-session prefix.
   --project, -C <path>        Project root. Defaults to current directory.
   --prompt <text>             Create the target session when state is missing.
   --prompt-file <path>        Read objective from file when state is missing.
@@ -1140,7 +1140,7 @@ echo "Kick marker: $SESSION_DIR/$SESSION_ARG/kick.json"
 
 const OPENRALPH_README = `# OpenRalph Support Files
 
-OpenRalph is a project-local scheduler pattern for OpenClaude.
+OpenRalph is a project-local scheduler pattern for Limitless.
 
 It combines:
 - Ralph-style session bridges and hook events
@@ -1169,11 +1169,11 @@ function buildEngagePrompt(args: string): string {
     ? `Use this exact OpenRalph objective:\n\n--- BEGIN OBJECTIVE ---\n${prompt}\n--- END OBJECTIVE ---`
     : 'Infer the OpenRalph objective from the current conversation.'
 
-  return `# /openralph — engage a Ralph-style OpenClaude scheduler
+  return `# /openralph — engage a Ralph-style Limitless scheduler
 
 ${objective}
 
-OpenRalph is not internal harness code. It is a project-local skill/process layer that uses OpenClaude's hook system, session ids, built-in agents, and provider/model picker.
+OpenRalph is not internal harness code. It is a project-local skill/process layer that uses Limitless's hook system, session ids, built-in agents, and provider/model picker.
 
 ## Install support files
 
@@ -1316,7 +1316,7 @@ export function registerOpenRalphSkills(): void {
     name: 'openralph',
     aliases: ['ralph', 'ralph-engage', 'openralph-engage'],
     description:
-      'Engage a Ralph-style OpenClaude scheduler with hook/session bridge, goal ledger, and persona dispatch.',
+      'Engage a Ralph-style Limitless scheduler with hook/session bridge, goal ledger, and persona dispatch.',
     whenToUse:
       'When the user wants long-running autonomous work using a Ralph-like skill/process architecture rather than internal harness changes.',
     argumentHint: '[objective]',

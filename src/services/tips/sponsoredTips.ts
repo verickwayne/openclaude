@@ -61,7 +61,7 @@ export const sponsoredTips: Tip[] = [
     content: async ctx =>
       renderSponsoredTip(
         ATOMIC,
-        'Atomic Chat local models give you free access to OpenClaude',
+        'Atomic Chat local models give you free access to Limitless',
         ctx,
       ),
     cooldownSessions: 20,

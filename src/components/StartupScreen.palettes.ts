@@ -84,7 +84,7 @@ export const LOGO_PALETTE_NAMES = Object.keys(LOGO_PALETTES) as LogoPaletteName[
 export const DEFAULT_LOGO_PALETTE: LogoPaletteName = 'sunset'
 
 export const LOGO_PALETTE_LABELS: Record<LogoPaletteName, string> = {
-  sunset: 'OpenClaude red (default)',
+  sunset: 'Limitless red (default)',
   forest: 'Forest green',
   ocean: 'Ocean blue',
   monochrome: 'Monochrome',
