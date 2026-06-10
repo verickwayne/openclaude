@@ -116,9 +116,6 @@ const PRESET_ORDER = [
   'Google Gemini',
   'Groq',
   'Hicap',
-  'LM Studio',
-  'Atomic Chat',
-  'Ollama',
   'MiniMax',
   'Mistral AI',
   'Moonshot AI - API',
@@ -163,6 +160,7 @@ function mockProviderProfilesModule(options?: {
   updateProviderProfile?: (...args: unknown[]) => unknown
   setActiveProviderProfile?: (...args: unknown[]) => unknown
   addModelsToProviderProfile?: (...args: unknown[]) => unknown
+  removeModelsFromProviderProfile?: (...args: unknown[]) => unknown
 }): void {
   mock.module('../utils/providerProfiles.js', () => ({
     addProviderProfile: options?.addProviderProfile ?? (() => null),
@@ -283,6 +281,8 @@ function mockProviderProfilesModule(options?: {
     updateProviderProfile: options?.updateProviderProfile ?? (() => null),
     addModelsToProviderProfile:
       options?.addModelsToProviderProfile ?? (() => null),
+    removeModelsFromProviderProfile:
+      options?.removeModelsFromProviderProfile ?? (() => null),
   }))
 }
 
@@ -319,6 +319,7 @@ function mockProviderManagerDependencies(
     updateProviderProfile?: (...args: any[]) => unknown
     setActiveProviderProfile?: (...args: any[]) => unknown
     addModelsToProviderProfile?: (...args: any[]) => unknown
+    removeModelsFromProviderProfile?: (...args: any[]) => unknown
     ensureClaudeMaxProxyRunning?: (...args: any[]) => Promise<unknown>
     describeClaudeMaxEnsureResult?: (...args: any[]) => string | null
     useCodexOAuthFlow?: (options: {
@@ -345,6 +346,7 @@ function mockProviderManagerDependencies(
     updateProviderProfile: options?.updateProviderProfile,
     setActiveProviderProfile: options?.setActiveProviderProfile,
     addModelsToProviderProfile: options?.addModelsToProviderProfile,
+    removeModelsFromProviderProfile: options?.removeModelsFromProviderProfile,
   })
 
   mock.module('../utils/providerDiscovery.js', () => ({
@@ -1217,7 +1219,12 @@ test('ProviderManager first-run Ollama preset auto-detects installed models', as
     frame => frame.includes('Set up provider'),
   )
 
-  await navigateToPreset(mounted.stdin, 'Ollama')
+  await navigateToPreset(mounted.stdin, 'Local')
+  mounted.stdin.write('\r')
+  await waitForFrameOutput(
+    mounted.getOutput,
+    frame => frame.includes('Choose local provider'),
+  )
   mounted.stdin.write('\r')
 
   const modelFrame = await waitForFrameOutput(
@@ -1272,7 +1279,12 @@ test('ProviderManager preserves the Ollama readiness message when the probe is u
     frame => frame.includes('Set up provider'),
   )
 
-  await navigateToPreset(mounted.stdin, 'Ollama')
+  await navigateToPreset(mounted.stdin, 'Local')
+  mounted.stdin.write('\r')
+  await waitForFrameOutput(
+    mounted.getOutput,
+    frame => frame.includes('Choose local provider'),
+  )
   mounted.stdin.write('\r')
 
   const messageFrame = await waitForFrameOutput(
@@ -1340,7 +1352,16 @@ test('ProviderManager first-run Atomic Chat preset auto-detects loaded models', 
     frame => frame.includes('Set up provider'),
   )
 
-  await navigateToPreset(mounted.stdin, 'Atomic Chat')
+  await navigateToPreset(mounted.stdin, 'Local')
+  mounted.stdin.write('\r')
+  await waitForFrameOutput(
+    mounted.getOutput,
+    frame => frame.includes('Choose local provider'),
+  )
+  mounted.stdin.write('j')
+  await Bun.sleep(25)
+  mounted.stdin.write('j')
+  await Bun.sleep(25)
   mounted.stdin.write('\r')
 
   const modelFrame = await waitForFrameOutput(

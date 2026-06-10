@@ -52,6 +52,14 @@ function mapOpenRouterModel(raw: unknown): ModelCatalogEntry | null {
     ...(typeof model.context_length === 'number' && Number.isFinite(model.context_length)
       ? { contextWindow: model.context_length }
       : {}),
+    ...(inputPrice || outputPrice
+      ? {
+          pricing: {
+            ...(inputPrice ? { inputPerMillionUsd: inputPrice } : {}),
+            ...(outputPrice ? { outputPerMillionUsd: outputPrice } : {}),
+          },
+        }
+      : {}),
     ...(notes ? { notes } : {}),
   }
 }

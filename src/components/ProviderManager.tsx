@@ -61,6 +61,7 @@ import {
   getActiveProviderProfile,
   getProviderPresetDefaults,
   getProviderProfiles,
+  removeModelsFromProviderProfile,
   setActiveProviderProfile,
   type ProviderPreset,
   type ProviderProfileInput,
@@ -116,6 +117,7 @@ type Props = {
 type Screen =
   | 'menu'
   | 'select-preset'
+  | 'select-local-provider'
   | 'select-ollama-model'
   | 'select-atomic-chat-model'
   | 'codex-oauth'
@@ -127,8 +129,10 @@ type Screen =
   | 'select-edit'
   | 'select-delete'
   | 'select-add-models-profile'
+  | 'select-add-models-action'
   | 'add-models-search'
   | 'add-models-input'
+  | 'remove-models-search'
 
 type DraftField =
   | 'name'
@@ -326,12 +330,41 @@ function activeSuffixFor(isAvailable: boolean, isDefault: boolean): string {
   return isAvailable ? ' (active)' : ''
 }
 
+function getProfileCredentialSummary(profile: ProviderProfile): string {
+  const routeId = resolveProfileRoute(profile.provider).routeId
+  const authMode = getRouteDescriptor(routeId)?.setup.authMode
+
+  switch (authMode) {
+    case 'oauth':
+      return 'OAuth'
+    case 'none':
+      return 'no key required'
+    case 'adc':
+      return 'cloud credentials'
+    case 'token':
+      return profile.apiKey ? 'token set' : 'token needed'
+    case 'api-key':
+    default:
+      return profile.apiKey ? 'key set' : 'key needed'
+  }
+}
+
+function getCatalogPricingLabel(item: ModelCatalogEntry): string | null {
+  const input = item.pricing?.inputPerMillionUsd
+  const output = item.pricing?.outputPerMillionUsd
+  if (!input && !output) {
+    return null
+  }
+
+  return `Price: input ${input ?? '?'} / output ${output ?? '?'} per 1M`
+}
+
 function profileSummary(
   profile: ProviderProfile,
   state: { isAvailable: boolean; isDefault: boolean },
 ): string {
   const activeSuffix = activeSuffixFor(state.isAvailable, state.isDefault)
-  const keyInfo = profile.apiKey ? 'key set' : 'no key'
+  const credentialInfo = getProfileCredentialSummary(profile)
   const routeId = resolveProfileRoute(profile.provider).routeId
   const providerKind = getRouteProviderTypeLabel(routeId)
   const models = parseModelList(profile.model)
@@ -347,7 +380,7 @@ function profileSummary(
     routeSupportsAuthHeaders(routeId) && profile.authHeader
       ? ` · ${profile.authHeader} auth`
       : ''
-  return `${providerKind} · ${profile.baseUrl} · ${modelDisplay}${modeInfo}${authInfo} · ${keyInfo}${activeSuffix}`
+  return `${providerKind} · ${profile.baseUrl} · ${modelDisplay}${modeInfo}${authInfo} · ${credentialInfo}${activeSuffix}`
 }
 
 function getGithubCredentialSourceFromEnv(
@@ -778,6 +811,8 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
   const [filteredAddModelOptions, setFilteredAddModelOptions] = React.useState<
     ModelCatalogEntry[]
   >([])
+  const [filteredRemoveModelOptions, setFilteredRemoveModelOptions] =
+    React.useState<string[]>([])
   const [draftProvider, setDraftProvider] = React.useState<ProviderProfile['provider']>(
     'openai',
   )
@@ -874,8 +909,8 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       },
       {
         value: 'add-models',
-        label: 'Add model(s) to a provider',
-        description: 'Append model IDs to an existing provider profile',
+        label: 'Add / remove models',
+        description: 'Search provider catalogs or edit an existing model list',
         disabled: !hasProfiles,
       },
       {
@@ -1953,6 +1988,14 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       presetOption('openrouter'),
     ]
     const pinnedSet = new Set<ProviderPreset>(PINNED_PROVIDER_PRESETS)
+    const generatedOptions = ORDERED_PROVIDER_PRESETS
+      .filter(preset => {
+        if (pinnedSet.has(preset)) {
+          return false
+        }
+        return getProviderPresetUiMetadata(preset).authMode !== 'none'
+      })
+      .map(presetOption)
     const options: OptionWithDescription<string>[] = [
       ...pinned,
       {
@@ -1960,12 +2003,12 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
         label: 'Local',
         description: 'Local models through Ollama, LM Studio, Atomic Chat, or a custom endpoint',
       },
-      ...ORDERED_PROVIDER_PRESETS
-        .filter(preset => !pinnedSet.has(preset))
-        .map(presetOption),
+      ...generatedOptions,
     ]
 
-    return options
+    return options.filter((option, index, allOptions) => {
+      return allOptions.findIndex(candidate => candidate.value === option.value) === index
+    })
   }
 
   function renderPresetSelection(): React.ReactNode {
@@ -1985,7 +2028,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
           {mode === 'first-run' ? 'Set up provider' : 'Choose provider preset'}
         </Text>
         <Text dimColor>
-          Subscription providers, OpenRouter, and Local are pinned first; API-key providers remain below.
+          Subscription, OpenRouter, and Local are pinned first; key-based providers remain below.
         </Text>
         <Select
           options={options}
@@ -1999,7 +2042,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
               return
             }
             if (value === 'local') {
-              startCreateFromPreset('ollama')
+              setScreen('select-local-provider')
               return
             }
             startCreateFromPreset(value as ProviderPreset)
@@ -2012,6 +2055,38 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             returnToMenu()
           }}
           visibleOptionCount={Math.min(13, options.length)}
+        />
+      </Box>
+    )
+  }
+
+  function renderLocalProviderSelection(): React.ReactNode {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="remember" bold>
+          Choose local provider
+        </Text>
+        <Select
+          options={[
+            {
+              value: 'ollama',
+              label: 'Ollama',
+              description: 'Local Ollama models through http://localhost:11434/v1',
+            },
+            {
+              value: 'lmstudio',
+              label: 'LM Studio',
+              description: 'Local LM Studio server through http://localhost:1234/v1',
+            },
+            {
+              value: 'atomic-chat',
+              label: 'Atomic Chat',
+              description: 'Local Atomic Chat models through http://127.0.0.1:1337/v1',
+            },
+          ]}
+          onChange={(value: string) => startCreateFromPreset(value as ProviderPreset)}
+          onCancel={() => setScreen('select-preset')}
+          visibleOptionCount={3}
         />
       </Box>
     )
@@ -2247,6 +2322,18 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     )
   }
 
+  function filterModelIds(
+    options: string[],
+    query: string,
+  ): string[] {
+    const normalized = query.trim().toLowerCase()
+    if (!normalized) {
+      return options
+    }
+
+    return options.filter(option => option.toLowerCase().includes(normalized))
+  }
+
   function getAddModelsRouteId(profile: ProviderProfile): string | null {
     return (
       resolveProfileRoute(profile.provider).routeId ??
@@ -2261,6 +2348,17 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     setCursorOffset(seeded.length)
     setErrorMessage(undefined)
     setScreen('add-models-input')
+  }
+
+  function startAddRemoveModelsForProfile(profileId: string): void {
+    setAddModelsProfileId(profileId)
+    setAddModelsCatalog({ state: 'idle' })
+    setFilteredAddModelOptions([])
+    setFilteredRemoveModelOptions([])
+    setAddModelsInput('')
+    setCursorOffset(0)
+    setErrorMessage(undefined)
+    setScreen('select-add-models-action')
   }
 
   function startAddModelsForProfile(profileId: string): void {
@@ -2360,6 +2458,107 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     returnToMenu()
   }
 
+  function commitRemoveModel(modelId: string): void {
+    const profileId = addModelsProfileId
+    if (!profileId) {
+      setErrorMessage('No provider selected.')
+      return
+    }
+
+    const targetProfile = profiles.find(profile => profile.id === profileId)
+    const beforeCount = targetProfile
+      ? parseModelList(targetProfile.model).length
+      : 0
+    const updated = removeModelsFromProviderProfile(profileId, [modelId])
+    if (!updated) {
+      setErrorMessage('Could not remove the model from the provider profile.')
+      return
+    }
+
+    const afterCount = parseModelList(updated.model).length
+    const removed = beforeCount - afterCount
+
+    setAddModelsProfileId(null)
+    setFilteredRemoveModelOptions([])
+    setErrorMessage(undefined)
+    refreshProfiles()
+    setStatusMessage(
+      removed > 0
+        ? `Removed ${modelId} from ${updated.name}`
+        : `${modelId} was not present on ${updated.name}`,
+    )
+    returnToMenu()
+  }
+
+  function renderAddModelsActionSelection(): React.ReactNode {
+    const targetProfile = profiles.find(
+      profile => profile.id === addModelsProfileId,
+    )
+
+    if (!targetProfile) {
+      return (
+        <Box flexDirection="column" gap={1}>
+          <Text color="remember" bold>
+            Add / remove models
+          </Text>
+          <Text dimColor>No provider selected.</Text>
+          <Select
+            options={[
+              {
+                value: 'back',
+                label: 'Back',
+                description: 'Choose a provider',
+              },
+            ]}
+            onChange={() => setScreen('select-add-models-profile')}
+            onCancel={() => setScreen('select-add-models-profile')}
+            visibleOptionCount={1}
+          />
+        </Box>
+      )
+    }
+
+    const currentModels = parseModelList(targetProfile.model)
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="remember" bold>
+          Add / remove models
+        </Text>
+        <Text dimColor>{targetProfile.name}</Text>
+        <Select
+          options={[
+            {
+              value: 'add',
+              label: 'Search models to add',
+              description: 'Search provider catalog when available, or enter model IDs manually',
+            },
+            {
+              value: 'remove',
+              label: 'Search current models to remove',
+              description:
+                currentModels.length > 0
+                  ? `${currentModels.length} configured model${currentModels.length === 1 ? '' : 's'}`
+                  : 'No configured models to remove',
+              disabled: currentModels.length === 0,
+            },
+          ]}
+          onChange={(value: string) => {
+            if (value === 'add') {
+              startAddModelsForProfile(targetProfile.id)
+              return
+            }
+            if (value === 'remove') {
+              setFilteredRemoveModelOptions(currentModels)
+              setScreen('remove-models-search')
+            }
+          }}
+          onCancel={() => setScreen('select-add-models-profile')}
+          visibleOptionCount={2}
+        />
+      </Box>
+    )
+  }
+
   function renderAddModelsSearch(): React.ReactNode {
     if (addModelsCatalog.state === 'loading') {
       return (
@@ -2435,26 +2634,92 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             }
           },
         }}
-        onCancel={() => setScreen('select-add-models-profile')}
+        onCancel={() => setScreen('select-add-models-action')}
         emptyMessage="No matching models"
         matchLabel={`${filteredAddModelOptions.length} models`}
         selectAction="add model"
         renderItem={(item, isFocused) => (
           <Text color={isFocused ? 'permission' : undefined}>
             {item.label ?? item.apiName}
-            {item.notes ? <Text dimColor> · {item.notes}</Text> : null}
+            {getCatalogPricingLabel(item) ? (
+              <Text dimColor> · {getCatalogPricingLabel(item)}</Text>
+            ) : item.notes ? (
+              <Text dimColor> · {item.notes}</Text>
+            ) : null}
           </Text>
         )}
         renderPreview={item => (
           <Box flexDirection="column">
             <Text bold>{item.label ?? item.apiName}</Text>
             <Text dimColor>{item.apiName}</Text>
+            {getCatalogPricingLabel(item) ? (
+              <Text color="warning">{getCatalogPricingLabel(item)}</Text>
+            ) : null}
             {item.notes ? <Text dimColor>{item.notes}</Text> : null}
             {item.contextWindow ? (
               <Text dimColor>
                 Context: {item.contextWindow.toLocaleString()} tokens
               </Text>
             ) : null}
+          </Box>
+        )}
+      />
+    )
+  }
+
+  function renderRemoveModelsSearch(): React.ReactNode {
+    const targetProfile = profiles.find(
+      profile => profile.id === addModelsProfileId,
+    )
+    const currentModels = targetProfile ? parseModelList(targetProfile.model) : []
+
+    if (!targetProfile || currentModels.length === 0) {
+      return (
+        <Box flexDirection="column" gap={1}>
+          <Text color="remember" bold>
+            Search current models
+          </Text>
+          <Text dimColor>No configured models are available to remove.</Text>
+          <Select
+            options={[
+              {
+                value: 'back',
+                label: 'Back',
+                description: 'Choose another action',
+              },
+            ]}
+            onChange={() => setScreen('select-add-models-action')}
+            onCancel={() => setScreen('select-add-models-action')}
+            visibleOptionCount={1}
+          />
+        </Box>
+      )
+    }
+
+    return (
+      <FuzzyPicker
+        title={`Search ${targetProfile.name} models`}
+        placeholder="Search configured model IDs..."
+        items={filteredRemoveModelOptions}
+        getKey={item => item}
+        visibleCount={10}
+        onQueryChange={query => {
+          setFilteredRemoveModelOptions(filterModelIds(currentModels, query))
+        }}
+        onSelect={item => {
+          commitRemoveModel(item)
+        }}
+        onCancel={() => setScreen('select-add-models-action')}
+        emptyMessage="No matching configured models"
+        matchLabel={`${filteredRemoveModelOptions.length} models`}
+        selectAction="remove model"
+        renderItem={(item, isFocused) => (
+          <Text color={isFocused ? 'permission' : undefined}>{item}</Text>
+        )}
+        renderPreview={item => (
+          <Box flexDirection="column">
+            <Text bold>{item}</Text>
+            <Text dimColor>Configured on {targetProfile.name}</Text>
           </Box>
         )}
       />
@@ -2747,6 +3012,9 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
   switch (screen) {
     case 'select-preset':
       content = renderPresetSelection()
+      break
+    case 'select-local-provider':
+      content = renderLocalProviderSelection()
       break
     case 'select-ollama-model':
       content = renderOllamaSelection()
@@ -3045,18 +3313,24 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       break
     case 'select-add-models-profile':
       content = renderProfileSelection(
-        'Add model(s) to a provider',
+        'Add / remove models',
         'No providers available. Add one first.',
         profileId => {
-          startAddModelsForProfile(profileId)
+          startAddRemoveModelsForProfile(profileId)
         },
       )
+      break
+    case 'select-add-models-action':
+      content = renderAddModelsActionSelection()
       break
     case 'add-models-search':
       content = renderAddModelsSearch()
       break
     case 'add-models-input':
       content = renderAddModelsInput()
+      break
+    case 'remove-models-search':
+      content = renderRemoveModelsSearch()
       break
     case 'menu':
     default:

@@ -228,6 +228,7 @@ export function resolveOpenAIShimRuntimeContext(options?: {
     options?.treatAsLocal === true
       ? {
           maxTokensField: 'max_tokens' as const,
+          removeBodyFields: ['thinking', 'reasoning_effort'],
         }
       : inferRemoteModelOpenAIShimConfig(options?.model)
 

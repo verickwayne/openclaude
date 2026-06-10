@@ -6041,6 +6041,47 @@ test('emits reasoning_effort on chat_completions when reasoningEffort is passed'
   expect(requestBody?.reasoning_effort).toBe('xhigh')
 })
 
+test('local Ollama requests strip unsupported thinking fields', async () => {
+  process.env.OPENAI_BASE_URL = 'http://localhost:11434/v1'
+  process.env.OPENAI_API_KEY = 'ollama'
+
+  let requestBody: Record<string, unknown> | undefined
+
+  globalThis.fetch = (async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body))
+    return new Response(
+      JSON.stringify({
+        id: 'chatcmpl-local',
+        model: 'phi4-mini:latest',
+        choices: [
+          {
+            message: { role: 'assistant', content: 'ok' },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      }),
+      { headers: { 'Content-Type': 'application/json' } },
+    )
+  }) as FetchType
+
+  const client = createOpenAIShimClient({
+    reasoningEffort: 'high',
+  }) as OpenAIShimClient
+
+  await client.beta.messages.create({
+    model: 'phi4-mini:latest',
+    messages: [{ role: 'user', content: 'hello' }],
+    max_tokens: 16,
+    stream: false,
+    thinking: { type: 'enabled', budget_tokens: 1024 },
+  })
+
+  expect(requestBody?.model).toBe('phi4-mini:latest')
+  expect(requestBody && 'thinking' in requestBody).toBe(false)
+  expect(requestBody && 'reasoning_effort' in requestBody).toBe(false)
+})
+
 test('omits reasoning_effort on chat_completions when no override and model has no alias default', async () => {
   process.env.OPENAI_BASE_URL = 'https://api.openai.com/v1'
   process.env.OPENAI_API_KEY = 'test-key'

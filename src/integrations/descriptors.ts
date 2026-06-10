@@ -83,6 +83,10 @@ export interface ModelCatalogEntry {
   capabilities?: CapabilityFlags
   contextWindow?: number
   maxOutputTokens?: number
+  pricing?: {
+    inputPerMillionUsd?: string
+    outputPerMillionUsd?: string
+  }
   transportOverrides?: CatalogTransportOverrides
   notes?: string
 }

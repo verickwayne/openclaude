@@ -1,5 +1,6 @@
 import type {
   AnthropicProxyDescriptor,
+  AuthMode,
   GatewayDescriptor,
   TransportKind,
   ValidationRoutingMetadata,
@@ -32,6 +33,13 @@ const TRANSPORT_KIND_PROVIDER_TYPE_LABELS: Partial<
   'anthropic-proxy': 'Anthropic-compatible API',
   local: 'OpenAI-compatible API',
   'openai-compatible': 'OpenAI-compatible API',
+}
+
+const AUTH_MODE_PROVIDER_TYPE_LABELS: Partial<Record<AuthMode, string>> = {
+  oauth: 'OAuth subscription',
+  adc: 'Cloud credentials',
+  token: 'Token authentication',
+  none: 'Local provider',
 }
 
 const XIAOMI_MIMO_PRIMARY_HOST = 'api.xiaomimimo.com'
@@ -537,7 +545,15 @@ export function routeSupportsAuthHeaders(routeId: string): boolean {
 export function getRouteProviderTypeLabel(
   routeId: string,
 ): string {
-  const kind = getRouteDescriptor(routeId)?.transportConfig.kind
+  const descriptor = getRouteDescriptor(routeId)
+  const authLabel = descriptor
+    ? AUTH_MODE_PROVIDER_TYPE_LABELS[descriptor.setup.authMode]
+    : undefined
+  if (authLabel) {
+    return authLabel
+  }
+
+  const kind = descriptor?.transportConfig.kind
   return (
     (kind ? TRANSPORT_KIND_PROVIDER_TYPE_LABELS[kind] : undefined) ??
     'OpenAI-compatible API'

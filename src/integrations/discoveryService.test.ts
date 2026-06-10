@@ -277,6 +277,10 @@ describe('discoverModelsForRoute', () => {
     expect(opus?.notes).toContain('input $15.00')
     expect(opus?.notes).toContain('output $75.00')
     expect(opus?.notes).toContain('per 1M tokens')
+    expect(opus?.pricing).toEqual({
+      inputPerMillionUsd: '$15.00',
+      outputPerMillionUsd: '$75.00',
+    })
     expect(opus?.contextWindow).toBe(200000)
   })
 

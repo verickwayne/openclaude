@@ -1974,6 +1974,10 @@ class OpenAIShimMessages {
       }
     }
 
+    for (const field of shimConfig.removeBodyFields ?? []) {
+      delete body[field]
+    }
+
     if (params.tools && params.tools.length > 0) {
       const converted = convertTools(
         params.tools as Array<{

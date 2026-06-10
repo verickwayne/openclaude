@@ -20,6 +20,7 @@ export default defineGateway({
     openaiShim: {
       supportsAuthHeaders: true,
       maxTokensField: 'max_tokens',
+      removeBodyFields: ['thinking', 'reasoning_effort'],
     },
   },
   preset: {
