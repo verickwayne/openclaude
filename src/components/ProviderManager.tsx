@@ -2700,6 +2700,14 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             const settingsOverrideError =
               clearStartupProviderOverrideFromUserSettings()
             const activationWarning = await activateCodexOAuthSession(tokens)
+            // Update the running session's model immediately. Otherwise
+            // /login can switch the transport to Codex while the next request
+            // still carries the previous provider's model name.
+            setAppState(prev => ({
+              ...prev,
+              mainLoopModel: getPrimaryModel(saved.model),
+              mainLoopModelForSession: null,
+            }))
             setHasStoredCodexOAuthCredentials(true)
             setStoredCodexOAuthProfileId(saved.id)
             refreshProfiles()

@@ -1485,6 +1485,7 @@ test('/login OpenAI subscription makes the saved profile active immediately', as
 
   const onDone = mock(() => {})
   const persistCredentials = mock(() => {})
+  const appStateChanges: Array<{ newState: any; oldState: any }> = []
   const oldDuplicateProfile = {
     id: 'provider_old_codex',
     provider: 'openai',
@@ -1552,9 +1553,19 @@ test('/login OpenAI subscription makes the saved profile active immediately', as
   const mounted = await mountProviderManager(ProviderManager, {
     mode: 'codex-login',
     onDone,
+    onChangeAppState: args => {
+      appStateChanges.push(args as { newState: any; oldState: any })
+    },
   })
 
   await waitForCondition(() => onDone.mock.calls.length > 0)
+  await waitForCondition(() =>
+    appStateChanges.some(
+      ({ newState }) =>
+        newState.mainLoopModel === 'codexplan' &&
+        newState.mainLoopModelForSession === null,
+    ),
+  )
 
   expect(addProviderProfile).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -1572,6 +1583,13 @@ test('/login OpenAI subscription makes the saved profile active immediately', as
   expect(persistCredentials).toHaveBeenCalledWith({
     profileId: 'provider_new_codex_oauth',
   })
+  expect(
+    appStateChanges.some(
+      ({ newState }) =>
+        newState.mainLoopModel === 'codexplan' &&
+        newState.mainLoopModelForSession === null,
+    ),
+  ).toBe(true)
   expect(onDone).toHaveBeenCalledWith(
     expect.objectContaining({
       action: 'saved',

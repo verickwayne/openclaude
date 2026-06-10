@@ -284,6 +284,68 @@ test('uses OpenAI-compatible responses endpoint when OPENAI_API_FORMAT=responses
   ])
 })
 
+test('responses endpoint closes MCP tool schemas for OpenAI strict validation', async () => {
+  process.env.OPENAI_API_FORMAT = 'responses'
+  let capturedBody: Record<string, unknown> | undefined
+
+  globalThis.fetch = (async (_input, init) => {
+    capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+
+    return new Response(
+      JSON.stringify({
+        id: 'resp-1',
+        model: 'gpt-5.5',
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'ok' }],
+          },
+        ],
+        usage: { input_tokens: 8, output_tokens: 3, total_tokens: 11 },
+      }),
+      { headers: { 'Content-Type': 'application/json' } },
+    )
+  }) as FetchType
+
+  const client = createOpenAIShimClient({ defaultHeaders: {} }) as OpenAIShimClient
+
+  await client.beta.messages.create({
+    model: 'gpt-5.5',
+    messages: [{ role: 'user', content: 'draft an email' }],
+    tools: [
+      {
+        name: 'mcp__claude_ai_Gmail__create_draft',
+        description: 'Create a draft in Gmail',
+        input_schema: {
+          properties: {
+            to: { type: 'array', items: { type: 'string' } },
+            headers: {
+              properties: { 'In-Reply-To': { type: 'string' } },
+            },
+          },
+          required: ['to'],
+        },
+      },
+    ],
+    max_tokens: 64,
+    stream: false,
+  })
+
+  const tools = capturedBody?.tools as
+    | Array<{ parameters?: Record<string, unknown> }>
+    | undefined
+  const parameters = tools?.[0]?.parameters
+  const props = parameters?.properties as
+    | Record<string, Record<string, unknown>>
+    | undefined
+
+  expect(parameters?.type).toBe('object')
+  expect(parameters?.additionalProperties).toBe(false)
+  expect(props?.headers?.type).toBe('object')
+  expect(props?.headers?.additionalProperties).toBe(false)
+})
+
 test('strips store from strict OpenAI-compatible responses providers', async () => {
   process.env.OPENAI_BASE_URL = 'https://api.moonshot.ai/v1'
   process.env.OPENAI_API_FORMAT = 'responses'
