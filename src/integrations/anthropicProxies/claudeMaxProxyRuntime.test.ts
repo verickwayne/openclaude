@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 
 import {
   describeEnsureResult,
+  pythonHasModule,
   resolveOverlayRoot,
   resolveProxyBaseUrl,
 } from './claudeMaxProxyRuntime.js'
@@ -39,4 +40,15 @@ test('describeEnsureResult is silent on success, actionable on failure', () => {
   expect(
     describeEnsureResult({ status: 'error', message: 'boom' }),
   ).toContain('boom')
+})
+
+test('describeEnsureResult missing-curl-cffi message contains curl_cffi and pip install', () => {
+  const msg = describeEnsureResult({ status: 'missing-curl-cffi', python: 'python3' })
+  expect(msg).toContain('curl_cffi')
+  expect(msg).toContain('pip install')
+  expect(msg).toContain('python3')
+})
+
+test('pythonHasModule returns false for a bogus module name', () => {
+  expect(pythonHasModule('python3', '__no_such_module_xyz__')).toBe(false)
 })

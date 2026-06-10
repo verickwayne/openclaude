@@ -14,7 +14,7 @@
  * actionable message rather than throwing.
  */
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
@@ -29,8 +29,25 @@ export type EnsureProxyResult =
   | { status: 'already-running' }
   | { status: 'started' }
   | { status: 'overlay-missing'; overlayRoot: string }
+  | { status: 'missing-curl-cffi'; python: string }
   | { status: 'unhealthy'; baseUrl: string }
   | { status: 'error'; message: string }
+
+/**
+ * Check whether a Python interpreter has a given module importable.
+ * Uses spawnSync with a short timeout; returns false on any failure.
+ */
+export function pythonHasModule(
+  python: string,
+  moduleName: string,
+  timeoutMs = 5_000,
+): boolean {
+  const result = spawnSync(python, ['-c', `import ${moduleName}`], {
+    timeout: timeoutMs,
+    stdio: 'ignore',
+  })
+  return result.status === 0
+}
 
 export function resolveOverlayRoot(
   processEnv: NodeJS.ProcessEnv = process.env,
@@ -113,6 +130,10 @@ export async function ensureClaudeMaxProxyRunning(options?: {
   const bind = resolveBind(baseUrl)
   const python = processEnv.CLAUDE_MAX_PROXY_PYTHON?.trim() || 'python3'
 
+  if (!pythonHasModule(python, 'curl_cffi')) {
+    return { status: 'missing-curl-cffi', python }
+  }
+
   try {
     const child = spawn(
       python,
@@ -164,6 +185,8 @@ export function describeEnsureResult(result: EnsureProxyResult): string | null {
       return null
     case 'overlay-missing':
       return `Claude Max proxy could not start: overlay not found at ${result.overlayRoot}. Clone it there or set CLAUDE_MAX_OVERLAY_ROOT, then retry.`
+    case 'missing-curl-cffi':
+      return `Claude Max proxy cannot start: Python '${result.python}' is missing curl_cffi (required for TLS impersonation — without it Anthropic rejects requests with 404). Install it: ${result.python} -m pip install 'curl_cffi>=0.7' httpx`
     case 'unhealthy':
       return `Claude Max proxy was launched but is not responding at ${result.baseUrl}. Check the overlay logs (bun run claude-max:proxy in the OpenClaude repo runs it in the foreground).`
     case 'error':
