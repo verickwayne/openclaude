@@ -147,14 +147,14 @@ function readBashCommand(
 
 /**
  * Self-tamper guard. Blocks Edit/Write/MultiEdit/NotebookEdit on paths
- * that resolve into OpenClaude's own enforcement code. The gate runs
+ * that resolve into Limitless's own enforcement code. The gate runs
  * AFTER evaluatePhaseGate so a phase-mismatch deny isn't masked by a
  * tamper-block when both apply.
  *
  * Match strategy: normalize the input path with path.resolve() (handles
  * `../` traversal and absolute-vs-relative), then check if the resulting
  * path ENDS WITH `/<deny-prefix>`. The suffix form avoids needing to
- * know OpenClaude's install root at runtime.
+ * know Limitless's install root at runtime.
  *
  * Bypass: only via LIMITLESS_TAMPER_GUARD=off set at process launch —
  * caller passes the result of readTamperGuardEnabled() into `enabled`.
@@ -233,7 +233,7 @@ function formatTamperDenyReason(args: {
  * work without verification or external-knowledge calls, the next
  * mutating tool is blocked until WebSearch or WebFetch fires.
  *
- * This is what differentiates the OpenClaude loop from every other
+ * This is what differentiates the Limitless loop from every other
  * shipping open-source harness as of 2026-06-06: failure-loop guards
  * either stop the loop (OpenHands StuckDetector, Aider --auto-test) or
  * pause for user input. None auto-redirect to a specific NEXT action.

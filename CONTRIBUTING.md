@@ -6,7 +6,7 @@ Limitless is a fast-moving open-source coding-agent CLI with support for multipl
 
 ## Before You Start
 
-- Search existing [issues](https://github.com/Gitlawb/openclaude/issues) and [discussions](https://github.com/Gitlawb/openclaude/discussions) before opening a new thread.
+- Search existing [issues](https://github.com/verickwayne/limitless/issues) and [discussions](https://github.com/verickwayne/limitless/discussions) before opening a new thread.
 - Use issues for confirmed bugs and actionable feature work.
 - Use discussions for setup help, ideas, and general community conversation.
 - For larger changes, open an issue first so the scope is clear before implementation.

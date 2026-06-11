@@ -1,7 +1,7 @@
 /**
  * Loopback HTTP server that receives the xAI OAuth redirect.
  *
- * Unlike OpenClaude's general `AuthCodeListener`, this one explicitly answers
+ * Unlike Limitless's general `AuthCodeListener`, this one explicitly answers
  * CORS preflight (`OPTIONS`) for the xAI auth origins (`auth.x.ai`,
  * `accounts.x.ai`). xAI's web client pushes the authorization code to the
  * loopback URL via a browser-side fetch; without echoing CORS the browser

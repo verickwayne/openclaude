@@ -1491,7 +1491,7 @@ test('ProviderManager first-run OpenAI (Subscription) switches the current sessi
     expect.objectContaining({
       action: 'saved',
       message:
-        'OpenAI (Subscription) configured. OpenClaude activated it for this session.',
+        'OpenAI (Subscription) configured. Limitless activated it for this session.',
     }),
   )
 
@@ -1615,7 +1615,7 @@ test('/login OpenAI subscription makes the saved profile active immediately', as
     expect.objectContaining({
       action: 'saved',
       message:
-        'OpenAI (Subscription) configured. OpenClaude activated it for this session.',
+        'OpenAI (Subscription) configured. Limitless activated it for this session.',
     }),
   )
 

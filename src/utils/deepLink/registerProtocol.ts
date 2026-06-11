@@ -1,8 +1,8 @@
 /**
  * Protocol Handler Registration
  *
- * Registers the `claude-cli://` custom URI scheme with the OS,
- * so that clicking a `claude-cli://` link in a browser (or any app) will
+ * Registers the `limitless-cli://` custom URI scheme with the OS,
+ * so that clicking a `limitless-cli://` link in a browser (or any app) will
  * invoke `claude --handle-uri <url>`.
  *
  * Platform details:
@@ -30,10 +30,10 @@ import { which } from '../which.js'
 import { getUserBinDir, getXDGDataHome } from '../xdg.js'
 import { DEEP_LINK_PROTOCOL } from './parseDeepLink.js'
 
-export const MACOS_BUNDLE_ID = 'com.anthropic.claude-code-url-handler'
-const APP_NAME = 'Claude Code URL Handler'
-const DESKTOP_FILE_NAME = 'claude-code-url-handler.desktop'
-const MACOS_APP_NAME = 'Claude Code URL Handler.app'
+export const MACOS_BUNDLE_ID = 'com.limitless.url-handler'
+const APP_NAME = 'Limitless URL Handler'
+const DESKTOP_FILE_NAME = 'limitless-url-handler.desktop'
+const MACOS_APP_NAME = 'Limitless URL Handler.app'
 
 // Shared between register* (writes these paths/values) and
 // isProtocolHandlerCurrent (reads them back). Keep the writer and reader
@@ -65,7 +65,7 @@ function windowsCommandValue(claudePath: string): string {
  *
  * Creates a .app bundle where the CFBundleExecutable is a symlink to the
  * already-installed (and signed) `claude` binary. When macOS opens a
- * `claude-cli://` URL, it launches `claude` through this app bundle.
+ * `limitless-cli://` URL, it launches `claude` through this app bundle.
  * Claude then uses the url-handler NAPI module to read the URL from the
  * Apple Event and handles it normally.
  *
@@ -108,7 +108,7 @@ async function registerMacos(claudePath: string): Promise<void> {
   <array>
     <dict>
       <key>CFBundleURLName</key>
-      <string>Claude Code Deep Link</string>
+      <string>Limitless Deep Link</string>
       <key>CFBundleURLSchemes</key>
       <array>
         <string>${DEEP_LINK_PROTOCOL}</string>
@@ -146,7 +146,7 @@ async function registerLinux(claudePath: string): Promise<void> {
 
   const desktopEntry = `[Desktop Entry]
 Name=${APP_NAME}
-Comment=Handle ${DEEP_LINK_PROTOCOL}:// deep links for Claude Code
+Comment=Handle ${DEEP_LINK_PROTOCOL}:// deep links for Limitless
 ${linuxExecLine(claudePath)}
 Type=Application
 NoDisplay=true
@@ -209,8 +209,8 @@ async function registerWindows(claudePath: string): Promise<void> {
 }
 
 /**
- * Register the `claude-cli://` protocol handler with the operating system.
- * After registration, clicking a `claude-cli://` link will invoke claude.
+ * Register the `limitless-cli://` protocol handler with the operating system.
+ * After registration, clicking a `limitless-cli://` link will invoke claude.
  */
 export async function registerProtocolHandler(
   claudePath?: string,
@@ -253,7 +253,7 @@ async function resolveClaudePath(): Promise<string> {
  * Check whether the OS-level protocol handler is already registered AND
  * points at the expected `claude` binary. Reads the registration artifact
  * directly (symlink target, .desktop Exec line, registry value) rather than
- * a cached flag in ~/.openclaude.json, so:
+ * a cached flag in ~/.limitless.json, so:
  *   - the check is per-machine (config can sync across machines; OS state can't)
  *   - stale paths self-heal (install-method change → re-register next session)
  *   - deleted artifacts self-heal
@@ -290,7 +290,7 @@ export async function isProtocolHandlerCurrent(
 }
 
 /**
- * Auto-register the claude-cli:// deep link protocol handler when missing
+ * Auto-register the limitless-cli:// deep link protocol handler when missing
  * or stale. Runs every session from backgroundHousekeeping (fire-and-forget),
  * but the artifact check makes it a no-op after the first successful run
  * unless the install path moves or the OS artifact is deleted.
@@ -311,7 +311,7 @@ export async function ensureDeepLinkProtocolRegistered(): Promise<void> {
   // EACCES/ENOSPC are deterministic — retrying next session won't help.
   // Throttle to once per 24h so a read-only ~/.local/share/applications
   // doesn't generate a failure event on every startup. Marker lives in
-  // ~/.claude (per-machine, not synced) rather than ~/.openclaude.json (can sync).
+  // ~/.claude (per-machine, not synced) rather than ~/.limitless.json (can sync).
   const failureMarkerPath = path.join(
     getClaudeConfigHomeDir(),
     '.deep-link-register-failed',
@@ -328,7 +328,7 @@ export async function ensureDeepLinkProtocolRegistered(): Promise<void> {
   try {
     await registerProtocolHandler(claudePath)
     logEvent('tengu_deep_link_registered', { success: true })
-    logForDebugging('Auto-registered claude-cli:// deep link protocol handler')
+    logForDebugging('Auto-registered limitless-cli:// deep link protocol handler')
     await fs.rm(failureMarkerPath, { force: true }).catch(() => {})
   } catch (error) {
     const code = getErrnoCode(error)

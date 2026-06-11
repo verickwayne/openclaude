@@ -162,7 +162,7 @@ export default defineVendor({
     kind: 'openai-compatible',
     openaiShim: {
       headers: {
-        'X-Acme-Client': 'openclaude',
+        'X-Acme-Client': 'limitless',
         'X-Acme-Protocol': 'labs-v1',
       },
       supportsApiFormatSelection: false,

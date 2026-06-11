@@ -8,7 +8,7 @@ import {
   validateProviderEnvForStartupOrExit,
 } from '../utils/providerValidation.js'
 
-// OpenClaude: polyfill globalThis.File for Node < 20.
+// Limitless: polyfill globalThis.File for Node < 20.
 // undici v7 references `File` at module evaluation time (webidl type
 // assertions). Node 18 lacks the global, causing a ReferenceError inside
 // the bundled __commonJS require chain which deadlocks the process when a
@@ -36,7 +36,7 @@ if (typeof globalThis.File === 'undefined') {
   }
 }
 
-// OpenClaude: disable experimental API betas by default.
+// Limitless: disable experimental API betas by default.
 // Tool search (defer_loading), global cache scope, and context management
 // require internal API support not available to external accounts → 500.
 // Users can opt-in with CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=false.
@@ -55,7 +55,7 @@ process.env.COREPACK_ENABLE_AUTO_PIN = '0';
 // CCR (Claude Code Remote / container) environments are covered by the same
 // unconditional assignment — the previous CLAUDE_CODE_REMOTE guard was too
 // restrictive, preventing local users from benefiting from the raised limit.
-// Closes: Gitlawb/openclaude#402 — JavaScript heap OOM during large tasks.
+// Fix: JavaScript heap OOM during large tasks.
 // eslint-disable-next-line custom-rules/no-top-level-side-effects, custom-rules/no-process-env-top-level, custom-rules/safe-env-boolean-check
 if (!process.env.NODE_OPTIONS?.includes('--max-old-space-size')) {
   // eslint-disable-next-line custom-rules/no-top-level-side-effects, custom-rules/no-process-env-top-level

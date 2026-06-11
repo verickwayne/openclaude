@@ -9,7 +9,7 @@ import { AppState } from '../state/AppState.js'
 import { FileStateCache, READ_FILE_STATE_CACHE_SIZE } from '../utils/fileStateCache.js'
 import { getBuiltInAgents } from '../tools/AgentTool/builtInAgents.js'
 
-const PROTO_PATH = path.resolve(import.meta.dirname, '../proto/openclaude.proto')
+const PROTO_PATH = path.resolve(import.meta.dirname, '../proto/limitless.proto')
 
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   keepCase: true,
@@ -20,7 +20,7 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
 })
 
 const protoDescriptor = grpc.loadPackageDefinition(packageDefinition) as any
-const openclaudeProto = protoDescriptor.openclaude.v1
+const openclaudeProto = protoDescriptor.limitless.v1
 
 const MAX_SESSIONS = 1000
 

@@ -41,7 +41,7 @@
    - 6a. Self-Hosted Sandboxes (Managed Agents)
    - 6b. MCP Tunnels
    - 6c. Streaming Tool Execution Always-On
-7. [OpenClaude Adoption Summary](#7-openclaude-adoption-summary)
+7. [Limitless Adoption Summary](#7-limitless-adoption-summary)
 
 ---
 
@@ -651,7 +651,7 @@ Background sessions persist without a terminal attached. `claude agents` is the 
 
 ---
 
-## 7. OpenClaude Adoption Summary
+## 7. Limitless Adoption Summary
 
 The 8 most adoptable items, ranked by impact-to-effort ratio for a provider-agnostic fork:
 

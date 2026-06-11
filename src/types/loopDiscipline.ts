@@ -378,7 +378,7 @@ export function applyPhaseTransitionReset(
 
 /**
  * Read the enforcement level from the environment. Defaults to 0 (observe
- * only) so existing OpenClaude installs are unaffected until the operator
+ * only) so existing Limitless installs are unaffected until the operator
  * explicitly opts in.
  */
 export function readDisciplineLevel(
@@ -481,7 +481,7 @@ export function resolveEffectiveDisciplineLevel(args: {
  *
  * The runtime match is a suffix check: a canonicalized path that ENDS WITH
  * `/<prefix>` blocks. The suffix form intentionally avoids requiring the
- * harness to know its own install root — wherever OpenClaude's source
+ * harness to know its own install root — wherever Limitless's source
  * tree lives, `src/query.ts` is `src/query.ts`.
  *
  * Add Phase C's own surface (loopDisciplineHooks.ts) so the gate that
@@ -999,7 +999,7 @@ export function recordDisciplineEvent(
  * Format chosen to match the conventions in
  * ~/.claude/scripts/ralph-mode-enforcer.sh log output — turn:phase →
  * event-kind details. Keeps mental model consistent between the bolt-on
- * ralph harness and the native OpenClaude discipline.
+ * ralph harness and the native Limitless discipline.
  */
 export function formatDisciplineEvent(e: DisciplineEvent): string {
   switch (e.kind) {

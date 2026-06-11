@@ -30,7 +30,7 @@ const CHILD_ENV_ALLOWLIST = new Set([
   'LANG', 'LC_ALL', 'LC_CTYPE',
   // Node.js runtime
   'NODE_OPTIONS', 'NODE_PATH', 'NODE_ENV',
-  // OpenClaude session / bridge (non-secret)
+  // Limitless session / bridge (non-secret)
   'CLAUDE_CODE_ENVIRONMENT_KIND',
   'CLAUDE_CODE_FORCE_SANDBOX',
   'CLAUDE_CODE_BUBBLEWRAP',
@@ -112,7 +112,7 @@ type SessionSpawnerDeps = {
    * compiled binaries (where execPath is the claude binary itself); contains
    * the script path (process.argv[1]) for npm installs where execPath is the
    * node runtime. Without this, node sees --sdk-url as a node option and
-   * exits with "bad option: --sdk-url" (see anthropics/claude-code#28334).
+   * exits with "bad option: --sdk-url".
    */
   scriptArgs: string[]
   env: NodeJS.ProcessEnv

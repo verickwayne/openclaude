@@ -18,7 +18,7 @@ npm --version
 ## 2. Install Limitless
 
 ```bash
-npm install -g @gitlawb/openclaude
+npm install -g @verickwayne/limitless
 ```
 
 ## 3. Pick One Provider
@@ -129,13 +129,13 @@ Check the basics:
 ## 6. Updating Limitless
 
 ```bash
-npm install -g @gitlawb/openclaude@latest
+npm install -g @verickwayne/limitless@latest
 ```
 
 ## 7. Uninstalling Limitless
 
 ```bash
-npm uninstall -g @gitlawb/openclaude
+npm uninstall -g @verickwayne/limitless
 ```
 
 ## Need Advanced Setup?

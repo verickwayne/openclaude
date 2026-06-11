@@ -135,10 +135,10 @@ result = await Bun.build({
     'MACRO.DISPLAY_VERSION': JSON.stringify(version),
     'MACRO.BUILD_TIME': JSON.stringify(new Date().toISOString()),
     'MACRO.ISSUES_EXPLAINER':
-      JSON.stringify('report the issue at https://github.com/Gitlawb/openclaude/issues'),
+      JSON.stringify('report the issue at https://github.com/verickwayne/limitless/issues'),
     'MACRO.FEEDBACK_CHANNEL':
-      JSON.stringify('https://github.com/Gitlawb/openclaude/issues'),
-    'MACRO.PACKAGE_URL': JSON.stringify('@gitlawb/limitless'),
+      JSON.stringify('https://github.com/verickwayne/limitless/issues'),
+    'MACRO.PACKAGE_URL': JSON.stringify('@verickwayne/limitless'),
     'MACRO.NATIVE_PACKAGE_URL': 'undefined',
   },
   plugins: [
@@ -442,10 +442,10 @@ sdkResult = await Bun.build({
     'MACRO.DISPLAY_VERSION': JSON.stringify(version),
     'MACRO.BUILD_TIME': JSON.stringify(new Date().toISOString()),
     'MACRO.ISSUES_EXPLAINER':
-      JSON.stringify('report the issue at https://github.com/Gitlawb/openclaude/issues'),
+      JSON.stringify('report the issue at https://github.com/verickwayne/limitless/issues'),
     'MACRO.FEEDBACK_CHANNEL':
-      JSON.stringify('https://github.com/Gitlawb/openclaude/issues'),
-    'MACRO.PACKAGE_URL': JSON.stringify('@gitlawb/limitless'),
+      JSON.stringify('https://github.com/verickwayne/limitless/issues'),
+    'MACRO.PACKAGE_URL': JSON.stringify('@verickwayne/limitless'),
     'MACRO.NATIVE_PACKAGE_URL': 'undefined',
   },
   // External: everything TUI-related + native modules

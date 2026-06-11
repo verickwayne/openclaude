@@ -3,7 +3,7 @@ import * as protoLoader from '@grpc/proto-loader'
 import path from 'path'
 import * as readline from 'readline'
 
-const PROTO_PATH = path.resolve(import.meta.dirname, '../src/proto/openclaude.proto')
+const PROTO_PATH = path.resolve(import.meta.dirname, '../src/proto/limitless.proto')
 
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   keepCase: true,
@@ -14,7 +14,7 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
 })
 
 const protoDescriptor = grpc.loadPackageDefinition(packageDefinition) as any
-const openclaudeProto = protoDescriptor.openclaude.v1
+const openclaudeProto = protoDescriptor.limitless.v1
 
 const rl = readline.createInterface({
   input: process.stdin,

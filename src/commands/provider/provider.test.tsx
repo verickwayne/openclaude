@@ -414,8 +414,8 @@ test('buildProfileSaveMessage reflects immediate Codex activation for existing c
   )
 
   expect(message).toContain('Saved Codex profile.')
-  expect(message).toContain('OpenClaude activated it for this session.')
-  expect(message).not.toContain('Restart OpenClaude to use it.')
+  expect(message).toContain('Limitless activated it for this session.')
+  expect(message).not.toContain('Restart Limitless to use it.')
 })
 
 test('buildProfileSaveMessage reflects immediate Codex OAuth activation when the session switched successfully', () => {
@@ -434,8 +434,8 @@ test('buildProfileSaveMessage reflects immediate Codex OAuth activation when the
   )
 
   expect(message).toContain('Saved Codex profile.')
-  expect(message).toContain('OpenClaude activated it for this session.')
-  expect(message).not.toContain('Restart OpenClaude to use it.')
+  expect(message).toContain('Limitless activated it for this session.')
+  expect(message).not.toContain('Restart Limitless to use it.')
 })
 
 test('buildCodexOAuthProfileEnv uses the fresh OAuth account id without persisting an API key', () => {

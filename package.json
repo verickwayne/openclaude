@@ -1,5 +1,5 @@
 {
-  "name": "@gitlawb/limitless",
+  "name": "@verickwayne/limitless",
   "version": "0.14.0",
   "description": "OpenClaude opens coding-agent workflows to any LLM — OpenAI, Gemini, DeepSeek, Ollama, and 200+ models",
   "type": "module",
@@ -151,10 +151,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Gitlawb/openclaude.git"
+    "url": "https://github.com/verickwayne/limitless.git"
+  },
+  "homepage": "https://github.com/verickwayne/limitless",
+  "bugs": {
+    "url": "https://github.com/verickwayne/limitless/issues"
   },
   "keywords": [
-    "claude-code",
     "openai",
     "llm",
     "cli",

@@ -101,7 +101,7 @@ import { CYBER_RISK_INSTRUCTION } from './cyberRiskInstruction.js'
 import { getModelIdentity } from './modelIdentity.js'
 
 export const CLAUDE_CODE_DOCS_MAP_URL =
-  'https://github.com/Gitlawb/openclaude'
+  'https://github.com/verickwayne/limitless'
 
 /**
  * Boundary marker separating static (cross-org cacheable) content from dynamic content.

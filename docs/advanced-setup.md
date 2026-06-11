@@ -7,7 +7,7 @@ This guide is for users who want source builds, Bun workflows, provider profiles
 ### Option A: npm
 
 ```bash
-npm install -g @gitlawb/openclaude
+npm install -g @verickwayne/limitless
 ```
 
 ### Option B: From source with Bun
@@ -15,8 +15,8 @@ npm install -g @gitlawb/openclaude
 Use Bun `1.3.13` or newer for source builds on Windows. Older Bun versions can fail during `bun run build`.
 
 ```bash
-git clone https://github.com/Gitlawb/openclaude.git
-cd openclaude
+git clone https://github.com/verickwayne/limitless.git
+cd limitless
 
 bun install
 bun run build
@@ -26,8 +26,8 @@ npm link
 ### Option C: Run directly with Bun
 
 ```bash
-git clone https://github.com/Gitlawb/openclaude.git
-cd openclaude
+git clone https://github.com/verickwayne/limitless.git
+cd limitless
 
 bun install
 bun run dev
