@@ -84,6 +84,40 @@ export const TOOL_VALIDATION_CONFIG: ToolValidationConfig = {
       // Valid: domain:*.example.com, domain:example.*, etc.
       return { valid: true }
     },
+
+    WebBrowser: content => {
+      if (content === 'search') {
+        return { valid: true }
+      }
+
+      if (content.includes('://') || content.startsWith('http')) {
+        return {
+          valid: false,
+          error: 'WebBrowser open permissions use domain format, not URLs',
+          suggestion: 'Use "domain:hostname" format, or "search" for search-only permission',
+          examples: [
+            'WebBrowser(search)',
+            'WebBrowser(domain:example.com)',
+            'WebBrowser(domain:github.com)',
+          ],
+        }
+      }
+
+      if (!content.startsWith('domain:')) {
+        return {
+          valid: false,
+          error: 'WebBrowser permissions must use "domain:" prefix or "search"',
+          suggestion: 'Use "domain:hostname" format, or "search"',
+          examples: [
+            'WebBrowser(search)',
+            'WebBrowser(domain:example.com)',
+            'WebBrowser(domain:*.google.com)',
+          ],
+        }
+      }
+
+      return { valid: true }
+    },
   },
 }
 

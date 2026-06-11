@@ -31,7 +31,7 @@ const featureFlags: Record<string, boolean> = {
   COMMIT_ATTRIBUTION: false,      // Co-Authored-By metadata in git commits
   UDS_INBOX: false,               // Unix Domain Socket inter-session messaging
   BG_SESSIONS: false,             // Background sessions via tmux (stubbed)
-  WEB_BROWSER_TOOL: false,        // Built-in browser automation (source not mirrored)
+  WEB_BROWSER_TOOL: true,         // Built-in provider-independent web browsing
   CHICAGO_MCP: false,             // Computer-use MCP (native Swift modules stubbed)
   COWORKER_TYPE_TELEMETRY: false, // Telemetry for agent/coworker type classification
   MCP_SKILLS: false,              // Dynamic MCP skill discovery (src/skills/mcpSkills.ts not mirrored; enabling this causes "fetchMcpSkillsForClient is not a function" when MCP servers with resources connect — see #856)

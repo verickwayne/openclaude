@@ -21,6 +21,7 @@ import { TaskStopTool } from 'src/tools/TaskStopTool/TaskStopTool.js';
 import { TodoWriteTool } from 'src/tools/TodoWriteTool/TodoWriteTool.js';
 import { TungstenTool } from 'src/tools/TungstenTool/TungstenTool.js';
 import { WebFetchTool } from 'src/tools/WebFetchTool/WebFetchTool.js';
+import { WebBrowserTool } from 'src/tools/WebBrowserTool/WebBrowserTool.js';
 import { WebSearchTool } from 'src/tools/WebSearchTool/WebSearchTool.js';
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js';
 import { Box, Text } from '../../ink.js';
@@ -50,7 +51,7 @@ function getToolBuckets(): ToolBuckets {
   return {
     READ_ONLY: {
       name: 'Read-only tools',
-      toolNames: new Set([GlobTool.name, GrepTool.name, ExitPlanModeV2Tool.name, FileReadTool.name, WebFetchTool.name, TodoWriteTool.name, WebSearchTool.name, TaskStopTool.name, TaskOutputTool.name, ListMcpResourcesTool.name, ReadMcpResourceTool.name])
+      toolNames: new Set([GlobTool.name, GrepTool.name, ExitPlanModeV2Tool.name, FileReadTool.name, WebFetchTool.name, WebBrowserTool.name, TodoWriteTool.name, WebSearchTool.name, TaskStopTool.name, TaskOutputTool.name, ListMcpResourcesTool.name, ReadMcpResourceTool.name])
     },
     EDIT: {
       name: 'Edit tools',
