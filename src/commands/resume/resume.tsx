@@ -6,6 +6,7 @@ import * as React from 'react';
 import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js';
 import type { CommandResultDisplay, ResumeEntrypoint } from '../../commands.js';
 import { LogSelector } from '../../components/LogSelector.js';
+import { Select } from '../../components/CustomSelect/select.js';
 import { MessageResponse } from '../../components/MessageResponse.js';
 import { Spinner } from '../../components/Spinner.js';
 import { useIsInsideModal } from '../../context/modalContext.js';
@@ -14,6 +15,10 @@ import { setClipboard } from '../../ink/termio/osc.js';
 import { Box, Text } from '../../ink.js';
 import type { LocalJSXCommandCall } from '../../types/command.js';
 import type { LogOption } from '../../types/logs.js';
+import type { DiscoveredTranscript, ResumeMode } from '../../services/crossHarness/harnessTypes.js';
+import { materialize } from '../../services/crossHarness/materialize.js';
+import { refreshIndex } from '../../services/crossHarness/transcriptIndex.js';
+import { mergeCrossHarnessLogs } from './crossHarnessMerge.js';
 import { agenticSessionSearch } from '../../utils/agenticSessionSearch.js';
 import { checkCrossProjectResume } from '../../utils/crossProjectResume.js';
 import { getWorktreePaths } from '../../utils/getWorktreePaths.js';
@@ -100,6 +105,9 @@ function ResumeCommand({
   const [loading, setLoading] = React.useState(true);
   const [resuming, setResuming] = React.useState(false);
   const [showAllProjects, setShowAllProjects] = React.useState(false);
+  // When set, the user picked a foreign (cross-harness) entry and we render the
+  // full/summary mode chooser instead of the picker.
+  const [pendingForeign, setPendingForeign] = React.useState<LogOption | null>(null);
   const {
     rows
   } = useTerminalSize();
@@ -109,11 +117,23 @@ function ResumeCommand({
     try {
       const allLogs = allProjects ? await loadAllProjectsMessageLogs() : await loadSameRepoMessageLogs(paths);
       const resumable = filterResumableSessions(allLogs, getSessionId());
-      if (resumable.length === 0) {
+
+      // Merge in cross-harness transcripts. Resilient: any discovery failure
+      // falls back to native logs so native resume never breaks.
+      let merged = resumable;
+      try {
+        const idx = await refreshIndex();
+        merged = mergeCrossHarnessLogs(resumable, idx.entries);
+      } catch (err) {
+        logError(err as Error);
+        merged = resumable;
+      }
+
+      if (merged.length === 0) {
         onDone('No conversations found to resume');
         return;
       }
-      setLogs(resumable);
+      setLogs(merged);
     } catch (_err) {
       onDone('Failed to load conversations');
     } finally {
@@ -133,7 +153,30 @@ function ResumeCommand({
     setShowAllProjects(newValue);
     void loadLogs(newValue, worktreePaths);
   }, [showAllProjects, loadLogs, worktreePaths]);
+  async function handleForeignResume(foreign: DiscoveredTranscript, mode: ResumeMode) {
+    setResuming(true);
+    try {
+      const {
+        sessionId,
+        log: newLog
+      } = await materialize(foreign, mode);
+      const uuid = validateUuid(sessionId);
+      if (!uuid) {
+        onDone(`Failed to resume ${foreign.harness} session: invalid session id`);
+        return;
+      }
+      await onResume(uuid, newLog, 'slash_command_picker');
+    } catch (err) {
+      logError(err as Error);
+      onDone(`Failed to resume ${foreign.harness} session: ${(err as Error).message}`);
+    }
+  }
   async function handleSelect(log: LogOption) {
+    // Foreign (cross-harness) entry — offer full/summary, then materialize.
+    if (log.crossHarness) {
+      setPendingForeign(log);
+      return;
+    }
     const sessionId = validateUuid(getSessionIdFromLog(log));
     if (!sessionId) {
       onDone('Failed to resume conversation');
@@ -184,6 +227,24 @@ function ResumeCommand({
     return <Box>
         <Spinner />
         <Text> Resuming conversation…</Text>
+      </Box>;
+  }
+  if (pendingForeign?.crossHarness) {
+    const foreign = pendingForeign.crossHarness;
+    return <Box flexDirection="column">
+        <Box paddingLeft={1}>
+          <Text bold={true}>Resume {foreign.harness} session: {foreign.sessionName}</Text>
+        </Box>
+        <Select options={[{
+        label: 'Resume from full transcript + last turn',
+        value: 'full'
+      }, {
+        label: 'Resume from summary',
+        value: 'summary'
+      }]} onChange={(mode: ResumeMode) => {
+        setPendingForeign(null);
+        void handleForeignResume(foreign, mode);
+      }} onCancel={() => setPendingForeign(null)} />
       </Box>;
   }
   return <LogSelector logs={logs} maxHeight={insideModal ? Math.floor(rows / 2) : rows - 2} onCancel={handleCancel} onSelect={handleSelect} onLogsChanged={() => loadLogs(showAllProjects, worktreePaths)} showAllProjects={showAllProjects} onToggleAllProjects={handleToggleAllProjects} onAgenticSearch={agenticSessionSearch} />;
