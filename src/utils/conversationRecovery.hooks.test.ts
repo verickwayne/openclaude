@@ -70,7 +70,7 @@ afterEach(async () => {
   }
 })
 
-test('loadConversationForResume rejects oversized transcripts before resume hooks run', async () => {
+test('loadConversationForResume allows oversized transcripts and still runs resume hooks', async () => {
   delete process.env.CLAUDE_CODE_SIMPLE
   const hugeContent = 'x'.repeat(8 * 1024 * 1024 + 32 * 1024)
   const path = await writeJsonl(user(id(3), hugeContent))
@@ -81,14 +81,17 @@ test('loadConversationForResume rejects oversized transcripts before resume hook
     processSessionStartHooks: hookSpy,
   }))
 
-  const { loadConversationForResume, ResumeTranscriptTooLargeError } = await import(
+  const { loadConversationForResume } = await import(
     './conversationRecovery.ts'
   )
 
-  await expect(loadConversationForResume('fixture', path)).rejects.toBeInstanceOf(
-    ResumeTranscriptTooLargeError,
-  )
-  expect(hookSpy).not.toHaveBeenCalled()
+  const result = await loadConversationForResume('fixture', path)
+  expect(result).not.toBeNull()
+  expect(result?.messages.length).toBeGreaterThanOrEqual(2)
+  expect(
+    result?.messages.some(message => message.message?.content === hugeContent),
+  ).toBe(true)
+  expect(hookSpy).toHaveBeenCalled()
 })
 
 test('deserializeMessagesWithInterruptDetection strips thinking blocks only for OpenAI-compatible providers', async () => {

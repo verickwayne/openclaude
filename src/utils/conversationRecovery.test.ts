@@ -125,26 +125,18 @@ test('loadConversationForResume accepts a small transcript from jsonl path', asy
   expect(result?.messages.length).toBeGreaterThan(0)
 })
 
-test('loadConversationForResume rejects oversized reconstructed transcripts', async () => {
+test('loadConversationForResume allows oversized reconstructed transcripts', async () => {
   process.env.CLAUDE_CODE_SIMPLE = '1'
   const hugeContent = 'x'.repeat(8 * 1024 * 1024 + 32 * 1024)
   const path = await writeJsonl(user(id(2), hugeContent))
-  const {
-    loadConversationForResume,
-    ResumeTranscriptTooLargeError,
-  } = await importFreshConversationRecovery()
+  const { loadConversationForResume } = await importFreshConversationRecovery()
 
-  let caught: unknown
-  try {
-    await loadConversationForResume('fixture', path)
-  } catch (error) {
-    caught = error
-  }
-
-  expect(caught).toBeInstanceOf(ResumeTranscriptTooLargeError)
-  expect((caught as Error).message).toContain(
-    'Reconstructed transcript is too large to resume safely',
-  )
+  const result = await loadConversationForResume('fixture', path)
+  expect(result).not.toBeNull()
+  expect(result?.messages.length).toBeGreaterThanOrEqual(1)
+  expect(
+    result?.messages.some(message => message.message?.content === hugeContent),
+  ).toBe(true)
 })
 
 test('deserializeMessages preserves thinking blocks for GitHub native Claude transport', async () => {
