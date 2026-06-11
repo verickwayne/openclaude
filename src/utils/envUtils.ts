@@ -14,11 +14,6 @@ import { dirname, join } from 'path'
 const LEGACY_GLOBAL_CONFIG_FILE_RE =
   /^\.claude(?:-(?:custom|local|staging)-oauth)?\.json$/
 
-// Previous-brand global config files (`.openclaude.json`,
-// `.openclaude-custom-oauth.json`, etc.) that migrate forward to `.limitless*`.
-const LEGACY_OPENCLAUDE_GLOBAL_CONFIG_FILE_RE =
-  /^\.openclaude(?:-(?:custom|local|staging)-oauth)?\.json$/
-
 function getErrnoCode(error: unknown): string | undefined {
   if (
     error &&
@@ -110,105 +105,6 @@ function getLegacyGlobalConfigFiles(homeDir: string): string[] {
   }
 }
 
-function getLegacyOpenClaudeGlobalConfigFiles(homeDir: string): string[] {
-  try {
-    return readdirSync(homeDir).filter(file =>
-      LEGACY_OPENCLAUDE_GLOBAL_CONFIG_FILE_RE.test(file),
-    )
-  } catch (error) {
-    if (getErrnoCode(error) === 'ENOENT') {
-      return []
-    }
-    throw error
-  }
-}
-
-/**
- * Migrate previous-brand global config FILES (`~/.openclaude.json` and its
- * `-*-oauth.json` variants) forward to `~/.limitless*.json`.
- *
- * Mirrors the `.claude* → .openclaude*` file migration above: copy-only,
- * idempotent (skips when the destination already exists), and non-destructive
- * (the legacy file is left in place). Explicit CLAUDE_CONFIG_DIR opts out, same
- * as the existing migration. This intentionally does NOT touch the
- * `~/.openclaude` config DIRECTORY — that is governed by CLAUDE_CONFIG_DIR.
- *
- * Returns true on success (including the no-op case), false if copying threw.
- */
-export function migrateLegacyOpenClaudeGlobalConfigFiles(options?: {
-  configDirEnv?: string
-  homeDir?: string
-}): boolean {
-  if (options?.configDirEnv) {
-    return true
-  }
-
-  const homeDir = options?.homeDir ?? homedir()
-
-  try {
-    const legacyFiles = getLegacyOpenClaudeGlobalConfigFiles(homeDir)
-    if (legacyFiles.length === 0) {
-      return true
-    }
-
-    for (const legacyFile of legacyFiles) {
-      const limitlessFile = legacyFile.replace(/^\.openclaude/, '.limitless')
-      copyMissingPathSync(
-        join(homeDir, legacyFile),
-        join(homeDir, limitlessFile),
-      )
-    }
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * One-time, idempotent, non-destructive migration of `~/.openclaude/` to
- * `~/.limitless/`.  Mirrors the `.claude → .openclaude` directory migration:
- * - no-op when `configDirEnv` is set (explicit override wins)
- * - no-op when `~/.openclaude` does not exist
- * - no-op when `~/.limitless` already exists and is populated
- * - otherwise recursively copies `.openclaude/` → `.limitless/`, skipping
- *   any destination path that already exists (reuses `copyMissingPathSync`)
- * Source directory is never moved or deleted.
- */
-export function migrateLegacyOpenClaudeHome(options?: {
-  configDirEnv?: string
-  homeDir?: string
-}): void {
-  if (options?.configDirEnv) {
-    return
-  }
-
-  const homeDir = options?.homeDir ?? homedir()
-  const openClaudeDir = join(homeDir, '.openclaude')
-  const limitlessDir = join(homeDir, '.limitless')
-
-  // Source must exist as a directory.
-  if (!pathIsDirectory(openClaudeDir)) {
-    return
-  }
-
-  // Destination already populated — nothing to do.
-  if (pathIsDirectory(limitlessDir)) {
-    try {
-      if (readdirSync(limitlessDir).length > 0) {
-        return
-      }
-    } catch {
-      return
-    }
-  }
-
-  try {
-    copyMissingPathSync(openClaudeDir, limitlessDir)
-  } catch {
-    // Best-effort: swallow errors so the caller always proceeds.
-  }
-}
-
 export function migrateLegacyClaudeConfigHome(options?: {
   configDirEnv?: string
   homeDir?: string
@@ -218,7 +114,7 @@ export function migrateLegacyClaudeConfigHome(options?: {
   }
 
   const homeDir = options?.homeDir ?? homedir()
-  const openClaudeDir = join(homeDir, '.openclaude')
+  const limitlessDir = join(homeDir, '.limitless')
   const legacyClaudeDir = join(homeDir, '.claude')
 
   try {
@@ -230,14 +126,14 @@ export function migrateLegacyClaudeConfigHome(options?: {
     }
 
     if (legacyDirExists) {
-      copyMissingPathSync(legacyClaudeDir, openClaudeDir)
+      copyMissingPathSync(legacyClaudeDir, limitlessDir)
     }
 
     for (const legacyFile of legacyGlobalConfigFiles) {
-      const openClaudeFile = legacyFile.replace(/^\.claude/, '.openclaude')
+      const limitlessFile = legacyFile.replace(/^\.claude/, '.limitless')
       copyMissingPathSync(
         join(homeDir, legacyFile),
-        join(homeDir, openClaudeFile),
+        join(homeDir, limitlessFile),
       )
     }
     return true
@@ -283,42 +179,27 @@ export const getClaudeConfigHomeDir = memoize(
       return claudeConfigHomeDirOverride
     }
 
-    // LIMITLESS_CONFIG_DIR is the primary env var; CLAUDE_CONFIG_DIR is the
-    // legacy compat name.  Both are kept intentionally (see KEEP-ZONE).
+    // LIMITLESS_CONFIG_DIR is the primary env var; CLAUDE_CONFIG_DIR remains
+    // a host compatibility alias used by the upstream harness internals.
     const configDirEnv =
       process.env.LIMITLESS_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR
     const homeDir = homedir()
 
-    // Run both legacy migrations (non-destructive copy-only) when no explicit
-    // override is set.  Order: .claude → .openclaude first, then
-    // .openclaude → .limitless.
+    // Direct legacy migration: .claude → .limitless.
     const migrationSucceeded = migrateLegacyClaudeConfigHome({
       configDirEnv,
       homeDir,
     })
-    migrateLegacyOpenClaudeHome({ configDirEnv, homeDir })
 
     const limitlessDir = join(homeDir, '.limitless')
-    const openClaudeDir = join(homeDir, '.openclaude')
     const legacyClaudeDir = join(homeDir, '.claude')
 
-    // Tier 3 (not-yet-migrated): fall back to ~/.openclaude when it exists
-    //   but ~/.limitless does not.
-    if (
-      !configDirEnv &&
-      !pathIsDirectory(limitlessDir) &&
-      pathIsDirectory(openClaudeDir)
-    ) {
-      return openClaudeDir.normalize('NFC')
-    }
-
-    // Tier 4 (original legacy): ~/.claude when neither new dir exists and the
-    //   .claude→.openclaude migration failed.
+    // Original legacy fallback: ~/.claude when direct migration failed and the
+    // new config home is unavailable.
     if (
       !configDirEnv &&
       !migrationSucceeded &&
       !pathIsDirectory(limitlessDir) &&
-      !pathIsDirectory(openClaudeDir) &&
       pathExists(legacyClaudeDir)
     ) {
       return legacyClaudeDir.normalize('NFC')
@@ -354,14 +235,11 @@ export function hasNodeOption(flag: string): boolean {
 }
 
 /**
- * Reads a product environment variable under the LIMITLESS_ brand, falling
- * back to the legacy OPENCLAUDE_ name so existing users' env settings keep
- * working. LIMITLESS_ wins when both are defined.
+ * Reads a product environment variable under the LIMITLESS_ brand.
  *
  * `suffix` is the bare variable name without the brand prefix, e.g.
- * readBrandedEnv('MULTI_PROVIDER') reads LIMITLESS_MULTI_PROVIDER ??
- * OPENCLAUDE_MULTI_PROVIDER. Pass a custom `env` to read from a specific
- * environment object (e.g. a child-process env or test fixture).
+ * readBrandedEnv('MULTI_PROVIDER') reads LIMITLESS_MULTI_PROVIDER. Pass a
+ * custom `env` to read from a specific environment object.
  *
  * Only for the product's OWN env vars. Do NOT use for host-environment vars
  * (CLAUDE_CODE_*, CLAUDE_*, ANTHROPIC_*) — those are read verbatim from the
@@ -371,7 +249,7 @@ export function readBrandedEnv(
   suffix: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  return env[`LIMITLESS_${suffix}`] ?? env[`OPENCLAUDE_${suffix}`]
+  return env[`LIMITLESS_${suffix}`]
 }
 
 export function isEnvTruthy(envVar: string | boolean | undefined): boolean {

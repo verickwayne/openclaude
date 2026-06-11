@@ -19,7 +19,7 @@ test('/longtask registers and emits a durable ledger prompt', async () => {
 
   expect(text).toContain('# /longtask')
   expect(text).toContain('ship the provider picker')
-  expect(text).toContain('.openclaude/longtask.json')
+  expect(text).toContain('.limitless/longtask.json')
   expect(text).toContain('"required_items"')
   expect(text).toContain('mechanical source of truth')
 })

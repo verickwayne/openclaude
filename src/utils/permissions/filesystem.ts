@@ -11,7 +11,6 @@ import {
   FILE_EDIT_TOOL_NAME,
   GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
   LEGACY_GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
-  LEGACY_GLOBAL_OPENCLAUDE_FOLDER_PERMISSION_PATTERN,
 } from 'src/tools/FileEditTool/constants.js'
 import type { z } from 'zod/v4'
 import { getOriginalCwd, getSessionId } from '../../bootstrap/state.js'
@@ -68,7 +67,6 @@ export const DANGEROUS_FILES = [
   '.profile',
   '.ripgreprc',
   '.mcp.json',
-  '.openclaude.json',
   '.claude.json',
 ] as const
 
@@ -81,7 +79,6 @@ export const DANGEROUS_DIRECTORIES = [
   '.vscode',
   '.idea',
   '.claude',
-  '.openclaude',
   '.limitless',
 ] as const
 
@@ -99,9 +96,9 @@ export function normalizeCaseForComparison(path: string): string {
 }
 
 /**
- * If filePath is inside a .claude/skills/{name}/ directory (project) or
- * .openclaude/skills/{name}/ directory (global), plus the legacy global
- * .claude/skills path, return the skill name and a session-allow pattern
+ * If filePath is inside a .limitless/skills/{name}/ directory (project or
+ * global), plus the legacy global .claude/skills path, return the skill name
+ * and a session-allow pattern
  * scoped to just that skill.
  * Used to offer a narrower "allow edits to this skill only" option in the
  * permission dialog and SDK suggestions, so iterating on one skill doesn't
@@ -114,16 +111,15 @@ export function getClaudeSkillScope(
   const absolutePathLower = normalizeCaseForComparison(absolutePath)
 
   const projectCwd = getOriginalCwd()
-  const projectStateDir = resolveProjectStateDirname(projectCwd)
   const configHome = getClaudeConfigHomeDir()
   // Derive the last path segment of configHome for use as display prefix
   // (e.g. ".limitless" → "~/.limitless/skills/").
   const configHomeName = configHome.split('/').pop() ?? '.limitless'
   const bases = [
-    // Project-level skills: use the resolved state dir (.limitless, .openclaude, or .claude)
+    // Project-level skills: use the native Limitless state dir.
     {
-      dir: expandPath(join(projectCwd, projectStateDir, 'skills')),
-      prefix: `/${projectStateDir}/skills/`,
+      dir: expandPath(join(projectCwd, '.limitless', 'skills')),
+      prefix: '/.limitless/skills/',
     },
     // Global skills: use the resolved config home (~/.limitless by default)
     {
@@ -134,11 +130,6 @@ export function getClaudeSkillScope(
     {
       dir: expandPath(join(projectCwd, '.claude', 'skills')),
       prefix: '/.claude/skills/',
-    },
-    // Legacy global compat: ~/.openclaude/skills/
-    {
-      dir: expandPath(join(homedir(), '.openclaude', 'skills')),
-      prefix: '~/.openclaude/skills/',
     },
     // Legacy global compat: ~/.claude/skills/
     {
@@ -242,8 +233,6 @@ export function isClaudeSettingsPath(filePath: string): boolean {
   if (
     normalizedPath.endsWith(`${sep}.limitless${sep}settings.json`) ||
     normalizedPath.endsWith(`${sep}.limitless${sep}settings.local.json`) ||
-    normalizedPath.endsWith(`${sep}.openclaude${sep}settings.json`) ||
-    normalizedPath.endsWith(`${sep}.openclaude${sep}settings.local.json`) ||
     normalizedPath.endsWith(`${sep}.claude${sep}settings.json`) ||
     normalizedPath.endsWith(`${sep}.claude${sep}settings.local.json`)
   ) {
@@ -269,9 +258,6 @@ function isClaudeConfigFilePath(filePath: string): boolean {
   const commandsDir = join(getOriginalCwd(), '.claude', 'commands')
   const agentsDir = join(getOriginalCwd(), '.claude', 'agents')
   const skillsDir = join(getOriginalCwd(), '.claude', 'skills')
-  const openCommandsDir = join(getOriginalCwd(), '.openclaude', 'commands')
-  const openAgentsDir = join(getOriginalCwd(), '.openclaude', 'agents')
-  const openSkillsDir = join(getOriginalCwd(), '.openclaude', 'skills')
   const limitlessCommandsDir = join(getOriginalCwd(), '.limitless', 'commands')
   const limitlessAgentsDir = join(getOriginalCwd(), '.limitless', 'agents')
   const limitlessSkillsDir = join(getOriginalCwd(), '.limitless', 'skills')
@@ -280,9 +266,6 @@ function isClaudeConfigFilePath(filePath: string): boolean {
     pathInWorkingPath(filePath, commandsDir) ||
     pathInWorkingPath(filePath, agentsDir) ||
     pathInWorkingPath(filePath, skillsDir) ||
-    pathInWorkingPath(filePath, openCommandsDir) ||
-    pathInWorkingPath(filePath, openAgentsDir) ||
-    pathInWorkingPath(filePath, openSkillsDir) ||
     pathInWorkingPath(filePath, limitlessCommandsDir) ||
     pathInWorkingPath(filePath, limitlessAgentsDir) ||
     pathInWorkingPath(filePath, limitlessSkillsDir)
@@ -349,17 +332,17 @@ export function isScratchpadEnabled(): boolean {
 
 /**
  * Returns the user-specific Claude temp directory name.
- * On Unix: 'claude-{uid}' to prevent multi-user permission conflicts
- * On Windows: 'claude' (tmpdir() is already per-user)
+ * On Unix: 'limitless-{uid}' to prevent multi-user permission conflicts
+ * On Windows: 'limitless' (tmpdir() is already per-user)
  */
 export function getClaudeTempDirName(): string {
   if (getPlatform() === 'windows') {
-    return 'claude'
+    return 'limitless'
   }
   // Use UID to create per-user directories, preventing permission conflicts
   // when multiple users share the same /tmp directory
   const uid = process.getuid?.() ?? 0
-  return `claude-${uid}`
+  return `limitless-${uid}`
 }
 
 /**
@@ -1321,7 +1304,7 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   if (claudeFolderAllowRule) {
     // Check if this rule is scoped under a Claude config folder.
     // Accepts broad project/global patterns ('/.claude/**',
-    // '~/.limitless/**', and legacy '~/.openclaude/**' / '~/.claude/**') plus
+    // '~/.limitless/**', and legacy '~/.claude/**') plus
     // narrowed skill patterns like '~/.limitless/skills/my-skill/**' so users can grant
     // session access to a single skill without also exposing settings.json
     // or hooks/. The rule already matched the path via matchingRuleForInput;
@@ -1333,9 +1316,6 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
       (ruleContent.startsWith(CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2)) ||
         ruleContent.startsWith(
           GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2),
-        ) ||
-        ruleContent.startsWith(
-          LEGACY_GLOBAL_OPENCLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2),
         ) ||
         ruleContent.startsWith(
           LEGACY_GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN.slice(0, -2),

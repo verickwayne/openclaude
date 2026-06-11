@@ -1015,6 +1015,37 @@ describe('Codex request translation', () => {
       'I should note that the user role requires a briefly concise friendly response format.',
     )
   })
+
+  test('uses completed response output text when stream has no text deltas', async () => {
+    const responseText = [
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"id":"msg_1","type":"message","status":"in_progress","content":[],"role":"assistant"},"output_index":0,"sequence_number":0}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"summary from final payload"}]}],"usage":{"input_tokens":2,"output_tokens":4}},"sequence_number":1}',
+      '',
+    ].join('\n')
+
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(responseText))
+        controller.close()
+      },
+    })
+
+    const textDeltas: string[] = []
+    for await (const event of codexStreamToAnthropic(
+      new Response(stream),
+      'gpt-5.5',
+    )) {
+      const delta = (event as { delta?: { type?: string; text?: string } }).delta
+      if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+        textDeltas.push(delta.text)
+      }
+    }
+
+    expect(textDeltas.join('')).toBe('summary from final payload')
+  })
 })
 
 describe('convertSystemPrompt', () => {

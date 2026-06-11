@@ -220,6 +220,22 @@ function convertContentBlocksToResponsesParts(
   return parts
 }
 
+function extractCompletedOutputText(response: Record<string, any> | undefined): string {
+  const output = Array.isArray(response?.output) ? response.output : []
+  const chunks: string[] = []
+
+  for (const item of output) {
+    if (item?.type !== 'message' || !Array.isArray(item.content)) continue
+    for (const part of item.content) {
+      if (part?.type === 'output_text' && typeof part.text === 'string') {
+        chunks.push(part.text)
+      }
+    }
+  }
+
+  return chunks.join('')
+}
+
 export function convertAnthropicMessagesToResponsesInput(
   messages: Array<{ role?: string; message?: { role?: string; content?: unknown }; content?: unknown }>,
 ): ResponsesInputItem[] {
@@ -653,6 +669,30 @@ async function* readSseEvents(response: Response, signal?: AbortSignal): AsyncGe
   const STREAM_IDLE_TIMEOUT_MS = 120_000 // 2 minutes without data
   let lastDataTime = Date.now()
 
+  function parseSseChunk(chunk: string): CodexSseEvent | null {
+    const lines = chunk
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+    if (lines.length === 0) return null
+
+    const eventLine = lines.find(line => line.startsWith('event: '))
+    const dataLines = lines.filter(line => line.startsWith('data: '))
+    if (!eventLine || dataLines.length === 0) return null
+
+    const event = eventLine.slice(7).trim()
+    const rawData = dataLines.map(line => line.slice(6)).join('\n')
+    if (rawData === '[DONE]') return null
+
+    try {
+      const parsed = JSON.parse(rawData)
+      if (!parsed || typeof parsed !== 'object') return null
+      return { event, data: parsed as Record<string, any> }
+    } catch {
+      return null
+    }
+  }
+
   /**
    * Read from the stream with an idle timeout. Respects the caller's
    * AbortSignal — clears the idle timer on abort so the AbortError
@@ -693,37 +733,19 @@ async function* readSseEvents(response: Response, signal?: AbortSignal): AsyncGe
 
   while (true) {
     const { done, value } = await readWithTimeout()
-    if (done) break
+    if (done) {
+      const trailing = parseSseChunk(buffer)
+      if (trailing) yield trailing
+      break
+    }
 
     buffer += decoder.decode(value, { stream: true })
     const chunks = buffer.split('\n\n')
     buffer = chunks.pop() ?? ''
 
     for (const chunk of chunks) {
-      const lines = chunk
-        .split('\n')
-        .map(line => line.trim())
-        .filter(Boolean)
-      if (lines.length === 0) continue
-
-      const eventLine = lines.find(line => line.startsWith('event: '))
-      const dataLines = lines.filter(line => line.startsWith('data: '))
-      if (!eventLine || dataLines.length === 0) continue
-
-      const event = eventLine.slice(7).trim()
-      const rawData = dataLines.map(line => line.slice(6)).join('\n')
-      if (rawData === '[DONE]') continue
-
-      let data: Record<string, any>
-      try {
-        const parsed = JSON.parse(rawData)
-        if (!parsed || typeof parsed !== 'object') continue
-        data = parsed as Record<string, any>
-      } catch {
-        continue
-      }
-
-      yield { event, data }
+      const parsed = parseSseChunk(chunk)
+      if (parsed) yield parsed
     }
   }
 }
@@ -797,6 +819,7 @@ export async function* codexStreamToAnthropic(
   const thinkFilter = createThinkTagFilter()
   let nextContentBlockIndex = 0
   let sawToolUse = false
+  let emittedText = false
   let finalResponse: Record<string, any> | undefined
 
   const closeActiveTextBlock = async function* () {
@@ -895,6 +918,7 @@ export async function* codexStreamToAnthropic(
       if (activeTextBlockIndex !== null) {
         const visible = thinkFilter.feed(payload.delta ?? '')
         if (visible) {
+          emittedText = true
           yield {
             type: 'content_block_delta',
             index: activeTextBlockIndex,
@@ -952,6 +976,27 @@ export async function* codexStreamToAnthropic(
       const msg = payload?.response?.error?.message ??
         payload?.error?.message ?? 'Codex response failed'
       throw APIError.generate(500, undefined, msg, new Headers())
+    }
+  }
+
+  if (!emittedText) {
+    const completedText = extractCompletedOutputText(finalResponse)
+    if (completedText) {
+      yield* startTextBlockIfNeeded()
+      if (activeTextBlockIndex !== null) {
+        const visible = thinkFilter.feed(completedText)
+        if (visible) {
+          emittedText = true
+          yield {
+            type: 'content_block_delta',
+            index: activeTextBlockIndex,
+            delta: {
+              type: 'text_delta',
+              text: visible,
+            },
+          }
+        }
+      }
     }
   }
 

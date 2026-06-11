@@ -1,17 +1,12 @@
 // src/utils/model/outcomeLedger.ts
 //
-// Pure reader for the routing ledger at <stateDir>/ralph/ledger/outcomes.jsonl,
-// where <stateDir> is .limitless (preferred) or a legacy .openclaude.
+// Pure reader for the routing ledger at .limitless/ralph/ledger/outcomes.jsonl.
 // Tolerates missing file (→ empty results) and malformed lines (→ skip).
 // No caching, no fs watching — every call reads fresh.
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import {
-  LEGACY_OPENCLAUDE_DIRNAME,
-  LIMITLESS_DIRNAME,
-  resolveProjectStateDirname,
-} from '../productStateDir.js'
+import { LIMITLESS_DIRNAME, resolveProjectStateDirname } from '../productStateDir.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -156,9 +151,6 @@ const LEDGER_SUFFIX = 'ralph/ledger/outcomes.jsonl'
 /** Canonical relative path from project root to the ledger file. */
 export const LEDGER_RELATIVE_PATH = `${LIMITLESS_DIRNAME}/${LEDGER_SUFFIX}`
 
-/** Legacy relative path read when no `.limitless` dir exists yet. */
-export const LEGACY_LEDGER_RELATIVE_PATH = `${LEGACY_OPENCLAUDE_DIRNAME}/${LEDGER_SUFFIX}`
-
 /** Minimum cell size before stats are considered reliable (epsilon-greedy
  *  exploration threshold used by resolveProviderForClass). */
 export const MIN_RELIABLE_N = 3
@@ -278,8 +270,6 @@ export function joinCheckerVerdicts(entries: LedgerEntry[]): AnnotatedLedgerEntr
  * Malformed lines are silently skipped.
  */
 export function readLedgerEntries(projectRoot: string): LedgerEntry[] {
-  // Prefer `.limitless/ralph/ledger`, falling back to an existing
-  // `.openclaude/ralph/ledger` so historical routing outcomes survive.
   const ledgerPath = path.join(
     projectRoot,
     resolveProjectStateDirname(projectRoot),

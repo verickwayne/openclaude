@@ -23,7 +23,7 @@ const PRUNE_DIRS = new Set([
 ])
 
 /** Known harness dot-dirs that should NOT be pruned even though they start with '.'. */
-const KEEP_DOT_DIRS = new Set(['.claude', '.codex', '.openclaude', '.limitless'])
+const KEEP_DOT_DIRS = new Set(['.claude', '.codex', '.limitless'])
 
 function shouldPrune(dirName: string): boolean {
   if (PRUNE_DIRS.has(dirName)) return true

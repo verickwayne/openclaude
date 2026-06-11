@@ -225,6 +225,97 @@ export function stripReinjectedAttachments(messages: Message[]): Message[] {
   return messages
 }
 
+function compactTextForUnsupportedBlock(block: any): string {
+  if (!block || typeof block !== 'object') return String(block ?? '')
+  if (typeof block.text === 'string') return block.text
+  if (typeof block.connector_text === 'string') return block.connector_text
+  if (typeof block.thinking === 'string') return block.thinking
+  if (typeof block.content === 'string') return block.content
+
+  const type = typeof block.type === 'string' ? block.type : 'unknown'
+  try {
+    return `[${type} content omitted for compaction: ${jsonStringify(block)}]`
+  } catch {
+    return `[${type} content omitted for compaction]`
+  }
+}
+
+function sanitizeCompactContentBlock(block: any, role: 'user' | 'assistant'): any {
+  switch (block?.type) {
+    case 'text':
+    case 'tool_use':
+      return block
+    case 'thinking':
+    case 'redacted_thinking':
+      return role === 'assistant'
+        ? block
+        : { type: 'text' as const, text: compactTextForUnsupportedBlock(block) }
+    case 'image':
+      return role === 'user' ? block : null
+    case 'document':
+      return role === 'user' ? block : null
+    case 'tool_result': {
+      if (role !== 'user') {
+        return { type: 'text' as const, text: compactTextForUnsupportedBlock(block) }
+      }
+      if (!Array.isArray(block.content)) return block
+      return {
+        ...block,
+        content: block.content.map((item: any) => {
+          switch (item?.type) {
+            case 'text':
+            case 'image':
+            case 'document':
+            case 'tool_reference':
+              return item
+            default:
+              return {
+                type: 'text' as const,
+                text: compactTextForUnsupportedBlock(item),
+              }
+          }
+        }),
+      }
+    }
+    default:
+      return { type: 'text' as const, text: compactTextForUnsupportedBlock(block) }
+  }
+}
+
+/**
+ * Compaction is a summarization request, not a transcript replay. Old sessions
+ * and non-Anthropic providers can contain display-only or provider-specific
+ * content tags that the target API rejects. Convert those blocks to plain text
+ * before the normal API preparation path so /compact can summarize them.
+ */
+export function sanitizeMessagesForCompactSummary(messages: Message[]): Message[] {
+  return messages.map(message => {
+    if (message.type !== 'user' && message.type !== 'assistant') {
+      return message
+    }
+
+    const content = message.message.content
+    if (!Array.isArray(content)) {
+      return message
+    }
+
+    const role = message.type
+    const sanitized = content
+      .map((block: any) => sanitizeCompactContentBlock(block, role))
+      .filter(Boolean)
+
+    return {
+      ...message,
+      message: {
+        ...message.message,
+        content: sanitized.length > 0
+          ? sanitized
+          : [{ type: 'text' as const, text: '[empty content omitted for compaction]' }],
+      },
+    }
+  })
+}
+
 export const ERROR_MESSAGE_NOT_ENOUGH_MESSAGES =
   'Not enough messages to compact.'
 const MAX_PTL_RETRIES = 3
@@ -1293,11 +1384,13 @@ async function streamCompactSummary({
 
       const streamingGen = queryModelWithStreaming({
         messages: normalizeMessagesForAPI(
-          stripImagesFromMessages(
-            stripReinjectedAttachments([
-              ...getMessagesAfterCompactBoundary(messages),
-              summaryRequest,
-            ]),
+          sanitizeMessagesForCompactSummary(
+            stripImagesFromMessages(
+              stripReinjectedAttachments([
+                ...getMessagesAfterCompactBoundary(messages),
+                summaryRequest,
+              ]),
+            ),
           ),
           context.options.tools,
         ),

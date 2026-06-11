@@ -428,7 +428,7 @@ export function resolveProviderForClass(
   // billing candidate never crosses a group boundary.
   if (
     preferBilling &&
-    (env.LIMITLESS_BILLING_AWARE ?? env.OPENCLAUDE_BILLING_AWARE) !== '0'
+    (env.LIMITLESS_BILLING_AWARE) !== '0'
   ) {
     // Build the group lookup once (O(n)) so the comparator is O(1) per pair,
     // not O(n) per pair. Keyed on profileId so two profiles exposing the same

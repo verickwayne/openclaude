@@ -466,7 +466,7 @@ export async function classifyHandoffIfNeeded({
           'Handoff classifier unavailable, allowing sub-agent output with warning',
           { level: 'warn' },
         )
-        return `Note: The safety classifier was unavailable when reviewing this sub-agent's work. Please carefully verify the sub-agent's actions and output before acting on them.`
+        return `Note: automated review was unavailable for this sub-agent — verify its actions and output before acting on them.`
       }
 
       logForDebugging(

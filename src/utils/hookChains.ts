@@ -308,8 +308,6 @@ function getConfigPath(pathOverride?: string): string {
     return resolve(getSafeOriginalCwd(), configuredPath)
   }
 
-  // Prefer `.limitless/hook-chains.json`, falling back to an existing
-  // `.openclaude/hook-chains.json` so the user's hook chains survive the rename.
   return resolveProjectStatePath(getSafeOriginalCwd(), HOOK_CHAINS_FILENAME)
 }
 

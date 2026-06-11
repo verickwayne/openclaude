@@ -8,42 +8,42 @@ import {
 
 describe('commit-message command helpers', () => {
   it('parses quoted co-author names with a plain email', () => {
-    expect(parseCoAuthor('"GPT 5.5" noreply@openclaude.dev')).toEqual({
+    expect(parseCoAuthor('"GPT 5.5" noreply@limitless.local')).toEqual({
       name: 'GPT 5.5',
-      email: 'noreply@openclaude.dev',
+      email: 'noreply@limitless.local',
     })
   })
 
   it('parses co-author trailers with angle-bracket emails', () => {
-    expect(parseCoAuthor('OpenClaude (gpt-5.5) <noreply@openclaude.dev>')).toEqual(
+    expect(parseCoAuthor('Limitless (gpt-5.5) <noreply@limitless.local>')).toEqual(
       {
-        name: 'OpenClaude (gpt-5.5)',
-        email: 'noreply@openclaude.dev',
+        name: 'Limitless (gpt-5.5)',
+        email: 'noreply@limitless.local',
       },
     )
   })
 
   it('rejects co-author trailers with empty sanitized names', () => {
-    expect(parseCoAuthor('"  " noreply@openclaude.dev')).toBeNull()
-    expect(parseCoAuthor('"  " <noreply@openclaude.dev>')).toBeNull()
+    expect(parseCoAuthor('"  " noreply@limitless.local')).toBeNull()
+    expect(parseCoAuthor('"  " <noreply@limitless.local>')).toBeNull()
   })
 
   it('strips one pair of matching quotes from custom attribution text', () => {
-    expect(stripMatchingQuotes('"Generated with OpenClaude"')).toBe(
-      'Generated with OpenClaude',
+    expect(stripMatchingQuotes('"Generated with Limitless"')).toBe(
+      'Generated with Limitless',
     )
-    expect(stripMatchingQuotes("'Generated with OpenClaude'")).toBe(
-      'Generated with OpenClaude',
+    expect(stripMatchingQuotes("'Generated with Limitless'")).toBe(
+      'Generated with Limitless',
     )
-    expect(stripMatchingQuotes('"Generated with OpenClaude')).toBe(
-      '"Generated with OpenClaude',
+    expect(stripMatchingQuotes('"Generated with Limitless')).toBe(
+      '"Generated with Limitless',
     )
   })
 
   it('formats a sanitized co-author trailer', () => {
     expect(
-      formatCoAuthorTrailer('OpenClaude <gpt>\n', '<noreply@openclaude.dev>'),
-    ).toBe('Co-Authored-By: OpenClaude gpt <noreply@openclaude.dev>')
+      formatCoAuthorTrailer('Limitless <gpt>\n', '<noreply@limitless.local>'),
+    ).toBe('Co-Authored-By: Limitless gpt <noreply@limitless.local>')
   })
 
   it('makes set scope explicit with example text', () => {
@@ -51,7 +51,7 @@ describe('commit-message command helpers', () => {
       'Controls only the attribution text appended after /commit messages.',
     )
     expect(USAGE).toContain(
-      '/commit-message set "Generated with OpenClaude using GPT-5.5"',
+      '/commit-message set "Generated with Limitless using GPT-5.5"',
     )
     expect(USAGE).not.toContain('/commit-message set-attribution')
   })

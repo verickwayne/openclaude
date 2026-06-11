@@ -20,6 +20,13 @@ export type DiscoveredTranscript = {
   modifiedMs: number
 }
 
+export type SummaryTranscriptMessage = {
+  role: 'user' | 'assistant'
+  text: string
+  timestamp?: string
+  rawRole?: string
+}
+
 export interface HarnessAdapter {
   readonly harness: HarnessId
   /**
@@ -30,7 +37,7 @@ export interface HarnessAdapter {
     t: DiscoveredTranscript,
     newSessionId: string,
   ): TranscriptMessage[]
-  /** Produce a plain-text summary seed (no LLM dependency at this layer). */
+  /** Produce a full-session plain-text summary seed for cross-harness resume. */
   summarize(t: DiscoveredTranscript): string
 }
 

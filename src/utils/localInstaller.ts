@@ -47,7 +47,6 @@ export function isManagedLocalInstallationPath(execPath: string): boolean {
   const normalizedExecPath = execPath.replace(/\\+/g, '/')
   return (
     normalizedExecPath.includes('/.limitless/local/node_modules/') ||
-    normalizedExecPath.includes('/.openclaude/local/node_modules/') ||
     normalizedExecPath.includes('/.claude/local/node_modules/')
   )
 }
@@ -96,7 +95,7 @@ export async function ensureLocalPackageEnvironment(): Promise<boolean> {
     await writeIfMissing(
       join(localInstallDir, 'package.json'),
       jsonStringify(
-        { name: 'openclaude-local', version: '0.0.1', private: true },
+        { name: 'limitless-local', version: '0.0.1', private: true },
         null,
         2,
       ),

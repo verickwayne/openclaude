@@ -35,8 +35,6 @@ export function getDefaultPlansDirectory({
   if (configDirEnv) {
     return join(configDirEnv.normalize('NFC'), 'plans')
   }
-  // Prefer `~/.limitless/plans`, but keep an existing `~/.openclaude/plans`
-  // (and its saved plan files) live until a `.limitless` dir is created.
   return resolveProjectStatePath(homeDir, 'plans').normalize('NFC')
 }
 

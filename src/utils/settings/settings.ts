@@ -299,8 +299,6 @@ export function getSettingsFilePathForSource(
 export function getRelativeSettingsFilePathForSource(
   source: 'projectSettings' | 'localSettings',
 ): string {
-  // Prefer .limitless when it already exists; fall back to .openclaude for
-  // not-yet-migrated repos; default to .limitless for fresh repos.
   const configDir = resolveProjectStateDirname(getOriginalCwd())
   switch (source) {
     case 'projectSettings':
@@ -643,14 +641,14 @@ export function getManagedSettingsKeysForLogging(
 function isSettingsLoadInProgress(): boolean {
   return (
     (globalThis as Record<string, unknown>)[
-      '__openclaudeSettingsLoadInProgress'
+      '__limitlessSettingsLoadInProgress'
     ] === true
   )
 }
 
 function setSettingsLoadInProgress(value: boolean): void {
   ;(globalThis as Record<string, unknown>)[
-    '__openclaudeSettingsLoadInProgress'
+    '__limitlessSettingsLoadInProgress'
   ] = value
 }
 

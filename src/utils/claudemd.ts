@@ -1,8 +1,5 @@
 /**
  * Limitless reads its OWN memory files as PRIMARY (`.limitless/` + `LIMITLESS.md`).
- * The legacy Claude/OpenClaude locations (`.claude`/`.openclaude` + `CLAUDE.md`)
- * are read only as an OPT-IN fallback, gated on the `readLegacyConfigDirs`
- * setting (default true) so existing users aren't silently broken.
  *
  * Files are loaded in the following order:
  *
@@ -19,7 +16,7 @@
  * - Project and Local files are discovered by traversing from the current directory up to root
  * - Files closer to the current directory have higher priority (loaded later)
  * - Root project instruction resolution order: AGENTS.md (harness-neutral, preferred) → LIMITLESS.md (Limitless-native) → CLAUDE.md (LEGACY fallback)
- * - Config dirs are read `.limitless` first (primary), then legacy `.claude`/`.openclaude` when enabled
+ * - Config dirs are read from `.limitless`
  * - In each config dir, <configDir>/LIMITLESS.md is preferred, then legacy <configDir>/CLAUDE.md; all .md files in <configDir>/rules/ are also checked for Project memory
  *
  * Memory @include directive:
@@ -945,9 +942,7 @@ export const getMemoryFiles = memoize(
           )),
         )
 
-        // Try reading <configDir>/LIMITLESS.md (then legacy <configDir>/CLAUDE.md)
-        // for each config dir. `.limitless` is primary; `.claude`/`.openclaude`
-        // are read only when legacy reads are enabled.
+        // Try reading <configDir>/LIMITLESS.md for each config dir.
         for (const configDirName of getProjectConfigDirNames()) {
           for (const fileName of getConfigDirInstructionFileNames()) {
             const configInstructionPath = join(dir, configDirName, fileName)
@@ -1527,7 +1522,7 @@ export function isMemoryFilePath(filePath: string): boolean {
     return true
   }
 
-  // .md files in any <configDir>/rules/ directory (.limitless/.claude/.openclaude)
+  // .md files in any <configDir>/rules/ directory.
   if (
     name.endsWith('.md') &&
     PROJECT_CONFIG_DIR_NAMES.some(configDirName =>

@@ -56,7 +56,7 @@ export type RecallFn = (args: {
 export function isMnemoAutoRecallEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return (env.LIMITLESS_MNEMO_AUTO_RECALL ?? env.OPENCLAUDE_MNEMO_AUTO_RECALL) === '1'
+  return (env.LIMITLESS_MNEMO_AUTO_RECALL) === '1'
 }
 
 /**

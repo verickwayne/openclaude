@@ -91,16 +91,12 @@ export function isAgentMemoryPath(absolutePath: string): boolean {
   }
 
   // Project scope: always cwd-based (not redirected).
-  // Check against the resolved state dir AND legacy names so paths written
-  // before a rename still pass the security check.
   const cwd = getCwd()
   const resolvedStateDir = resolveProjectStateDirname(cwd)
-  for (const stateDir of [resolvedStateDir, '.claude', '.openclaude']) {
-    if (
-      normalizedPath.startsWith(join(cwd, stateDir, 'agent-memory') + sep)
-    ) {
-      return true
-    }
+  if (
+    normalizedPath.startsWith(join(cwd, resolvedStateDir, 'agent-memory') + sep)
+  ) {
+    return true
   }
 
   // Local scope: persisted to mount when CLAUDE_CODE_REMOTE_MEMORY_DIR is set, otherwise cwd-based
@@ -114,14 +110,12 @@ export function isAgentMemoryPath(absolutePath: string): boolean {
       return true
     }
   } else {
-    for (const stateDir of [resolvedStateDir, '.claude', '.openclaude']) {
-      if (
-        normalizedPath.startsWith(
-          join(cwd, stateDir, 'agent-memory-local') + sep,
-        )
-      ) {
-        return true
-      }
+    if (
+      normalizedPath.startsWith(
+        join(cwd, resolvedStateDir, 'agent-memory-local') + sep,
+      )
+    ) {
+      return true
     }
   }
 

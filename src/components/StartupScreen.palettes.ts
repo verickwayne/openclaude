@@ -12,7 +12,7 @@ export type LogoPalette = {
   accent: RGB
   /** Soft body text color (tagline value, label values). */
   cream: RGB
-  /** Dim color for label names and the openclaude prefix. */
+  /** Dim color for label names and the Limitless prefix. */
   dim: RGB
   /** Box-drawing border color. */
   border: RGB

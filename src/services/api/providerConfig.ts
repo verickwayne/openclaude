@@ -402,7 +402,6 @@ export function isLocalProviderUrl(baseUrl: string | undefined): boolean {
 // regressions; if not, behaviour only changes for hosts already classified
 // as local by the existing detector (loopback, RFC1918, .local, ULA/LL).
 const LOCAL_FAST_PATH_ENV = 'LIMITLESS_LOCAL_FAST_PATH'
-const LOCAL_FAST_PATH_ENV_LEGACY = 'OPENCLAUDE_LOCAL_FAST_PATH'
 
 export type LocalFastPathConfig = {
   enabled: boolean
@@ -439,7 +438,7 @@ export function getLocalFastPathConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): LocalFastPathConfig {
   const override = parseLocalFastPathOverride(
-    env[LOCAL_FAST_PATH_ENV] ?? env[LOCAL_FAST_PATH_ENV_LEGACY],
+    env[LOCAL_FAST_PATH_ENV],
   )
   const enabled = override ?? isLocalProviderUrl(baseUrl)
   return enabled ? LOCAL_FAST_PATH_ON : LOCAL_FAST_PATH_OFF

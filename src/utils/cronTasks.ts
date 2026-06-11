@@ -1,5 +1,5 @@
 // Scheduled prompts, stored in <project>/<statedir>/scheduled_tasks.json
-// where <statedir> is .limitless (default), .openclaude (legacy), or .claude
+// where <statedir> is .limitless (default), .claude
 // (legacy compat — see resolveProjectStateDirname).
 //
 // Tasks come in two flavors:

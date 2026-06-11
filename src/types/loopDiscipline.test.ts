@@ -1945,22 +1945,22 @@ describe('isDirectFastPath', () => {
   })
 })
 
-describe('legacy OPENCLAUDE_ env-var fallback', () => {
-  it('resolves the legacy OPENCLAUDE_ name when LIMITLESS_ is absent', () => {
-    expect(readDisciplineLevel({ OPENCLAUDE_IN_LOOP_DISCIPLINE: '2' })).toBe(2)
-    expect(readInitialPhase({ OPENCLAUDE_INITIAL_PHASE: 'plan' })).toBe('plan')
+describe('previous-brand env vars', () => {
+  it('ignores previous-brand env names when LIMITLESS_ is absent', () => {
+    expect(readDisciplineLevel({ OPENCLAUDE_IN_LOOP_DISCIPLINE: '2' })).toBe(0)
+    expect(readInitialPhase({ OPENCLAUDE_INITIAL_PHASE: 'plan' })).toBe('build')
     expect(
       readDisciplineProfile({ OPENCLAUDE_DISCIPLINE_PROFILE: 'always' }),
-    ).toBe('always')
+    ).toBe('adaptive')
     expect(isDisciplineDebugEnabled({ OPENCLAUDE_DEBUG_DISCIPLINE: '1' })).toBe(
-      true,
+      false,
     )
     expect(
       readDisciplineEventLogPath({ OPENCLAUDE_DISCIPLINE_EVENT_LOG: '/tmp/x.jsonl' }),
-    ).toBe('/tmp/x.jsonl')
+    ).toBe(null)
   })
 
-  it('lets the new LIMITLESS_ name win when both are set', () => {
+  it('uses LIMITLESS_ names when both are set', () => {
     expect(
       readDisciplineLevel({
         LIMITLESS_IN_LOOP_DISCIPLINE: '2',

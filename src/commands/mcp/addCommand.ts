@@ -75,7 +75,7 @@ export function registerMcpAddCommand(mcp: Command): void {
     .addOption(
       new Option(
         '--xaa',
-        "Enable XAA (SEP-990) for this server. Requires 'openclaude mcp xaa setup' first. Also requires --client-id and --client-secret (for the MCP server's AS).",
+        "Enable XAA (SEP-990) for this server. Requires 'limitless mcp xaa setup' first. Also requires --client-id and --client-secret (for the MCP server's AS).",
       ).hideHelp(!isXaaEnabled()),
     )
     .action(async (name, commandOrUrl, args, options) => {
@@ -87,12 +87,12 @@ export function registerMcpAddCommand(mcp: Command): void {
       if (!name) {
         cliError(
           'Error: Server name is required.\n' +
-            'Usage: openclaude mcp add <name> <command> [args...]',
+            'Usage: limitless mcp add <name> <command> [args...]',
         )
       } else if (!actualCommand) {
         cliError(
           'Error: Command is required when server name is provided.\n' +
-            'Usage: openclaude mcp add <name> <command> [args...]',
+            'Usage: limitless mcp add <name> <command> [args...]',
         )
       }
 
@@ -113,7 +113,7 @@ export function registerMcpAddCommand(mcp: Command): void {
           if (!options.clientSecret) missing.push('--client-secret')
           if (!getXaaIdpSettings()) {
             missing.push(
-              "'openclaude mcp xaa setup' (settings.xaaIdp not configured)",
+              "'limitless mcp xaa setup' (settings.xaaIdp not configured)",
             )
           }
           if (missing.length) {
@@ -254,10 +254,10 @@ export function registerMcpAddCommand(mcp: Command): void {
               `\nWarning: The command "${actualCommand}" looks like a URL, but is being interpreted as a stdio server as --transport was not specified.\n`,
             )
             process.stderr.write(
-              `If this is an HTTP server, use: openclaude mcp add --transport http ${name} ${actualCommand}\n`,
+              `If this is an HTTP server, use: limitless mcp add --transport http ${name} ${actualCommand}\n`,
             )
             process.stderr.write(
-              `If this is an SSE server, use: openclaude mcp add --transport sse ${name} ${actualCommand}\n`,
+              `If this is an SSE server, use: limitless mcp add --transport sse ${name} ${actualCommand}\n`,
             )
           }
 

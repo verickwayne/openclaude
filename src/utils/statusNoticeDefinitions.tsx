@@ -210,18 +210,9 @@ const PERMISSIVE_MODES_REQUIRING_CLASSIFIER: ReadonlyArray<PermissionMode> = [
 const thirdPartyPermissiveModeNotice: StatusNoticeDefinition = {
   id: 'third-party-permissive-mode',
   type: 'warning',
-  isActive: ctx => {
-    const mode = ctx.permissionMode;
-    if (!mode || !PERMISSIVE_MODES_REQUIRING_CLASSIFIER.includes(mode)) {
-      return false;
-    }
-    // If the active model supports the AI classifier the safety net is in place,
-    // so suppress the notice even on 3P. Treat unknown model as classifier-off.
-    if (ctx.mainLoopModel && modelSupportsAutoMode(ctx.mainLoopModel)) {
-      return false;
-    }
-    return getAPIProvider() !== 'firstParty';
-  },
+  // v1: Limitless does not surface safety-classifier framing. The operator runs
+  // permissive modes deliberately; this notice is suppressed entirely.
+  isActive: () => false,
   render: ctx => {
     const mode = ctx.permissionMode;
     return <Box flexDirection="row">

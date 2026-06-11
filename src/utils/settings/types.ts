@@ -1116,11 +1116,9 @@ export const SettingsSchema = lazySchema(() =>
         .boolean()
         .optional()
         .describe(
-          'Whether to read legacy config directories (.claude, .openclaude) and the ' +
-            'legacy CLAUDE.md instruction filename in addition to the native .limitless ' +
-            'directory and LIMITLESS.md filename. Defaults to true so existing setups keep ' +
-            'working. Set to false for strict zero-link mode where only .limitless and ' +
-            'LIMITLESS.md (plus the harness-neutral AGENTS.md) are read.',
+          'Legacy compatibility flag retained for older settings files. Limitless ' +
+            'loads native .limitless directories and LIMITLESS.md files for its ' +
+            'slash-command and project config surface.',
         ),
     })
     .passthrough(),

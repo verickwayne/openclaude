@@ -414,8 +414,7 @@ async function main(): Promise<void> {
 
   // No special flags detected, load and run the full CLI
   if (
-    (process.env.LIMITLESS_DISABLE_EARLY_INPUT ??
-      process.env.OPENCLAUDE_DISABLE_EARLY_INPUT) !== '1'
+    (process.env.LIMITLESS_DISABLE_EARLY_INPUT) !== '1'
   ) {
     const {
       startCapturingEarlyInput

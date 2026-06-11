@@ -964,8 +964,7 @@ export async function discoverSkillDirsForPaths(
     // CWD-level skills are already loaded at startup, so we only discover nested ones
     // Use prefix+separator check to avoid matching /project-backup when cwd is /project
     while (currentDir.startsWith(resolvedCwd + pathSep)) {
-      // Check all known config dir names so .limitless/, .openclaude/, and
-      // .claude/ are all discovered during dynamic walk.
+      // Check native Limitless config dirs during the dynamic walk.
       for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
         const skillDir = join(currentDir, configDirName, 'skills')
 

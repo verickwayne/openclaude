@@ -253,8 +253,7 @@ function redactUrlsInMessage(message: string): string {
 
 function getOpenAIRequestDumpPath(): string | null {
   const raw =
-    process.env.LIMITLESS_OPENAI_DUMP_REQUEST ??
-    process.env.OPENCLAUDE_OPENAI_DUMP_REQUEST
+    process.env.LIMITLESS_OPENAI_DUMP_REQUEST
   if (!raw || /^(0|false|no|off)$/i.test(raw.trim())) {
     return null
   }

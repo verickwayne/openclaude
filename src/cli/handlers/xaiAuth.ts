@@ -1,5 +1,5 @@
 /**
- * `openclaude auth xai ...` command handlers.
+ * `limitless auth xai ...` command handlers.
  *
  * `login`   — browser OAuth (loopback callback on 127.0.0.1:56121).
  * `device`  — device-code flow for SSH / headless hosts.
@@ -108,7 +108,7 @@ function listenForManualCode(onLine: (line: string) => void): () => void {
   // Record the paused state BEFORE we touch it. We only need to resume
   // stdin if it was paused, and we must only re-pause it on cleanup if
   // we were the ones who resumed it — otherwise a one-shot CLI process
-  // (`openclaude auth xai login`) stays alive after a successful
+  // (`limitless auth xai login`) stays alive after a successful
   // browser flow because the resumed stdin keeps the event loop busy,
   // and the user sees the command "hang" until they hit Ctrl+D.
   const wasPaused =
@@ -211,9 +211,9 @@ export async function xaiLogout(deps?: XaiLogoutDeps): Promise<void> {
     deps?.clearStartupProviderOverrides ?? clearStartupProviderOverrides
 
   // Mirror the /provider UI logout sequence so a user who configured
-  // xAI OAuth interactively and then ran `openclaude auth xai logout`
+  // xAI OAuth interactively and then ran `limitless auth xai logout`
   // ends up in a clean state. Without all four steps, the
-  // marker-tagged .openclaude-profile.json survives, startup
+  // marker-tagged .limitless-profile.json survives, startup
   // validation still accepts XAI_CREDENTIAL_SOURCE=oauth, but
   // openaiShim can't resolve a token — the next non-interactive xAI
   // launch hits api.x.ai without credentials instead of being logged

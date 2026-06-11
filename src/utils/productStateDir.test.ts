@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
-  LEGACY_OPENCLAUDE_DIRNAME,
   LIMITLESS_DIRNAME,
   resolveProjectStateDirname,
   resolveProjectStatePath,
@@ -25,10 +24,10 @@ describe('resolveProjectStateDirname', () => {
     })
   })
 
-  test('legacy project (only .openclaude) → keeps .openclaude live', () => {
+  test('previous-brand project (only .openclaude) → uses .limitless', () => {
     withTempRoot(root => {
-      mkdirSync(join(root, LEGACY_OPENCLAUDE_DIRNAME), { recursive: true })
-      expect(resolveProjectStateDirname(root)).toBe(LEGACY_OPENCLAUDE_DIRNAME)
+      mkdirSync(join(root, '.openclaude'), { recursive: true })
+      expect(resolveProjectStateDirname(root)).toBe(LIMITLESS_DIRNAME)
     })
   })
 
@@ -41,19 +40,16 @@ describe('resolveProjectStateDirname', () => {
 
   test('mid-migration (both dirs) → prefers .limitless', () => {
     withTempRoot(root => {
-      mkdirSync(join(root, LEGACY_OPENCLAUDE_DIRNAME), { recursive: true })
+      mkdirSync(join(root, '.openclaude'), { recursive: true })
       mkdirSync(join(root, LIMITLESS_DIRNAME), { recursive: true })
       expect(resolveProjectStateDirname(root)).toBe(LIMITLESS_DIRNAME)
     })
   })
 
-  test('accepts an injected exists() for deterministic resolution', () => {
+  test('ignores injected previous-brand existence checks', () => {
     const root = '/virtual/project'
-    const onlyLegacy = (p: string) =>
-      p === join(root, LEGACY_OPENCLAUDE_DIRNAME)
-    expect(resolveProjectStateDirname(root, onlyLegacy)).toBe(
-      LEGACY_OPENCLAUDE_DIRNAME,
-    )
+    const onlyPreviousBrand = (p: string) => p === join(root, '.openclaude')
+    expect(resolveProjectStateDirname(root, onlyPreviousBrand)).toBe(LIMITLESS_DIRNAME)
     expect(resolveProjectStateDirname(root, () => false)).toBe(
       LIMITLESS_DIRNAME,
     )
@@ -63,9 +59,9 @@ describe('resolveProjectStateDirname', () => {
 describe('resolveProjectStatePath', () => {
   test('joins the resolved dir with the subpath', () => {
     withTempRoot(root => {
-      mkdirSync(join(root, LEGACY_OPENCLAUDE_DIRNAME), { recursive: true })
+      mkdirSync(join(root, '.openclaude'), { recursive: true })
       expect(resolveProjectStatePath(root, 'ralph', 'ledger')).toBe(
-        join(root, LEGACY_OPENCLAUDE_DIRNAME, 'ralph', 'ledger'),
+        join(root, LIMITLESS_DIRNAME, 'ralph', 'ledger'),
       )
     })
   })

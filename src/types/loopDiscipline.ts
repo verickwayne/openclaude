@@ -385,7 +385,7 @@ export function readDisciplineLevel(
   env: NodeJS.ProcessEnv = process.env,
 ): DisciplineLevel {
   const raw =
-    env.LIMITLESS_IN_LOOP_DISCIPLINE ?? env.OPENCLAUDE_IN_LOOP_DISCIPLINE
+    env.LIMITLESS_IN_LOOP_DISCIPLINE
   if (raw === '1') return 1
   if (raw === '2') return 2
   return 0
@@ -400,7 +400,7 @@ export function readDisciplineLevel(
 export function readDisciplineProfile(
   env: NodeJS.ProcessEnv = process.env,
 ): DisciplineProfile {
-  return (env.LIMITLESS_DISCIPLINE_PROFILE ?? env.OPENCLAUDE_DISCIPLINE_PROFILE) ===
+  return (env.LIMITLESS_DISCIPLINE_PROFILE) ===
     'always'
     ? 'always'
     : 'adaptive'
@@ -522,7 +522,7 @@ export function readTamperGuardEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   if (level === 0) return false
-  return (env.LIMITLESS_TAMPER_GUARD ?? env.OPENCLAUDE_TAMPER_GUARD) !== 'off'
+  return (env.LIMITLESS_TAMPER_GUARD) !== 'off'
 }
 
 /**
@@ -1027,7 +1027,7 @@ export function formatDisciplineEvent(e: DisciplineEvent): string {
 export function isDisciplineDebugEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return (env.LIMITLESS_DEBUG_DISCIPLINE ?? env.OPENCLAUDE_DEBUG_DISCIPLINE) === '1'
+  return (env.LIMITLESS_DEBUG_DISCIPLINE) === '1'
 }
 
 /**
@@ -1053,8 +1053,7 @@ export function isDisciplineStatusAtExitEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return (
-    (env.LIMITLESS_DISCIPLINE_STATUS_AT_EXIT ??
-      env.OPENCLAUDE_DISCIPLINE_STATUS_AT_EXIT) === '1'
+    (env.LIMITLESS_DISCIPLINE_STATUS_AT_EXIT) === '1'
   )
 }
 
@@ -1130,7 +1129,7 @@ export function readDisciplineEventLogPath(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
   const raw =
-    env.LIMITLESS_DISCIPLINE_EVENT_LOG ?? env.OPENCLAUDE_DISCIPLINE_EVENT_LOG
+    env.LIMITLESS_DISCIPLINE_EVENT_LOG
   if (typeof raw !== 'string') return null
   const trimmed = raw.trim()
   return trimmed.length > 0 ? trimmed : null
@@ -1251,7 +1250,7 @@ export function evaluateVerificationLiveness(args: {
 export function readInitialPhase(
   env: NodeJS.ProcessEnv = process.env,
 ): Phase {
-  const raw = env.LIMITLESS_INITIAL_PHASE ?? env.OPENCLAUDE_INITIAL_PHASE
+  const raw = env.LIMITLESS_INITIAL_PHASE
   if (
     raw === 'explore' ||
     raw === 'research' ||

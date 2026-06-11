@@ -34,9 +34,7 @@ if [[ -z "$PROMPT_FILE" || ! -f "$PROMPT_FILE" ]]; then
 fi
 
 PROJECT_ROOT="$(pwd)"
-if [[ -d "$PROJECT_ROOT/.limitless/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"
-elif [[ -d "$PROJECT_ROOT/.openclaude/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
-else RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"; fi
+RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"
 RALPH_REL="\${RALPH_DIR#"$PROJECT_ROOT/"}"
 SESSION_DIR="$RALPH_DIR/sessions"
 mkdir -p "$SESSION_DIR" "$RALPH_DIR/bridges" "$RALPH_DIR/logs" "$RALPH_DIR/ledger"
@@ -154,8 +152,7 @@ notes: null
 EOF
 
 if [[ -f .gitignore ]]; then
-  # Entries track the resolved state dir ($RALPH_REL is .limitless/ralph for new
-  # repos, .openclaude/ralph when an existing legacy session was kept live).
+  # Entries track the resolved state dir ($RALPH_REL is .limitless/ralph).
   # grep -qF per-entry keeps this idempotent across reruns and across the rename.
   for _entry in \
     "# OpenRalph local scheduler state" \
@@ -186,9 +183,7 @@ const OPENRALPH_HOOK_SH = `#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT="\${OPENRALPH_PROJECT_ROOT:-$(pwd)}"
-if [[ -d "$ROOT/.limitless/ralph" ]]; then RALPH_DIR="$ROOT/.limitless/ralph"
-elif [[ -d "$ROOT/.openclaude/ralph" ]]; then RALPH_DIR="$ROOT/.openclaude/ralph"
-else RALPH_DIR="$ROOT/.limitless/ralph"; fi
+RALPH_DIR="$ROOT/.limitless/ralph"
 [[ -f "$RALPH_DIR/enabled" ]] || exit 0
 
 INPUT="$(cat || true)"
@@ -542,9 +537,7 @@ fi
 
 const OPENRALPH_STATUS_SH = `#!/usr/bin/env bash
 set -euo pipefail
-if [[ -d "$(pwd)/.limitless/ralph" ]]; then RALPH_DIR="$(pwd)/.limitless/ralph"
-elif [[ -d "$(pwd)/.openclaude/ralph" ]]; then RALPH_DIR="$(pwd)/.openclaude/ralph"
-else RALPH_DIR="$(pwd)/.limitless/ralph"; fi
+RALPH_DIR="$(pwd)/.limitless/ralph"
 if [[ ! -d "$RALPH_DIR" ]]; then
   echo "No OpenRalph state in $(pwd)"
   exit 0
@@ -594,9 +587,7 @@ tail -20 "$SESSION_STATE_DIR/events.jsonl" 2>/dev/null || tail -20 "$RALPH_DIR/e
 
 const OPENRALPH_DISENGAGE_SH = `#!/usr/bin/env bash
 set -euo pipefail
-if [[ -d "$(pwd)/.limitless/ralph" ]]; then RALPH_DIR="$(pwd)/.limitless/ralph"
-elif [[ -d "$(pwd)/.openclaude/ralph" ]]; then RALPH_DIR="$(pwd)/.openclaude/ralph"
-else RALPH_DIR="$(pwd)/.limitless/ralph"; fi
+RALPH_DIR="$(pwd)/.limitless/ralph"
 if [[ ! -d "$RALPH_DIR" ]]; then
   echo "No OpenRalph state in $(pwd)"
   exit 0
@@ -683,9 +674,7 @@ if [[ -z "$ORPHAN_SID" ]]; then
 fi
 
 PROJECT_ROOT="$(pwd)"
-if [[ -d "$PROJECT_ROOT/.limitless/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"
-elif [[ -d "$PROJECT_ROOT/.openclaude/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
-else RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"; fi
+RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"
 SESSION_DIR="$RALPH_DIR/sessions"
 ORPHAN_STATE_DIR="$SESSION_DIR/$ORPHAN_SID"
 
@@ -795,9 +784,7 @@ echo "Ancestor state preserved at: $ORPHAN_STATE_DIR"
 
 const OPENRALPH_ROUTE_STATS_SH = `#!/usr/bin/env bash
 set -euo pipefail
-if [[ -d "$(pwd)/.limitless/ralph" ]]; then RALPH_DIR="$(pwd)/.limitless/ralph"
-elif [[ -d "$(pwd)/.openclaude/ralph" ]]; then RALPH_DIR="$(pwd)/.openclaude/ralph"
-else RALPH_DIR="$(pwd)/.limitless/ralph"; fi
+RALPH_DIR="$(pwd)/.limitless/ralph"
 LEDGER="$RALPH_DIR/ledger/outcomes.jsonl"
 if [[ ! -f "$LEDGER" ]]; then
   echo "No routing ledger found at $LEDGER"
@@ -1002,9 +989,7 @@ if [[ -z "$SESSION_ARG" ]]; then
 fi
 
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
-if [[ -d "$PROJECT_ROOT/.limitless/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"
-elif [[ -d "$PROJECT_ROOT/.openclaude/ralph" ]]; then RALPH_DIR="$PROJECT_ROOT/.openclaude/ralph"
-else RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"; fi
+RALPH_DIR="$PROJECT_ROOT/.limitless/ralph"
 SESSION_DIR="$RALPH_DIR/sessions"
 BOOTSTRAP="$RALPH_DIR/bin/openralph-bootstrap.sh"
 mkdir -p "$SESSION_DIR" "$RALPH_DIR/bridges" "$RALPH_DIR/logs"
@@ -1180,7 +1165,7 @@ OpenRalph is not internal harness code. It is a project-local skill/process laye
 1. Copy the support files from this skill base directory into the current repo:
    - \`bin/*\` -> \`.limitless/ralph/bin/*\`
    - preserve executable mode with \`chmod +x .limitless/ralph/bin/*.sh\`
-2. Create or merge these project hooks into \`.claude/settings.local.json\` without deleting existing hooks:
+2. Create or merge these project hooks into \`.limitless/settings.local.json\` without deleting existing hooks:
 
 \`\`\`json
 {
@@ -1273,7 +1258,7 @@ Resume an existing OpenRalph workstream.
 1. Resolve the session id from \`.limitless/ralph/active-session\` unless the user names a session explicitly.
 2. Inspect \`.limitless/ralph/sessions/<session_id>/session.json\`, \`goal.json\`, \`queue.md\`, \`progress.md\`, \`current-task.md\`, \`persona-result.yml\`, and recent \`events.jsonl\`.
 3. If \`.limitless/ralph/enabled\` is missing, recreate it unless that session status is \`disengaged\`.
-4. Reinstall or verify the project hooks in \`.claude/settings.local.json\`.
+4. Reinstall or verify the project hooks in \`.limitless/settings.local.json\`.
 5. Pick the next unfinished queue item, write a focused \`current-task.md\` inside that session directory, dispatch the matching OpenRalph persona agent, and continue the scheduler loop.
 6. Update that session's \`goal.json\` only when the completion condition has visible proof.`
 }

@@ -11,10 +11,10 @@ describe('readBrandedEnv', () => {
     ).toBe('new')
   })
 
-  it('falls back to the legacy OPENCLAUDE_ name when LIMITLESS_ is absent', () => {
+  it('ignores the previous-brand name when LIMITLESS_ is absent', () => {
     expect(
       readBrandedEnv('MULTI_PROVIDER', { OPENCLAUDE_MULTI_PROVIDER: 'old' }),
-    ).toBe('old')
+    ).toBeUndefined()
   })
 
   it('returns the LIMITLESS_ value when only it is set', () => {

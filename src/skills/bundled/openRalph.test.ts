@@ -35,7 +35,7 @@ test('/openralph registers engage/status/resume/disengage skills', async () => {
   expect(text).toContain('# /openralph')
   expect(text).toContain('ship the harness')
   expect(text).toContain('.limitless/ralph/bin/openralph-hook.sh')
-  expect(text).toContain('.claude/settings.local.json')
+  expect(text).toContain('.limitless/settings.local.json')
   expect(text).toContain('goal.json')
   expect(text).toContain('openralph-builder')
 })
@@ -100,10 +100,10 @@ test('engage script gitignore section uses per-entry idempotent appends', () => 
   // each entry individually only when missing.
   expect(bootstrap).toContain('grep -qF "$_entry" .gitignore || echo "$_entry" >> .gitignore')
   // The old single-shot guard pattern must be gone.
-  expect(bootstrap).not.toContain("! grep -q '^\\.openclaude/ralph/events\\.jsonl$' .gitignore")
+  expect(bootstrap).not.toContain("! grep -q '^\\.limitless/ralph/events\\.jsonl$' .gitignore")
   // Every required entry must still be present. Entries are written against the
   // resolved state dir ($RALPH_REL), which is .limitless/ralph for fresh repos
-  // and .openclaude/ralph when a live legacy session is kept in place.
+  // and .limitless/ralph when a live legacy session is kept in place.
   const requiredEntries = [
     '$RALPH_REL/enabled',
     '$RALPH_REL/active-session',
@@ -125,7 +125,7 @@ test('researcher whenToUse references sessions/<session_id>/ path form', () => {
   )
   // Must reference the session-scoped path, not the old flat research dir.
   expect(source).toContain('sessions/<session_id>/research')
-  expect(source).not.toContain("under .openclaude/ralph/research.'")
+  expect(source).not.toContain("under .limitless/ralph/research.'")
 })
 
 // ── Routing Outcome Ledger tests ──────────────────────────────────────────────
@@ -290,7 +290,7 @@ test('bootstrap creates ledger dir and ledger is NOT gitignored by default', () 
     .filter(line => !line.trim().startsWith('#'))
   const gitignoreLedgerEntries = nonCommentLines.filter(
     line =>
-      line.includes('.openclaude/ralph/ledger') &&
+      line.includes('.limitless/ralph/ledger') &&
       line.includes('>> .gitignore'),
   )
   expect(gitignoreLedgerEntries).toHaveLength(0)
@@ -421,7 +421,7 @@ test('scheduler contract step 10 is the stop gate (renumbered from 9 after check
 
 /**
  * Writes the bundled hook script into a fresh temp project root, creates the
- * `.openclaude/ralph/enabled` marker the hook requires, runs the hook with the
+ * `.limitless/ralph/enabled` marker the hook requires, runs the hook with the
  * given stdin JSON, and returns the temp root + exit code.
  */
 function runHookSubprocess(stdinPayload: Record<string, unknown>): {
@@ -430,8 +430,8 @@ function runHookSubprocess(stdinPayload: Record<string, unknown>): {
   stderr: string
 } {
   const root = mkdtempSync(join(tmpdir(), 'openralph-hook-behavioral-'))
-  mkdirSync(join(root, '.openclaude', 'ralph'), { recursive: true })
-  writeFileSync(join(root, '.openclaude', 'ralph', 'enabled'), '')
+  mkdirSync(join(root, '.limitless', 'ralph'), { recursive: true })
+  writeFileSync(join(root, '.limitless', 'ralph', 'enabled'), '')
   const hookPath = join(root, 'openralph-hook.sh')
   writeFileSync(hookPath, OPENRALPH_FILES['bin/openralph-hook.sh'])
 
@@ -460,7 +460,7 @@ test('hook exits 0 and writes no ledger line when tool_response has no YAML bloc
 
   expect(exitCode).toBe(0)
 
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   if (existsSync(ledgerPath)) {
     expect(readFileSync(ledgerPath, 'utf8').trim()).toBe('')
   }
@@ -664,7 +664,7 @@ test('hook appends one well-formed JSONL ledger record for a valid persona YAML'
 
   expect(exitCode).toBe(0)
 
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   expect(existsSync(ledgerPath)).toBe(true)
 
   const lines = readFileSync(ledgerPath, 'utf8').trim().split('\n')
@@ -860,8 +860,8 @@ test('hook serial-assumption comment is present in the PreToolUse block', () => 
 test('hook PreToolUse to PostToolUse round-trip produces integer duration_s in ledger', () => {
   // Build a shared temp project root so both hook invocations share the bridges dir.
   const root = mkdtempSync(join(tmpdir(), 'openralph-duration-'))
-  mkdirSync(join(root, '.openclaude', 'ralph'), { recursive: true })
-  writeFileSync(join(root, '.openclaude', 'ralph', 'enabled'), '')
+  mkdirSync(join(root, '.limitless', 'ralph'), { recursive: true })
+  writeFileSync(join(root, '.limitless', 'ralph', 'enabled'), '')
   const hookPath = join(root, 'openralph-hook.sh')
   writeFileSync(hookPath, OPENRALPH_FILES['bin/openralph-hook.sh'])
 
@@ -886,7 +886,7 @@ test('hook PreToolUse to PostToolUse round-trip produces integer duration_s in l
   })
   expect(pre.exitCode).toBe(0)
   // Marker file must exist after PreToolUse.
-  const markerPath = join(root, '.openclaude', 'ralph', 'bridges', `start-${TOOL_USE_ID}.ts`)
+  const markerPath = join(root, '.limitless', 'ralph', 'bridges', `start-${TOOL_USE_ID}.ts`)
   expect(existsSync(markerPath)).toBe(true)
 
   // 2. PostToolUse — reads the marker and writes the ledger row.
@@ -922,7 +922,7 @@ test('hook PreToolUse to PostToolUse round-trip produces integer duration_s in l
   expect(existsSync(markerPath)).toBe(false)
 
   // Ledger must contain one row with an integer duration_s >= 0.
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   expect(existsSync(ledgerPath)).toBe(true)
   const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
   expect(record.task_slug).toBe('dur-test-task')
@@ -990,7 +990,7 @@ test('hook extractor round-trip: task_category in persona YAML flows through to 
   expect(exitCode).toBe(0)
   expect(stderr).not.toContain('Traceback')
 
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   expect(existsSync(ledgerPath)).toBe(true)
 
   const lines = readFileSync(ledgerPath, 'utf8').trim().split('\n')
@@ -1030,7 +1030,7 @@ test('hook extractor round-trip: absent task_category in YAML → null in JSONL 
 
   expect(exitCode).toBe(0)
 
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
   // task_category absent in YAML → null in record (never fails the hook)
   expect(record.task_category).toBeNull()
@@ -1067,7 +1067,7 @@ test('hook extractor round-trip: goal_met: true in checker YAML flows to JSONL r
   expect(exitCode).toBe(0)
   expect(stderr).not.toContain('Traceback')
 
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   expect(existsSync(ledgerPath)).toBe(true)
 
   const lines = readFileSync(ledgerPath, 'utf8').trim().split('\n')
@@ -1108,7 +1108,7 @@ test('hook extractor round-trip: goal_met: false in checker YAML → false in re
   })
 
   expect(exitCode).toBe(0)
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
   expect(record.goal_met).toBe(false)
 })
@@ -1140,7 +1140,7 @@ test('hook extractor round-trip: absent goal_met in worker YAML → null in reco
   })
 
   expect(exitCode).toBe(0)
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
   // Worker rows should have goal_met: null (not a checker, no goal_met in YAML)
   expect(record.goal_met).toBeNull()
@@ -1357,7 +1357,7 @@ test('hook AgentToolResult round-trip: token fields and billing_model land in le
   expect(stderr).not.toContain('Traceback')
   expect(stderr).not.toContain('SyntaxError')
 
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   expect(existsSync(ledgerPath)).toBe(true)
 
   const lines = readFileSync(ledgerPath, 'utf8').trim().split('\n')
@@ -1412,7 +1412,7 @@ test('hook token fields are null when tool_response is plain text (no AgentToolR
   expect(exitCode).toBe(0)
   expect(stderr).not.toContain('Traceback')
 
-  const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+  const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
   expect(existsSync(ledgerPath)).toBe(true)
   const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
 
@@ -1470,7 +1470,7 @@ test('hook billing_model heuristic covers all three tiers across provider string
     })
 
     expect(exitCode).toBe(0)
-    const ledgerPath = join(root, '.openclaude', 'ralph', 'ledger', 'outcomes.jsonl')
+    const ledgerPath = join(root, '.limitless', 'ralph', 'ledger', 'outcomes.jsonl')
     const record = JSON.parse(readFileSync(ledgerPath, 'utf8').trim()) as Record<string, unknown>
     expect(record.billing_model).toBe(expected)
   }

@@ -20,7 +20,7 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
 })
 
 const protoDescriptor = grpc.loadPackageDefinition(packageDefinition) as any
-const openclaudeProto = protoDescriptor.limitless.v1
+const limitlessProto = protoDescriptor.limitless.v1
 
 const MAX_SESSIONS = 1000
 
@@ -30,7 +30,7 @@ export class GrpcServer {
 
   constructor() {
     this.server = new grpc.Server()
-    this.server.addService(openclaudeProto.AgentService.service, {
+    this.server.addService(limitlessProto.AgentService.service, {
       Chat: this.handleChat.bind(this),
     })
   }
@@ -91,7 +91,7 @@ export class GrpcServer {
             tools: getTools(appState.toolPermissionContext), // Gets all available tools
             commands: [], // Slash commands
             mcpClients: [],
-            // Register OpenClaude's built-in agents (general-purpose,
+            // Register Limitless's built-in agents (general-purpose,
             // statusline-setup, optional code-guide). Without this the Agent
             // tool throws "Agent type 'general-purpose' not found" the moment
             // the model tries to spawn a subagent for investigation.

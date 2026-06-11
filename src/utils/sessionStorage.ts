@@ -4080,11 +4080,45 @@ async function loadSessionFile(sessionId: UUID): Promise<{
   contextCollapseCommits: ContextCollapseCommitEntry[]
   contextCollapseSnapshot: ContextCollapseSnapshotEntry | undefined
 }> {
-  const sessionFile = join(
-    getSessionProjectDir() ?? getProjectDir(getOriginalCwd()),
-    `${sessionId}.jsonl`,
-  )
+  const sessionFile = await resolveSessionFilePath(sessionId)
   return loadTranscriptFile(sessionFile)
+}
+
+async function resolveSessionFilePath(sessionId: UUID): Promise<string> {
+  const fileName = `${sessionId}.jsonl`
+  const currentProjectFile = join(
+    getSessionProjectDir() ?? getProjectDir(getOriginalCwd()),
+    fileName,
+  )
+
+  try {
+    await stat(currentProjectFile)
+    return currentProjectFile
+  } catch {
+    // Direct UUID resume should work regardless of the directory Limitless was
+    // launched from. Fall back to scanning all project buckets for that file.
+  }
+
+  const projectsDir = getProjectsDir()
+  let dirents: Dirent[]
+  try {
+    dirents = await readdir(projectsDir, { withFileTypes: true })
+  } catch {
+    return currentProjectFile
+  }
+
+  for (const dirent of dirents) {
+    if (!dirent.isDirectory()) continue
+    const candidate = join(projectsDir, dirent.name, fileName)
+    try {
+      await stat(candidate)
+      return candidate
+    } catch {
+      // Keep scanning other project buckets.
+    }
+  }
+
+  return currentProjectFile
 }
 
 /**
@@ -4121,6 +4155,7 @@ export async function doesMessageExistInSession(
 export async function getLastSessionLog(
   sessionId: UUID,
 ): Promise<LogOption | null> {
+  const sessionFile = await resolveSessionFilePath(sessionId)
   // Single read: load all session data at once instead of reading the file twice
   const {
     messages,
@@ -4134,7 +4169,7 @@ export async function getLastSessionLog(
     contentReplacements,
     contextCollapseCommits,
     contextCollapseSnapshot,
-  } = await loadSessionFile(sessionId)
+  } = await loadTranscriptFile(sessionFile)
   if (messages.size === 0) return null
   // Prime getSessionMessages cache so recordTranscript (called after REPL
   // mount on --resume) skips a second full file load. -170~227ms on large sessions.
@@ -4167,7 +4202,7 @@ export async function getLastSessionLog(
       customTitle,
       buildFileHistorySnapshotChain(fileHistorySnapshots, transcript),
       tag,
-      getTranscriptPathForSession(sessionId),
+      sessionFile,
       buildAttributionSnapshotChain(attributionSnapshots, transcript),
       agentSetting,
       contentReplacements.get(sessionId) ?? [],

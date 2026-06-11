@@ -60,7 +60,7 @@ type MdmRuntimeState = {
 
 function getMdmRuntimeState(): MdmRuntimeState {
   const globalStore = globalThis as Record<string, unknown>
-  const key = '__openclaudeMdmRuntimeState'
+  const key = '__limitlessMdmRuntimeState'
   const existing = globalStore[key]
   if (existing && typeof existing === 'object') {
     return existing as MdmRuntimeState

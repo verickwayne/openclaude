@@ -7,12 +7,12 @@ import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
 import { notifyCompaction } from '../../services/api/promptCacheBreakDetection.js'
 import {
   type CompactionResult,
-  compactConversation,
+  compactLimitlessConversation,
   ERROR_MESSAGE_INCOMPLETE_RESPONSE,
   ERROR_MESSAGE_NOT_ENOUGH_MESSAGES,
   ERROR_MESSAGE_USER_ABORT,
   mergeHookInstructions,
-} from '../../services/compact/compact.js'
+} from '../../services/limitlessCompact/limitlessCompact.js'
 import { suppressCompactWarning } from '../../services/compact/compactWarningState.js'
 import { microcompactMessages } from '../../services/compact/microCompact.js'
 import { runPostCompactCleanup } from '../../services/compact/postCompactCleanup.js'
@@ -98,7 +98,7 @@ export const call: LocalCommandCall = async (args, context) => {
     const microcompactResult = await microcompactMessages(messages, context)
     const messagesForCompact = microcompactResult.messages
 
-    const result = await compactConversation(
+    const result = await compactLimitlessConversation(
       messagesForCompact,
       context,
       await getCacheSharingParams(context, messagesForCompact),

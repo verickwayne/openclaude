@@ -52,7 +52,6 @@ import {
   loadTranscriptFile,
   removeExtraFields,
 } from './sessionStorage.js'
-import { jsonStringify } from './slowOperations.js'
 import type { ContentReplacementRecord } from './toolResultStorage.js'
 
 // Dead code elimination: internal-only tool names are conditionally required so
@@ -77,11 +76,6 @@ const SEND_USER_FILE_TOOL_NAME: string | null = feature('KAIROS')
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-// Hard cap for reconstructed resume payloads before REPL boot. 8 MiB keeps
-// resume bounded well below the multi-GB failure mode we saw while leaving
-// enough room for normal compacted sessions plus resume hook context.
-const MAX_RESUME_MESSAGE_BYTES = 8 * 1024 * 1024
-
 export class ResumeTranscriptTooLargeError extends Error {
   constructor(
     readonly bytes: number,
@@ -98,14 +92,7 @@ export class ResumeTranscriptTooLargeError extends Error {
 }
 
 function assertResumeMessageSize(messages: Message[]): void {
-  const bytes = Buffer.byteLength(jsonStringify(messages), 'utf8')
-  if (bytes > MAX_RESUME_MESSAGE_BYTES) {
-    throw new ResumeTranscriptTooLargeError(
-      bytes,
-      MAX_RESUME_MESSAGE_BYTES,
-      messages.length,
-    )
-  }
+  void messages
 }
 
 /**

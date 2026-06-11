@@ -77,7 +77,7 @@ export function isObservationMaskingEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return (
-    (env.LIMITLESS_OBSERVATION_MASKING ?? env.OPENCLAUDE_OBSERVATION_MASKING) === '1'
+    (env.LIMITLESS_OBSERVATION_MASKING) === '1'
   )
 }
 
