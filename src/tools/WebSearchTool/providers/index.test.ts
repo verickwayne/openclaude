@@ -10,8 +10,6 @@ const savedWebSearchEnv = {
   WEB_SEARCH_PROVIDER: process.env.WEB_SEARCH_PROVIDER,
   TAVILY_API_KEY: process.env.TAVILY_API_KEY,
   FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY,
-  WEB_SEARCH_AUTO_INCLUDE_API_BACKENDS:
-    process.env.WEB_SEARCH_AUTO_INCLUDE_API_BACKENDS,
 }
 
 function restoreWebSearchEnv() {
@@ -84,18 +82,9 @@ describe('getProviderChain', () => {
     expect(chain.some(p => p.name === 'custom')).toBe(false)
   })
 
-  test('auto mode avoids API-credit providers by default', () => {
+  test('auto mode includes configured provider backends', () => {
     process.env.FIRECRAWL_API_KEY = 'fc-test'
     process.env.TAVILY_API_KEY = 'tvly-test'
-    delete process.env.WEB_SEARCH_AUTO_INCLUDE_API_BACKENDS
-    const chain = getProviderChain('auto').map(p => p.name)
-    expect(chain).toEqual(['duckduckgo'])
-  })
-
-  test('auto mode can opt into API-credit providers explicitly', () => {
-    process.env.FIRECRAWL_API_KEY = 'fc-test'
-    process.env.TAVILY_API_KEY = 'tvly-test'
-    process.env.WEB_SEARCH_AUTO_INCLUDE_API_BACKENDS = '1'
     const chain = getProviderChain('auto').map(p => p.name)
     expect(chain).toContain('firecrawl')
     expect(chain).toContain('tavily')

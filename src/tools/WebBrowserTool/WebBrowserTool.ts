@@ -1,4 +1,9 @@
 import { PRODUCT_DISPLAY_NAME } from '../../constants/product.js'
+import { existsSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { BrowserContext, Page } from 'playwright-core'
+import { chromium } from 'playwright-core'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import type { PermissionUpdate } from '../../types/permissions.js'
 import { lazySchema } from '../../utils/lazySchema.js'
@@ -29,12 +34,23 @@ import {
 const MAX_BROWSER_TEXT_LENGTH = 120_000
 const DEFAULT_COMPACT_TEXT_LENGTH = 24_000
 const DEFAULT_SEARCH_LIMIT = 10
+const BROWSER_WAIT_MS = 800
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
     action: z
-      .enum(['search', 'open'])
-      .describe('Use "search" to search the web or "open" to open a URL'),
+      .enum([
+        'search',
+        'open',
+        'navigate',
+        'click',
+        'type',
+        'screenshot',
+        'text',
+        'links',
+        'elements',
+      ])
+      .describe('Use "search"/"open" for lightweight browsing or browser automation actions for live pages'),
     query: z
       .string()
       .min(2)
@@ -44,7 +60,19 @@ const inputSchema = lazySchema(() =>
       .string()
       .url()
       .optional()
-      .describe('URL to open. Required when action is "open".'),
+      .describe('URL to open. Required when action is "open" or "navigate".'),
+    selector: z
+      .string()
+      .optional()
+      .describe('CSS selector for click/type. If omitted for click, text_match is used.'),
+    text_match: z
+      .string()
+      .optional()
+      .describe('Visible text to click when selector is omitted. Case-insensitive substring match.'),
+    text: z
+      .string()
+      .optional()
+      .describe('Text to type when action is "type".'),
     max_results: z
       .number()
       .int()
@@ -85,11 +113,31 @@ const searchResultSchema = z.object({
 
 const outputSchema = lazySchema(() =>
   z.object({
-    action: z.enum(['search', 'open']),
+    action: z.enum([
+      'search',
+      'open',
+      'navigate',
+      'click',
+      'type',
+      'screenshot',
+      'text',
+      'links',
+      'elements',
+    ]),
     query: z.string().optional(),
     url: z.string().optional(),
     title: z.string().optional(),
     text: z.string().optional(),
+    screenshot_path: z.string().optional(),
+    elements: z
+      .array(
+        z.object({
+          selector: z.string(),
+          text: z.string(),
+          tag: z.string(),
+        }),
+      )
+      .optional(),
     results: z.array(searchResultSchema).optional(),
     source: z.string().describe('Native backend used for the browsing action'),
     code: z.number().optional(),
@@ -109,6 +157,12 @@ function browserToolInputToPermissionRuleContent(input: {
     const parsedInput = WebBrowserTool.inputSchema.safeParse(input)
     if (!parsedInput.success) return `input:${String(input)}`
     if (parsedInput.data.action === 'search') return 'search'
+    if (
+      parsedInput.data.action !== 'open' &&
+      parsedInput.data.action !== 'navigate'
+    ) {
+      return 'browser-session'
+    }
     const url = parsedInput.data.url
     if (!url) return 'input:missing-url'
     return `domain:${new URL(url).hostname}`
@@ -180,6 +234,182 @@ function extractTitleFromMarkdown(markdown: string): string | undefined {
     .map(line => line.trim())
     .find(line => /^#\s+\S/.test(line))
   return heading?.replace(/^#\s+/, '').trim()
+}
+
+type BrowserSession = {
+  context: BrowserContext
+  page: Page
+}
+
+let browserSessionPromise: Promise<BrowserSession> | null = null
+
+function findChromeExecutable(): string {
+  const candidates = [
+    process.env.LIMITLESS_BROWSER_EXECUTABLE,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ].filter(Boolean) as string[]
+  const executable = candidates.find(path => existsSync(path))
+  if (!executable) {
+    throw new Error(
+      'No Chromium browser executable found. Set LIMITLESS_BROWSER_EXECUTABLE to Chrome/Chromium.',
+    )
+  }
+  return executable
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function ensureBrowserSession(): Promise<BrowserSession> {
+  if (browserSessionPromise) return browserSessionPromise
+
+  browserSessionPromise = (async () => {
+    const userDataDir = join(tmpdir(), 'limitless-webbrowser-profile')
+    mkdirSync(userDataDir, { recursive: true })
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      executablePath: findChromeExecutable(),
+      headless: process.env.LIMITLESS_BROWSER_HEADLESS !== '0',
+      viewport: { width: 1440, height: 1000 },
+      args: [
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-background-networking',
+        '--disable-features=Translate,OptimizationHints',
+      ],
+      acceptDownloads: true,
+    })
+    const page = context.pages()[0] ?? (await context.newPage())
+    context.on('close', () => {
+      browserSessionPromise = null
+    })
+    return { context, page }
+  })()
+
+  return browserSessionPromise
+}
+
+async function getBrowserPage(): Promise<Page> {
+  const session = await ensureBrowserSession()
+  return session.page
+}
+
+async function navigateBrowser(url: string): Promise<string> {
+  const page = await getBrowserPage()
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 })
+  await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
+  return page.url()
+}
+
+async function clickBrowser(input: Input): Promise<string> {
+  const page = await getBrowserPage()
+  const locator = input.selector
+    ? page.locator(input.selector).first()
+    : page.getByText(input.text_match ?? '', { exact: false }).first()
+  const label = (await locator.textContent({ timeout: 5_000 }).catch(() => '')) ?? ''
+  await locator.click({ timeout: 15_000 })
+  await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
+  await sleep(BROWSER_WAIT_MS)
+  return label.trim().slice(0, 200) || page.url()
+}
+
+async function typeBrowser(input: Input): Promise<string> {
+  if (!input.selector || input.text === undefined) {
+    throw new Error('WebBrowser action "type" requires selector and text.')
+  }
+  const page = await getBrowserPage()
+  const locator = page.locator(input.selector).first()
+  await locator.fill(input.text, { timeout: 15_000 })
+  return input.selector
+}
+
+async function getBrowserText(): Promise<string> {
+  const page = await getBrowserPage()
+  return page.evaluate(() => {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    const chunks: string[] = []
+    while (walker.nextNode()) {
+      const text = walker.currentNode.nodeValue?.replace(/\s+/g, ' ').trim()
+      if (text) chunks.push(text)
+      if (chunks.join('\n').length > 120_000) break
+    }
+    return chunks.join('\n')
+  })
+}
+
+async function getBrowserLinks(): Promise<SearchHit[]> {
+  const page = await getBrowserPage()
+  return page.evaluate(() =>
+    [...document.querySelectorAll<HTMLAnchorElement>('a[href]')]
+      .slice(0, 200)
+      .map(a => ({
+        title: (a.innerText || a.getAttribute('aria-label') || a.href)
+          .trim()
+          .slice(0, 200),
+        url: a.href,
+        description: a
+          .closest('article,li,section,div')
+          ?.textContent?.trim()
+          .replace(/\s+/g, ' ')
+          .slice(0, 280),
+        source: location.hostname,
+      })),
+  )
+}
+
+async function getBrowserElements(): Promise<Array<{ selector: string; text: string; tag: string }>> {
+  const page = await getBrowserPage()
+  return page.evaluate(() => {
+    function selectorFor(el: Element) {
+      if (el.id) return `#${CSS.escape(el.id)}`
+      const aria = el.getAttribute('aria-label')
+      if (aria) {
+        return `${el.tagName.toLowerCase()}[aria-label="${aria.replace(/"/g, '\\"')}"]`
+      }
+      const parent = el.parentElement
+      const nth = parent ? [...parent.children].indexOf(el) + 1 : 1
+      return `${el.tagName.toLowerCase()}:nth-child(${nth})`
+    }
+    return [
+      ...document.querySelectorAll<HTMLElement>(
+        'a,button,input,textarea,select,[role="button"],summary,video,audio',
+      ),
+    ]
+      .filter(el => {
+        const rect = el.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0
+      })
+      .slice(0, 120)
+      .map(el => ({
+        selector: selectorFor(el),
+        text: (
+          el.innerText ||
+          (el as HTMLInputElement).value ||
+          el.getAttribute('aria-label') ||
+          el.getAttribute('title') ||
+          ''
+        )
+          .trim()
+          .replace(/\s+/g, ' ')
+          .slice(0, 160),
+        tag: el.tagName.toLowerCase(),
+      }))
+  })
+}
+
+async function screenshotBrowser(): Promise<string> {
+  const page = await getBrowserPage()
+  const dir = join(tmpdir(), 'limitless-webbrowser')
+  mkdirSync(dir, { recursive: true })
+  const path = join(dir, `screenshot-${Date.now()}.png`)
+  await page.screenshot({ path, fullPage: false })
+  return path
 }
 
 function normalizeJinaHit(raw: any): SearchHit | null {
@@ -408,12 +638,41 @@ export const WebBrowserTool = buildTool({
         errorCode: 2,
       }
     }
+    if (input.action === 'navigate' && !input.url) {
+      return {
+        result: false,
+        message: 'Error: WebBrowser action "navigate" requires url.',
+        errorCode: 3,
+      }
+    }
+    if (
+      input.action === 'click' &&
+      !input.selector &&
+      !input.text_match
+    ) {
+      return {
+        result: false,
+        message:
+          'Error: WebBrowser action "click" requires selector or text_match.',
+        errorCode: 4,
+      }
+    }
+    if (
+      input.action === 'type' &&
+      (!input.selector || input.text === undefined)
+    ) {
+      return {
+        result: false,
+        message: 'Error: WebBrowser action "type" requires selector and text.',
+        errorCode: 5,
+      }
+    }
     if (input.allowed_domains?.length && input.blocked_domains?.length) {
       return {
         result: false,
         message:
           'Error: Cannot specify both allowed_domains and blocked_domains in the same request',
-        errorCode: 3,
+        errorCode: 6,
       }
     }
     return { result: true }
@@ -439,10 +698,104 @@ export const WebBrowserTool = buildTool({
       }
     }
 
-    const opened = await runNativeOpen(input, context.abortController)
+    if (input.action === 'open') {
+      const opened = await runNativeOpen(input, context.abortController)
+      return {
+        data: {
+          ...opened,
+          durationMs: Date.now() - start,
+        } satisfies Output,
+      }
+    }
+
+    if (input.action === 'navigate') {
+      const url = await navigateBrowser(input.url!)
+      return {
+        data: {
+          action: 'navigate',
+          url,
+          source: 'playwright',
+          durationMs: Date.now() - start,
+        } satisfies Output,
+      }
+    }
+
+    if (input.action === 'click') {
+      const clicked = await clickBrowser(input)
+      const page = await getBrowserPage()
+      return {
+        data: {
+          action: 'click',
+          url: page.url(),
+          text: clicked,
+          source: 'playwright',
+          durationMs: Date.now() - start,
+        } satisfies Output,
+      }
+    }
+
+    if (input.action === 'type') {
+      const typed = await typeBrowser(input)
+      const page = await getBrowserPage()
+      return {
+        data: {
+          action: 'type',
+          url: page.url(),
+          text: typed,
+          source: 'playwright',
+          durationMs: Date.now() - start,
+        } satisfies Output,
+      }
+    }
+
+    if (input.action === 'screenshot') {
+      const screenshotPath = await screenshotBrowser()
+      const page = await getBrowserPage()
+      return {
+        data: {
+          action: 'screenshot',
+          url: page.url(),
+          screenshot_path: screenshotPath,
+          text: `Screenshot saved to ${screenshotPath}`,
+          source: 'playwright',
+          durationMs: Date.now() - start,
+        } satisfies Output,
+      }
+    }
+
+    if (input.action === 'links') {
+      const page = await getBrowserPage()
+      return {
+        data: {
+          action: 'links',
+          url: page.url(),
+          results: await getBrowserLinks(),
+          source: 'playwright',
+          durationMs: Date.now() - start,
+        } satisfies Output,
+      }
+    }
+
+    if (input.action === 'elements') {
+      const page = await getBrowserPage()
+      return {
+        data: {
+          action: 'elements',
+          url: page.url(),
+          elements: await getBrowserElements(),
+          source: 'playwright',
+          durationMs: Date.now() - start,
+        } satisfies Output,
+      }
+    }
+
+    const page = await getBrowserPage()
     return {
       data: {
-        ...opened,
+        action: 'text',
+        url: page.url(),
+        text: formatOpenedText(input, await getBrowserText()),
+        source: 'playwright',
         durationMs: Date.now() - start,
       } satisfies Output,
     }

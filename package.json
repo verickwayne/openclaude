@@ -114,6 +114,7 @@
     "marked": "15.0.12",
     "p-map": "7.0.4",
     "picomatch": "4.0.4",
+    "playwright-core": "^1.60.0",
     "proper-lockfile": "4.1.2",
     "qrcode": "1.5.4",
     "react": "19.2.4",

@@ -25,6 +25,9 @@ export const COMMON_EXTERNALS: string[] = [
   // Orama search engine
   '@orama/orama',
   '@orama/plugin-data-persistence',
+  // Playwright loads protocol/browser-driver internals dynamically; keep the
+  // package external and resolve it from node_modules at runtime.
+  'playwright-core',
 ]
 
 // Additional packages external only in the SDK bundle (TUI + heavy deps)
