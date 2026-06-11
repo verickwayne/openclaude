@@ -17,6 +17,7 @@ import { Dialog } from '../../components/design-system/Dialog.js'
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js'
 import { Text } from '../../ink.js'
 import { refreshGrowthBookAfterAuthChange } from '../../services/analytics/growthbook.js'
+import { resolveCodexApiCredentials } from '../../services/api/providerConfig.js'
 import { refreshPolicyLimits } from '../../services/policyLimits/index.js'
 import { refreshRemoteManagedSettings } from '../../services/remoteManagedSettings/index.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
@@ -51,6 +52,15 @@ export async function call(
   // directly. ProviderManager owns the full success path — saving the
   // profile, persisting credentials securely, and switching the session.
   if (target.kind === 'codex') {
+    const credentials = resolveCodexApiCredentials()
+    if (credentials.apiKey && credentials.accountId) {
+      onDone(
+        'OpenAI subscription is already authenticated. Use /provider to activate it, re-authenticate, or log out.',
+        { display: 'system' },
+      )
+      return null
+    }
+
     return (
       <ProviderManager
         mode="codex-login"

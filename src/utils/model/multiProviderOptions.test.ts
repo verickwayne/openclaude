@@ -222,6 +222,9 @@ describe('getGroupedProviderModelOptions', () => {
     expect(opts.some(o => o.value === 'haiku')).toBe(true)
     expect(opts.some(o => o.value === 'claude-fable-5')).toBe(true)
     expect(opts.some(o => o.value === 'gpt-5.5-mini')).toBe(true)
+    expect(opts.some(o => o.value === 'gpt-5.3-codex-spark')).toBe(true)
+    expect(opts.some(o => o.value === 'codexplan')).toBe(true)
+    expect(opts.some(o => o.value === 'gpt-4.1')).toBe(false)
     expect(opts.some(o => o.value === 'minimax/minimax-m3')).toBe(true)
     expect(opts.some(o => o.value === 'moonshotai/kimi-k2-thinking')).toBe(true)
     expect(opts.some(o => o.value === 'meta-llama/llama-4-scout')).toBe(true)
@@ -239,6 +242,25 @@ describe('getGroupedProviderModelOptions', () => {
     expect(opts.find(o => o.value === 'minimax/minimax-m3')?.description).toContain(
       'Price: in $0.30 / out $1.20 per 1M',
     )
+  })
+
+  test('keeps generic OpenAI API models when an API-key OpenAI profile is configured', () => {
+    const opts = getGroupedProviderModelOptions({
+      firstPartyOptions: [],
+      profiles: [
+        {
+          id: 'openai-api',
+          name: 'OpenAI API',
+          provider: 'openai',
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-4.1',
+          apiKey: 'test-key',
+        },
+      ] as any[],
+    })
+
+    expect(opts.some(o => o.value === 'gpt-4.1')).toBe(true)
+    expect(opts.find(o => o.value === 'gpt-4.1')?.label).toStartWith('● ')
   })
 
   test('uses cached discovery metadata on visible stable and configured OpenRouter rows', () => {

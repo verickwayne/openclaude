@@ -61,6 +61,20 @@ export const OPENAI_PICKER_MODELS: ModelOption[] = [
   { value: 'gpt-4.1', label: 'GPT-4.1', description: 'OpenAI' },
 ]
 
+export const OPENAI_SUBSCRIPTION_PICKER_MODELS: ModelOption[] = [
+  { value: 'gpt-5.5', label: 'GPT-5.5', description: 'OpenAI subscription' },
+  { value: 'gpt-5.5-mini', label: 'GPT-5.5 Mini', description: 'OpenAI subscription' },
+  { value: 'gpt-5.4', label: 'GPT-5.4', description: 'OpenAI subscription' },
+  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', description: 'OpenAI subscription' },
+  { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', description: 'OpenAI subscription' },
+  { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark', description: 'OpenAI subscription' },
+  { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', description: 'OpenAI subscription' },
+  { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max', description: 'OpenAI subscription' },
+  { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini', description: 'OpenAI subscription' },
+  { value: 'codexplan', label: 'Codex Plan', description: 'OpenAI subscription' },
+  { value: 'codexspark', label: 'Codex Spark', description: 'OpenAI subscription' },
+]
+
 export const OPENROUTER_PICKER_MODELS: ModelOption[] = [
   {
     value: 'minimax/minimax-m3',
@@ -260,7 +274,7 @@ export function getCuratedModelOptionsForProfile(
     case 'anthropic':
       return [...ANTHROPIC_PICKER_MODELS, ...configured]
     case 'openai':
-      return [...OPENAI_PICKER_MODELS, ...configured]
+      return [...getOpenAIStableModelOptions([profile]), ...configured]
     case 'openrouter':
       return [...OPENROUTER_PICKER_MODELS, ...configured]
     case 'local':
@@ -274,6 +288,52 @@ function getProfilesForGroup(
   group: ProviderGroup,
 ): ProviderProfile[] {
   return profiles.filter(profile => classifyProviderGroup(profile.id, profile) === group)
+}
+
+function isOpenAISubscriptionProfile(
+  profile: Pick<ProviderProfile, 'baseUrl' | 'model'>,
+): boolean {
+  const baseUrl = profile.baseUrl.trim().toLowerCase().replace(/\/+$/, '')
+  const model = profile.model.trim().toLowerCase()
+  return (
+    baseUrl === 'https://chatgpt.com/backend-api/codex' ||
+    model === 'codexplan' ||
+    model === 'codexspark'
+  )
+}
+
+function dedupeModelOptions(options: ModelOption[]): ModelOption[] {
+  const seen = new Set<string>()
+  const deduped: ModelOption[] = []
+
+  for (const option of options) {
+    const key = String(option.value).trim().toLowerCase()
+    if (!key || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    deduped.push(option)
+  }
+
+  return deduped
+}
+
+function getOpenAIStableModelOptions(
+  profiles: Array<Pick<ProviderProfile, 'baseUrl' | 'model'>>,
+): ModelOption[] {
+  if (profiles.length === 0) {
+    return OPENAI_PICKER_MODELS
+  }
+
+  const options: ModelOption[] = []
+  if (profiles.some(isOpenAISubscriptionProfile)) {
+    options.push(...OPENAI_SUBSCRIPTION_PICKER_MODELS)
+  }
+  if (profiles.some(profile => !isOpenAISubscriptionProfile(profile))) {
+    options.push(...OPENAI_PICKER_MODELS)
+  }
+
+  return dedupeModelOptions(options)
 }
 
 function groupHasAvailableProfile(profiles: ProviderProfile[]): boolean {
@@ -387,7 +447,7 @@ function getStableGroupModelOptions(
     case 'anthropic':
       return mergeGroupMetadata([...ANTHROPIC_PICKER_MODELS, ...configured])
     case 'openai':
-      return mergeGroupMetadata([...OPENAI_PICKER_MODELS, ...configured])
+      return mergeGroupMetadata([...getOpenAIStableModelOptions(profiles), ...configured])
     case 'openrouter':
       return mergeGroupMetadata([...OPENROUTER_PICKER_MODELS, ...configured])
     case 'local':
