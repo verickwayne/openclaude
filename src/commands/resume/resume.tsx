@@ -17,7 +17,7 @@ import type { LocalJSXCommandCall } from '../../types/command.js';
 import type { LogOption } from '../../types/logs.js';
 import type { DiscoveredTranscript, ResumeMode } from '../../services/crossHarness/harnessTypes.js';
 import { materialize } from '../../services/crossHarness/materialize.js';
-import { refreshIndex } from '../../services/crossHarness/transcriptIndex.js';
+import { refreshIndex, searchIndex } from '../../services/crossHarness/transcriptIndex.js';
 import { mergeCrossHarnessLogs } from './crossHarnessMerge.js';
 import { agenticSessionSearch } from '../../utils/agenticSessionSearch.js';
 import { checkCrossProjectResume } from '../../utils/crossProjectResume.js';
@@ -93,12 +93,16 @@ function ResumeError(t0) {
 }
 function ResumeCommand({
   onDone,
-  onResume
+  onResume,
+  initialSearchQuery,
+  initialForeign
 }: {
   onDone: (result?: string, options?: {
     display?: CommandResultDisplay;
   }) => void;
   onResume: (sessionId: UUID, log: LogOption, entrypoint: ResumeEntrypoint) => Promise<void>;
+  initialSearchQuery?: string;
+  initialForeign?: DiscoveredTranscript;
 }): React.ReactNode {
   const [logs, setLogs] = React.useState<LogOption[]>([]);
   const [worktreePaths, setWorktreePaths] = React.useState<string[]>([]);
@@ -106,8 +110,9 @@ function ResumeCommand({
   const [resuming, setResuming] = React.useState(false);
   const [showAllProjects, setShowAllProjects] = React.useState(false);
   // When set, the user picked a foreign (cross-harness) entry and we render the
-  // full/summary mode chooser instead of the picker.
-  const [pendingForeign, setPendingForeign] = React.useState<LogOption | null>(null);
+  // full/summary mode chooser instead of the picker. Seeded from initialForeign
+  // when /resume <query> resolves to exactly one cross-harness hit.
+  const [pendingForeign, setPendingForeign] = React.useState<LogOption | null>(() => initialForeign ? mergeCrossHarnessLogs([], [initialForeign])[0] ?? null : null);
   const {
     rows
   } = useTerminalSize();
@@ -247,7 +252,7 @@ function ResumeCommand({
       }} onCancel={() => setPendingForeign(null)} />
       </Box>;
   }
-  return <LogSelector logs={logs} maxHeight={insideModal ? Math.floor(rows / 2) : rows - 2} onCancel={handleCancel} onSelect={handleSelect} onLogsChanged={() => loadLogs(showAllProjects, worktreePaths)} showAllProjects={showAllProjects} onToggleAllProjects={handleToggleAllProjects} onAgenticSearch={agenticSessionSearch} />;
+  return <LogSelector logs={logs} maxHeight={insideModal ? Math.floor(rows / 2) : rows - 2} onCancel={handleCancel} onSelect={handleSelect} onLogsChanged={() => loadLogs(showAllProjects, worktreePaths)} showAllProjects={showAllProjects} onToggleAllProjects={handleToggleAllProjects} onAgenticSearch={agenticSessionSearch} initialSearchQuery={initialSearchQuery} />;
 }
 export function filterResumableSessions(logs: LogOption[], currentSessionId: string): LogOption[] {
   return logs.filter(l => !l.isSidechain && getSessionIdFromLog(l) !== currentSessionId);
@@ -324,6 +329,23 @@ export const call: LocalJSXCommandCall = async (onDone, context, args) => {
       });
       return <ResumeError message={message} args={arg} onDone={() => onDone(message)} />;
     }
+  }
+
+  // No native match — search the cross-harness index. Resilient: any discovery
+  // failure falls through to the existing "not found" behavior.
+  try {
+    const idx = await refreshIndex();
+    const hits = searchIndex(idx, arg);
+    if (hits.length === 1) {
+      // Exactly one foreign hit — go straight to the full/summary chooser.
+      return <ResumeCommand key={Date.now()} onDone={onDone} onResume={onResume} initialForeign={hits[0]} />;
+    }
+    if (hits.length > 1) {
+      // Multiple — open the picker pre-filtered to the query over the merged list.
+      return <ResumeCommand key={Date.now()} onDone={onDone} onResume={onResume} initialSearchQuery={arg} />;
+    }
+  } catch (error) {
+    logError(error as Error);
   }
 
   // No match found - show error
