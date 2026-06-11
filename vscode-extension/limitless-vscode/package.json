@@ -1,5 +1,5 @@
 {
-  "name": "openclaude-vscode",
+  "name": "limitless-vscode",
   "displayName": "Limitless",
   "description": "Practical VS Code companion for Limitless with project-aware launch behavior and a real Control Center.",
   "version": "0.2.0",
@@ -13,18 +13,18 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:openclaude.start",
-    "onCommand:openclaude.startInWorkspaceRoot",
-    "onCommand:openclaude.openDocs",
-    "onCommand:openclaude.openSetupDocs",
-    "onCommand:openclaude.openWorkspaceProfile",
-    "onCommand:openclaude.openControlCenter",
-    "onCommand:openclaude.newChat",
-    "onCommand:openclaude.openChat",
-    "onCommand:openclaude.resumeSession",
-    "onCommand:openclaude.abortChat",
-    "onView:openclaude.controlCenter",
-    "onView:openclaude.chat"
+    "onCommand:limitless.start",
+    "onCommand:limitless.startInWorkspaceRoot",
+    "onCommand:limitless.openDocs",
+    "onCommand:limitless.openSetupDocs",
+    "onCommand:limitless.openWorkspaceProfile",
+    "onCommand:limitless.openControlCenter",
+    "onCommand:limitless.newChat",
+    "onCommand:limitless.openChat",
+    "onCommand:limitless.resumeSession",
+    "onCommand:limitless.abortChat",
+    "onView:limitless.controlCenter",
+    "onView:limitless.chat"
   ],
   "main": "./src/extension.js",
   "files": [
@@ -39,52 +39,52 @@
   "contributes": {
     "commands": [
       {
-        "command": "openclaude.start",
+        "command": "limitless.start",
         "title": "Limitless: Launch in Terminal",
         "category": "Limitless"
       },
       {
-        "command": "openclaude.startInWorkspaceRoot",
+        "command": "limitless.startInWorkspaceRoot",
         "title": "Limitless: Launch in Workspace Root",
         "category": "Limitless"
       },
       {
-        "command": "openclaude.openDocs",
+        "command": "limitless.openDocs",
         "title": "Limitless: Open Repository",
         "category": "Limitless"
       },
       {
-        "command": "openclaude.openSetupDocs",
+        "command": "limitless.openSetupDocs",
         "title": "Limitless: Open Setup Guide",
         "category": "Limitless"
       },
       {
-        "command": "openclaude.openWorkspaceProfile",
+        "command": "limitless.openWorkspaceProfile",
         "title": "Limitless: Open Workspace Profile",
         "category": "Limitless"
       },
       {
-        "command": "openclaude.openControlCenter",
+        "command": "limitless.openControlCenter",
         "title": "Limitless: Open Control Center",
         "category": "Limitless"
       },
       {
-        "command": "openclaude.newChat",
+        "command": "limitless.newChat",
         "title": "Limitless: New Chat",
         "category": "Limitless"
       },
       {
-        "command": "openclaude.openChat",
+        "command": "limitless.openChat",
         "title": "Limitless: Open Chat Panel",
         "category": "Limitless"
       },
       {
-        "command": "openclaude.resumeSession",
+        "command": "limitless.resumeSession",
         "title": "Limitless: Resume Session",
         "category": "Limitless"
       },
       {
-        "command": "openclaude.abortChat",
+        "command": "limitless.abortChat",
         "title": "Limitless: Abort Generation",
         "category": "Limitless"
       }
@@ -92,21 +92,21 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "openclaude",
+          "id": "limitless",
           "title": "Limitless",
-          "icon": "media/openclaude.svg"
+          "icon": "media/limitless.svg"
         }
       ]
     },
     "views": {
-      "openclaude": [
+      "limitless": [
         {
-          "id": "openclaude.chat",
+          "id": "limitless.chat",
           "name": "Chat",
           "type": "webview"
         },
         {
-          "id": "openclaude.controlCenter",
+          "id": "limitless.controlCenter",
           "name": "Control Center",
           "type": "webview"
         }
@@ -114,7 +114,7 @@
     },
     "keybindings": [
       {
-        "command": "openclaude.openChat",
+        "command": "limitless.openChat",
         "key": "ctrl+shift+l",
         "mac": "cmd+shift+l"
       }
@@ -122,22 +122,22 @@
     "configuration": {
       "title": "Limitless",
       "properties": {
-        "openclaude.launchCommand": {
+        "limitless.launchCommand": {
           "type": "string",
           "default": "limitless",
           "description": "Command run in the integrated terminal when launching Limitless."
         },
-        "openclaude.terminalName": {
+        "limitless.terminalName": {
           "type": "string",
           "default": "Limitless",
           "description": "Integrated terminal tab name for Limitless sessions."
         },
-        "openclaude.useOpenAIShim": {
+        "limitless.useOpenAIShim": {
           "type": "boolean",
           "default": false,
           "description": "Optionally set CLAUDE_CODE_USE_OPENAI=1 in launched Limitless terminals."
         },
-        "openclaude.permissionMode": {
+        "limitless.permissionMode": {
           "type": "string",
           "default": "acceptEdits",
           "enum": ["default", "acceptEdits", "bypassPermissions", "plan"],
@@ -155,7 +155,7 @@
       {
         "label": "Limitless Terminal Black",
         "uiTheme": "vs-dark",
-        "path": "./themes/OpenClaude-Terminal-Black.json"
+        "path": "./themes/Limitless-Terminal-Black.json"
       }
     ]
   },
@@ -165,7 +165,7 @@
     "package": "npx @vscode/vsce package --no-dependencies"
   },
   "keywords": [
-    "openclaude",
+    "limitless",
     "terminal",
     "theme",
     "cli",
@@ -173,7 +173,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Gitlawb/openclaude"
+    "url": "https://github.com/verickwayne/limitless"
   },
   "license": "MIT"
 }

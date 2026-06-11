@@ -4,6 +4,7 @@ import { z } from 'zod/v4'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { lazySchema } from '../../utils/lazySchema.js'
+import { resolveProjectStateDirname } from '../../utils/productStateDir.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 import { type AgentMemoryScope, getAgentMemoryDir } from './agentMemory.js'
 
@@ -29,7 +30,8 @@ type SyncedMeta = z.infer<ReturnType<typeof syncedMetaSchema>>
  * e.g., <cwd>/.claude/agent-memory-snapshots/<agentType>/
  */
 export function getSnapshotDirForAgent(agentType: string): string {
-  return join(getCwd(), '.claude', SNAPSHOT_BASE, agentType)
+  const cwd = getCwd()
+  return join(cwd, resolveProjectStateDirname(cwd), SNAPSHOT_BASE, agentType)
 }
 
 function getSnapshotJsonPath(agentType: string): string {

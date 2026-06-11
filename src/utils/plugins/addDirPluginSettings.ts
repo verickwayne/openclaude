@@ -9,6 +9,7 @@
 import { join } from 'path'
 import type { z } from 'zod/v4'
 import { getAdditionalDirectoriesForClaudeMd } from '../../bootstrap/state.js'
+import { PROJECT_CONFIG_DIR_NAMES } from '../markdownConfigLoader.js'
 import { parseSettingsFile } from '../settings/settings.js'
 import type {
   ExtraKnownMarketplaceSchema,
@@ -36,12 +37,14 @@ export function getAddDirEnabledPlugins(): NonNullable<
 > {
   const result: NonNullable<SettingsJson['enabledPlugins']> = {}
   for (const dir of getAdditionalDirectoriesForClaudeMd()) {
-    for (const file of SETTINGS_FILES) {
-      const { settings } = parseSettingsFile(join(dir, '.claude', file))
-      if (!settings?.enabledPlugins) {
-        continue
+    for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+      for (const file of SETTINGS_FILES) {
+        const { settings } = parseSettingsFile(join(dir, configDirName, file))
+        if (!settings?.enabledPlugins) {
+          continue
+        }
+        Object.assign(result, settings.enabledPlugins)
       }
-      Object.assign(result, settings.enabledPlugins)
     }
   }
   return result
@@ -59,12 +62,16 @@ export function getAddDirExtraMarketplaces(): Record<
 > {
   const result: Record<string, ExtraKnownMarketplace> = {}
   for (const dir of getAdditionalDirectoriesForClaudeMd()) {
-    for (const file of SETTINGS_FILES) {
-      const { settings } = parseSettingsFile(join(dir, '.claude', file))
-      if (!settings?.extraKnownMarketplaces) {
-        continue
+    for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+      for (const file of SETTINGS_FILES) {
+        const { settings } = parseSettingsFile(
+          join(dir, configDirName, file),
+        )
+        if (!settings?.extraKnownMarketplaces) {
+          continue
+        }
+        Object.assign(result, settings.extraKnownMarketplaces)
       }
-      Object.assign(result, settings.extraKnownMarketplaces)
     }
   }
   return result

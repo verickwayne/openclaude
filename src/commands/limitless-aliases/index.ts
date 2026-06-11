@@ -2,7 +2,7 @@ import type { Command } from '../../commands.js'
 import { shouldInferenceConfigCommandBeImmediate } from '../../utils/immediateCommand.js'
 import type { LocalJSXCommandCall } from '../../types/command.js'
 
-function makeOpenclaudeAlias(
+function makeLimitlessAlias(
   name: string,
   model: string,
   label: string,
@@ -23,23 +23,23 @@ function makeOpenclaudeAlias(
   } satisfies Command
 }
 
-export const openclaudeQwen30b = makeOpenclaudeAlias(
-  'openclaude',
+export const limitlessQwen30b = makeLimitlessAlias(
+  'limitless',
   'qwen3-30b-abliterated-q6:latest',
   'qwen3-30b-abliterated',
 )
-export const openclaudeDolphin = makeOpenclaudeAlias(
-  'openclaude-dolphin',
+export const limitlessDolphin = makeLimitlessAlias(
+  'limitless-dolphin',
   'dolphin3:8b',
   'Dolphin 3 8B',
 )
-export const openclaudeWrn = makeOpenclaudeAlias(
-  'openclaude-wrn',
+export const limitlessWrn = makeLimitlessAlias(
+  'limitless-wrn',
   'whiterabbitneo-33b-v1.5:latest',
   'WhiteRabbitNeo 33B v1.5',
 )
-export const openclaudeOllama7b = makeOpenclaudeAlias(
-  'openclaude-ollama7b',
+export const limitlessOllama7b = makeLimitlessAlias(
+  'limitless-ollama7b',
   'qwen2.5-coder:7b',
   'Qwen2.5-Coder 7B',
 )

@@ -1,4 +1,6 @@
-// Scheduled prompts, stored in <project>/.claude/scheduled_tasks.json.
+// Scheduled prompts, stored in <project>/<statedir>/scheduled_tasks.json
+// where <statedir> is .limitless (default), .openclaude (legacy), or .claude
+// (legacy compat — see resolveProjectStateDirname).
 //
 // Tasks come in two flavors:
 //   - One-shot (recurring: false/undefined) — fire once, then auto-delete.
@@ -25,6 +27,7 @@ import { isFsInaccessible } from './errors.js'
 import { getFsImplementation } from './fsOperations.js'
 import { safeParseJSON } from './json.js'
 import { logError } from './log.js'
+import { resolveProjectStateDirname } from './productStateDir.js'
 import { jsonStringify } from './slowOperations.js'
 
 export type CronTask = {
@@ -71,15 +74,14 @@ export type CronTask = {
 
 type CronFile = { tasks: CronTask[] }
 
-const CRON_FILE_REL = join('.claude', 'scheduled_tasks.json')
-
 /**
  * Path to the cron file. `dir` defaults to getProjectRoot() — pass it
  * explicitly from contexts that don't run through main.tsx (e.g. the Agent
  * SDK daemon, which has no bootstrap state).
  */
 export function getCronFilePath(dir?: string): string {
-  return join(dir ?? getProjectRoot(), CRON_FILE_REL)
+  const root = dir ?? getProjectRoot()
+  return join(root, resolveProjectStateDirname(root), 'scheduled_tasks.json')
 }
 
 /**

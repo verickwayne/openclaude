@@ -44,7 +44,7 @@ export type ClaudeConfigDirectory = (typeof CLAUDE_CONFIG_DIRECTORIES)[number]
 // .limitless is last so it wins over both legacy names when all three exist.
 // .claude is kept for Claude Code interop; .openclaude for compat with users
 // who haven't yet migrated to .limitless.
-const PROJECT_CONFIG_DIR_NAMES = ['.claude', '.openclaude', '.limitless'] as const
+export const PROJECT_CONFIG_DIR_NAMES = ['.claude', '.openclaude', '.limitless'] as const
 
 export type MarkdownFile = {
   filePath: string

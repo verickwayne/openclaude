@@ -376,7 +376,7 @@ const externalTips: Tip[] = [
   {
     id: 'continue',
     content: async () =>
-      'Run openclaude --continue or openclaude --resume to resume a conversation',
+      'Run limitless --continue or limitless --resume to resume a conversation',
     cooldownSessions: 10,
     isRelevant: async () => true,
   },
@@ -391,7 +391,7 @@ const externalTips: Tip[] = [
   {
     id: 'custom-commands',
     content: async () =>
-      'Create skills at .claude/skills/<name>/SKILL.md in your project or ~/.openclaude/skills/<name>/SKILL.md for skills that work in any project',
+      'Create skills at .claude/skills/<name>/SKILL.md in your project or ~/.limitless/skills/<name>/SKILL.md for skills that work in any project',
     cooldownSessions: 15,
     async isRelevant() {
       const config = getGlobalConfig()

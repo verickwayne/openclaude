@@ -8,8 +8,9 @@ import { getMemoryBaseDir } from '../../memdir/paths.js'
 import { getCwd } from '../../utils/cwd.js'
 import { findCanonicalGitRoot } from '../../utils/git.js'
 import { sanitizePath } from '../../utils/path.js'
+import { resolveProjectStateDirname } from '../../utils/productStateDir.js'
 
-// Persistent agent memory scope: 'user' (~/.claude/agent-memory/), 'project' (.claude/agent-memory/), or 'local' (.claude/agent-memory-local/)
+// Persistent agent memory scope: 'user' (~/.limitless/agent-memory/), 'project' (<statedir>/agent-memory/), or 'local' (<statedir>/agent-memory-local/)
 export type AgentMemoryScope = 'user' | 'project' | 'local'
 
 /**
@@ -40,7 +41,14 @@ function getLocalAgentMemoryDir(dirName: string): string {
       ) + sep
     )
   }
-  return join(getCwd(), '.claude', 'agent-memory-local', dirName) + sep
+  return (
+    join(
+      getCwd(),
+      resolveProjectStateDirname(getCwd()),
+      'agent-memory-local',
+      dirName,
+    ) + sep
+  )
 }
 
 /**
@@ -56,7 +64,14 @@ export function getAgentMemoryDir(
   const dirName = sanitizeAgentTypeForPath(agentType)
   switch (scope) {
     case 'project':
-      return join(getCwd(), '.claude', 'agent-memory', dirName) + sep
+      return (
+        join(
+          getCwd(),
+          resolveProjectStateDirname(getCwd()),
+          'agent-memory',
+          dirName,
+        ) + sep
+      )
     case 'local':
       return getLocalAgentMemoryDir(dirName)
     case 'user':
@@ -75,11 +90,17 @@ export function isAgentMemoryPath(absolutePath: string): boolean {
     return true
   }
 
-  // Project scope: always cwd-based (not redirected)
-  if (
-    normalizedPath.startsWith(join(getCwd(), '.claude', 'agent-memory') + sep)
-  ) {
-    return true
+  // Project scope: always cwd-based (not redirected).
+  // Check against the resolved state dir AND legacy names so paths written
+  // before a rename still pass the security check.
+  const cwd = getCwd()
+  const resolvedStateDir = resolveProjectStateDirname(cwd)
+  for (const stateDir of [resolvedStateDir, '.claude', '.openclaude']) {
+    if (
+      normalizedPath.startsWith(join(cwd, stateDir, 'agent-memory') + sep)
+    ) {
+      return true
+    }
   }
 
   // Local scope: persisted to mount when CLAUDE_CODE_REMOTE_MEMORY_DIR is set, otherwise cwd-based
@@ -92,12 +113,16 @@ export function isAgentMemoryPath(absolutePath: string): boolean {
     ) {
       return true
     }
-  } else if (
-    normalizedPath.startsWith(
-      join(getCwd(), '.claude', 'agent-memory-local') + sep,
-    )
-  ) {
-    return true
+  } else {
+    for (const stateDir of [resolvedStateDir, '.claude', '.openclaude']) {
+      if (
+        normalizedPath.startsWith(
+          join(cwd, stateDir, 'agent-memory-local') + sep,
+        )
+      ) {
+        return true
+      }
+    }
   }
 
   return false

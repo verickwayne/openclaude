@@ -18,7 +18,12 @@ function App() {
     document.documentElement.dataset.theme = theme
     document.documentElement.style.colorScheme = theme
     try {
-      localStorage.setItem('openclaude-theme', theme)
+      // Migrate legacy key if present
+      try {
+        const legacy = localStorage.getItem('openclaude-theme')
+        if (legacy) { localStorage.removeItem('openclaude-theme') }
+      } catch { /* storage unavailable */ }
+      localStorage.setItem('limitless-theme', theme)
     } catch {
       /* storage unavailable */
     }
@@ -31,7 +36,7 @@ function App() {
       <header className="site-header">
         <nav className="nav" aria-label="primary">
           <a className="brand" href="/" aria-label="limitless home">
-            <img src="/openclaude.png" alt="" />
+            <img src="/limitless.png" alt="" />
             <span>limitless</span>
             <span className="ver">v0.7</span>
           </a>
@@ -110,14 +115,14 @@ function App() {
       <footer className="footer">
         <div className="footer-line">
           <span className="brand">
-            <img src="/openclaude.png" alt="" />
+            <img src="/limitless.png" alt="" />
             <span>limitless</span>
             <span className="ver">v0.7.0</span>
           </span>
           <span className="sep">|</span>
           <a href="https://gitlawb.com">gitlawb ↗</a>
           <span className="sep">|</span>
-          <a href="https://github.com/Gitlawb/openclaude/blob/main/LICENSE">license</a>
+          <a href="https://github.com/verickwayne/limitless/blob/main/LICENSE">license</a>
           <span className="sep">·</span>
           <span>{new Date().getFullYear()}</span>
         </div>
@@ -146,7 +151,7 @@ function Hero() {
 
       <div className="hero-cta">
         <CopyableCommand command={installCommand} variant="hero" />
-        <a className="button button-ghost" href="https://github.com/Gitlawb/openclaude">
+        <a className="button button-ghost" href="https://github.com/verickwayne/limitless">
           view on github →
         </a>
       </div>

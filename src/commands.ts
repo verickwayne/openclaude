@@ -190,11 +190,11 @@ import exit from './commands/exit/index.js'
 import exportCommand from './commands/export/index.js'
 import model from './commands/model/index.js'
 import {
-  openclaudeQwen30b,
-  openclaudeDolphin,
-  openclaudeWrn,
-  openclaudeOllama7b,
-} from './commands/openclaude-aliases/index.js'
+  limitlessQwen30b,
+  limitlessDolphin,
+  limitlessWrn,
+  limitlessOllama7b,
+} from './commands/limitless-aliases/index.js'
 import tag from './commands/tag/index.js'
 import outputStyle from './commands/output-style/index.js'
 import remoteEnv from './commands/remote-env/index.js'
@@ -318,10 +318,10 @@ const COMMANDS = memoize((): Command[] => [
   memory,
   mobile,
   model,
-  openclaudeQwen30b,
-  openclaudeDolphin,
-  openclaudeWrn,
-  openclaudeOllama7b,
+  limitlessQwen30b,
+  limitlessDolphin,
+  limitlessWrn,
+  limitlessOllama7b,
   onboardGithub,
   outputStyle,
   remoteEnv,

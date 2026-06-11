@@ -320,7 +320,7 @@ export async function authStatus(opts: {
     }
     if (!loggedIn) {
       process.stdout.write(
-        'Not logged in. Run openclaude auth login to authenticate.\n',
+        'Not logged in. Run limitless auth login to authenticate.\n',
       )
     }
   } else {

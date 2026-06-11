@@ -1,6 +1,6 @@
-// Scheduler lease lock for .claude/scheduled_tasks.json.
+// Scheduler lease lock for <statedir>/scheduled_tasks.json.
 //
-// When multiple Claude sessions run in the same project directory, only one
+// When multiple Limitless sessions run in the same project directory, only one
 // should drive the cron scheduler. The first session to acquire this lock
 // becomes the scheduler; others stay passive and periodically probe the lock.
 // If the owner dies (PID no longer running), a passive session takes over.
@@ -13,6 +13,7 @@ import { dirname, join } from 'path'
 import { z } from 'zod/v4'
 import { getProjectRoot, getSessionId } from '../bootstrap/state.js'
 import { registerCleanup } from './cleanupRegistry.js'
+import { resolveProjectStateDirname } from './productStateDir.js'
 import { logForDebugging } from './debug.js'
 import { getErrnoCode } from './errors.js'
 import { isProcessRunning } from './genericProcessUtils.js'
@@ -20,7 +21,11 @@ import { safeParseJSON } from './json.js'
 import { lazySchema } from './lazySchema.js'
 import { jsonStringify } from './slowOperations.js'
 
-const LOCK_FILE_REL = join('.claude', 'scheduled_tasks.lock')
+// Lock path is resolved dynamically from the project root so it uses the same
+// state directory as getCronFilePath() (resolveProjectStateDirname).
+function getLockFilePath(root: string): string {
+  return join(root, resolveProjectStateDirname(root), 'scheduled_tasks.lock')
+}
 
 const schedulerLockSchema = lazySchema(() =>
   z.object({
@@ -47,7 +52,8 @@ let unregisterCleanup: (() => void) | undefined
 let lastBlockedBy: string | undefined
 
 function getLockPath(dir?: string): string {
-  return join(dir ?? getProjectRoot(), LOCK_FILE_REL)
+  const root = dir ?? getProjectRoot()
+  return getLockFilePath(root)
 }
 
 async function readLock(dir?: string): Promise<SchedulerLock | undefined> {
@@ -74,7 +80,7 @@ async function tryCreateExclusive(
     const code = getErrnoCode(e)
     if (code === 'EEXIST') return false
     if (code === 'ENOENT') {
-      // .claude/ doesn't exist yet — create it and retry once. In steady
+      // State dir doesn't exist yet — create it and retry once. In steady
       // state the dir already exists (scheduled_tasks.json lives there),
       // so this path is hit at most once.
       await mkdir(dirname(path), { recursive: true })

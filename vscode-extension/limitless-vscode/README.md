@@ -10,7 +10,7 @@ A practical VS Code companion for Limitless with a project-aware **Control Cente
   - whether the launch shim injects `CLAUDE_CODE_USE_OPENAI=1`
   - the current workspace folder
   - the launch cwd that will be used for terminal sessions
-  - whether `.openclaude-profile.json` exists in the current workspace root
+  - whether `.limitless-profile.json` exists in the current workspace root
   - a conservative provider summary derived from the workspace profile or known environment flags
 - **Project-aware launch behavior**:
   - `Launch Limitless` launches from the active editor's workspace when possible
@@ -28,7 +28,7 @@ A practical VS Code companion for Limitless with a project-aware **Control Cente
 ## Requirements
 
 - VS Code `1.95+`
-- `limitless` available in your terminal PATH (`npm install -g @gitlawb/openclaude`)
+- `limitless` available in your terminal PATH (`npm install -g @verickwayne/limitless`)
 
 ## Commands
 
@@ -41,15 +41,15 @@ A practical VS Code companion for Limitless with a project-aware **Control Cente
 
 ## Settings
 
-- `openclaude.launchCommand` (default: `limitless`)
-- `openclaude.terminalName` (default: `Limitless`)
-- `openclaude.useOpenAIShim` (default: `false`)
+- `limitless.launchCommand` (default: `limitless`)
+- `limitless.terminalName` (default: `Limitless`)
+- `limitless.useOpenAIShim` (default: `false`)
 
-`openclaude.useOpenAIShim` only injects `CLAUDE_CODE_USE_OPENAI=1` into terminals launched by the extension. It does not guess or configure a provider by itself.
+`limitless.useOpenAIShim` only injects `CLAUDE_CODE_USE_OPENAI=1` into terminals launched by the extension. It does not guess or configure a provider by itself.
 
 ## Notes on Status Detection
 
-- Provider status prefers the real workspace `.openclaude-profile.json` file when present.
+- Provider status prefers the real workspace `.limitless-profile.json` file when present.
 - If no saved profile exists, the extension falls back to known environment flags available to the VS Code extension host.
 - If the source of truth is unclear, the extension shows `unknown` instead of guessing.
 

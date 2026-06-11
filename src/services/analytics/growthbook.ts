@@ -2,16 +2,17 @@
  * No-op GrowthBook stub — all feature gates return false / default values,
  * all config lookups return the provided default, and initialization is a no-op.
  *
- * OpenClaude does not phone home. This module replaces the original
+ * Limitless does not phone home. This module replaces the original
  * analytics-driven GrowthBook client with a local-only implementation that
- * reads feature flags from ~/.claude/feature-flags.json for developer overrides.
+ * reads feature flags from the config home dir for developer overrides.
  *
- * Priority: CLAUDE_FEATURE_FLAGS_FILE env > ~/.claude/feature-flags.json > defaultValue
+ * Priority: LIMITLESS_FEATURE_FLAGS_FILE > CLAUDE_FEATURE_FLAGS_FILE env > ~/.limitless/feature-flags.json > defaultValue
  */
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 
 // ── Open-build feature flag overrides ───────────────────────────────────
 // Only keys that DIFFER from upstream belong here — these are runtime gates
@@ -28,9 +29,12 @@ let _flags: Record<string, unknown> | null | undefined = undefined
 function _loadFlags(): void {
 	if (_flags !== undefined) return
 	try {
+		// LIMITLESS_FEATURE_FLAGS_FILE is the primary env var; CLAUDE_FEATURE_FLAGS_FILE
+		// is the legacy compat name. Falls back to <configHome>/feature-flags.json.
 		const flagsPath =
+			process.env.LIMITLESS_FEATURE_FLAGS_FILE ||
 			process.env.CLAUDE_FEATURE_FLAGS_FILE ||
-			join(homedir(), '.claude', 'feature-flags.json')
+			join(getClaudeConfigHomeDir(), 'feature-flags.json')
 		const parsed = JSON.parse(readFileSync(flagsPath, 'utf-8'))
 		_flags =
 			parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null

@@ -2,6 +2,7 @@ import { c as _c } from "react-compiler-runtime";
 import figures from 'figures';
 import { join } from 'path';
 import React, { Suspense, use, useCallback, useEffect, useMemo, useState } from 'react';
+import { resolveProjectStateDirname } from 'src/utils/productStateDir.js';
 import { KeybindingWarnings } from 'src/components/KeybindingWarnings.js';
 import { McpParsingWarnings } from 'src/components/mcp/McpParsingWarnings.js';
 import { getModelMaxOutputTokens } from 'src/utils/context.js';
@@ -166,7 +167,8 @@ export function Doctor(t0) {
       getDoctorDiagnostic().then(setDiagnostic);
       (async () => {
         const userAgentsDir = join(getClaudeConfigHomeDir(), "agents");
-        const projectAgentsDir = join(getOriginalCwd(), ".claude", "agents");
+        const cwd = getOriginalCwd();
+        const projectAgentsDir = join(cwd, resolveProjectStateDirname(cwd), "agents");
         const {
           activeAgents,
           allAgents,

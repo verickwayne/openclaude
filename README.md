@@ -333,13 +333,13 @@ Coverage output is written to `coverage/lcov.info`, and Limitless also generates
 - `scripts/` - build, verification, and maintenance scripts
 - `docs/` - setup, contributor, and project documentation
 - `python/` - standalone Python helpers and their tests
-- `vscode-extension/openclaude-vscode/` - VS Code extension
+- `vscode-extension/limitless-vscode/` - VS Code extension
 - `.github/` - repo automation, templates, and CI configuration
 - `bin/` - CLI launcher entrypoints
 
 ## VS Code Extension
 
-The repo includes a VS Code extension in [`vscode-extension/openclaude-vscode`](vscode-extension/openclaude-vscode) for Limitless launch integration, provider-aware control-center UI, and theme support.
+The repo includes a VS Code extension in [`vscode-extension/limitless-vscode`](vscode-extension/limitless-vscode) for Limitless launch integration, provider-aware control-center UI, and theme support.
 
 ## Security
 

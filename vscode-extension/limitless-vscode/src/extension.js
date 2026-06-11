@@ -12,13 +12,14 @@ const {
   resolveCommandCheckPath,
 } = require('./state');
 const { buildControlCenterViewModel } = require('./presentation');
-const { ChatController, OpenClaudeChatViewProvider, OpenClaudeChatPanelManager } = require('./chat/chatProvider');
+const { ChatController, LimitlessChatViewProvider, LimitlessChatPanelManager } = require('./chat/chatProvider');
 const { SessionManager } = require('./chat/sessionManager');
 const { DiffContentProvider, SCHEME: DIFF_SCHEME } = require('./chat/diffController');
 
-const OPENCLAUDE_REPO_URL = 'https://github.com/Gitlawb/openclaude';
-const OPENCLAUDE_SETUP_URL = 'https://github.com/Gitlawb/openclaude/blob/main/README.md#quick-start';
-const PROFILE_FILE_NAME = '.openclaude-profile.json';
+const LIMITLESS_REPO_URL = 'https://github.com/verickwayne/limitless';
+const LIMITLESS_SETUP_URL = 'https://github.com/verickwayne/limitless/blob/main/README.md#quick-start';
+const PROFILE_FILE_NAME = '.limitless-profile.json';
+const LEGACY_PROFILE_FILE_NAME = '.openclaude-profile.json';
 
 function escapeHtml(value) {
   return String(value)
@@ -167,6 +168,13 @@ function getProviderSourceLabel(source) {
 
 function readWorkspaceProfile(profilePath) {
   if (!profilePath || !fs.existsSync(profilePath)) {
+    // Legacy fallback: try .openclaude-profile.json if .limitless-profile.json is absent
+    if (profilePath) {
+      const legacyPath = path.join(path.dirname(profilePath), LEGACY_PROFILE_FILE_NAME);
+      if (fs.existsSync(legacyPath)) {
+        return readWorkspaceProfile(legacyPath);
+      }
+    }
     return {
       profile: null,
       statusLabel: 'Missing',
@@ -204,9 +212,9 @@ function readWorkspaceProfile(profilePath) {
 }
 
 async function collectControlCenterState() {
-  const configured = vscode.workspace.getConfiguration('openclaude');
-  const launchCommand = configured.get('launchCommand', 'openclaude');
-  const terminalName = configured.get('terminalName', 'OpenClaude');
+  const configured = vscode.workspace.getConfiguration('limitless');
+  const launchCommand = configured.get('launchCommand', 'limitless');
+  const terminalName = configured.get('terminalName', 'Limitless');
   const shimEnabled = configured.get('useOpenAIShim', false);
   const executable = getExecutableFromCommand(launchCommand);
   const launchWorkspace = resolveLaunchWorkspace();
@@ -264,9 +272,9 @@ async function collectControlCenterState() {
 
 async function launchOpenClaude(options = {}) {
   const { requireWorkspace = false } = options;
-  const configured = vscode.workspace.getConfiguration('openclaude');
-  const launchCommand = configured.get('launchCommand', 'openclaude');
-  const terminalName = configured.get('terminalName', 'OpenClaude');
+  const configured = vscode.workspace.getConfiguration('limitless');
+  const launchCommand = configured.get('launchCommand', 'limitless');
+  const terminalName = configured.get('terminalName', 'Limitless');
   const shimEnabled = configured.get('useOpenAIShim', false);
   const executable = getExecutableFromCommand(launchCommand);
   const launchWorkspace = resolveLaunchWorkspace();
@@ -291,15 +299,15 @@ async function launchOpenClaude(options = {}) {
 
   if (!installed) {
     const action = await vscode.window.showErrorMessage(
-      `OpenClaude command not found: ${executable}. Install it with: npm install -g @gitlawb/openclaude`,
+      `Limitless command not found: ${executable}. Install it with: npm install -g @verickwayne/limitless`,
       'Open Setup Guide',
       'Open Repository',
     );
 
     if (action === 'Open Setup Guide') {
-      await vscode.env.openExternal(vscode.Uri.parse(OPENCLAUDE_SETUP_URL));
+      await vscode.env.openExternal(vscode.Uri.parse(LIMITLESS_SETUP_URL));
     } else if (action === 'Open Repository') {
-      await vscode.env.openExternal(vscode.Uri.parse(OPENCLAUDE_REPO_URL));
+      await vscode.env.openExternal(vscode.Uri.parse(LIMITLESS_REPO_URL));
     }
 
     return;
@@ -423,7 +431,7 @@ function getWorkspaceRootActionDetail(status, fallbackDetail) {
   }
 
   if (status.launchActionsShareTargetReason === 'relative-launch-command') {
-    return `Same workspace-root target as Launch OpenClaude because the relative command resolves from the workspace root · ${status.workspaceRootCwdLabel}`;
+    return `Same workspace-root target as Launch Limitless because the relative command resolves from the workspace root · ${status.workspaceRootCwdLabel}`;
   }
 
   return `Always starts at the workspace root · ${status.workspaceRootCwdLabel}`;
@@ -841,7 +849,7 @@ function renderControlCenterHtml(status, options = {}) {
         <div class="hero-top">
           <div class="brand">
             <div class="eyebrow">${escapeHtml(viewModel.header.eyebrow)}</div>
-            <div class="wordmark" aria-label="OpenClaude wordmark">Open<span class="wordmark-accent">Claude</span></div>
+            <div class="wordmark" aria-label="Limitless wordmark">Limit<span class="wordmark-accent">less</span></div>
             <div class="headline">
               <h1 class="headline-title" id="control-center-title">${escapeHtml(viewModel.header.title)}</h1>
               <p class="headline-subtitle">${escapeHtml(viewModel.header.subtitle)}</p>
@@ -881,11 +889,11 @@ function renderControlCenterHtml(status, options = {}) {
             </button>
             <button class="support-link" id="repo" type="button">
               <span class="support-link-label">Open Repository</span>
-              <span class="summary-detail">Browse the upstream OpenClaude project.</span>
+              <span class="summary-detail">Browse the upstream Limitless project.</span>
             </button>
             <button class="support-link" id="commands" type="button">
               <span class="support-link-label">Open Command Palette</span>
-              <span class="summary-detail">Access VS Code and OpenClaude commands quickly.</span>
+              <span class="summary-detail">Access VS Code and Limitless commands quickly.</span>
             </button>
           </div>
         </section>
@@ -915,7 +923,7 @@ function renderControlCenterHtml(status, options = {}) {
 </html>`;
 }
 
-class OpenClaudeControlCenterProvider {
+class LimitlessControlCenterProvider {
   constructor() {
     this.webviewView = null;
   }
@@ -942,10 +950,10 @@ class OpenClaudeControlCenterProvider {
           await openWorkspaceProfile();
           break;
         case 'repo':
-          await vscode.env.openExternal(vscode.Uri.parse(OPENCLAUDE_REPO_URL));
+          await vscode.env.openExternal(vscode.Uri.parse(LIMITLESS_REPO_URL));
           break;
         case 'setup':
-          await vscode.env.openExternal(vscode.Uri.parse(OPENCLAUDE_SETUP_URL));
+          await vscode.env.openExternal(vscode.Uri.parse(LIMITLESS_SETUP_URL));
           break;
         case 'commands':
           await vscode.commands.executeCommand('workbench.action.showCommands');
@@ -1045,7 +1053,7 @@ class OpenClaudeControlCenterProvider {
  */
 function activate(context) {
   // ── Control Center (existing) ──
-  const provider = new OpenClaudeControlCenterProvider();
+  const provider = new LimitlessControlCenterProvider();
   const refreshProvider = () => {
     void provider.refresh();
   };
@@ -1058,8 +1066,8 @@ function activate(context) {
   }
 
   const chatController = new ChatController(sessionManager);
-  const chatViewProvider = new OpenClaudeChatViewProvider(chatController);
-  const chatPanelManager = new OpenClaudeChatPanelManager(chatController);
+  const chatViewProvider = new LimitlessChatViewProvider(chatController);
+  const chatPanelManager = new LimitlessChatPanelManager(chatController);
 
   // ── Diff content provider ──
   const diffProvider = new DiffContentProvider();
@@ -1073,73 +1081,73 @@ function activate(context) {
     vscode.StatusBarAlignment.Right,
     100,
   );
-  statusBarItem.text = '$(comment-discussion) OpenClaude';
-  statusBarItem.tooltip = 'Open OpenClaude Chat';
-  statusBarItem.command = 'openclaude.openChat';
+  statusBarItem.text = '$(comment-discussion) Limitless';
+  statusBarItem.tooltip = 'Open Limitless Chat';
+  statusBarItem.command = 'limitless.openChat';
   statusBarItem.show();
 
   chatController.onDidChangeState((state) => {
     switch (state) {
       case 'streaming':
-        statusBarItem.text = '$(sync~spin) OpenClaude';
-        statusBarItem.tooltip = 'OpenClaude is generating...';
+        statusBarItem.text = '$(sync~spin) Limitless';
+        statusBarItem.tooltip = 'Limitless is generating...';
         break;
       case 'connected':
-        statusBarItem.text = '$(comment-discussion) OpenClaude';
-        statusBarItem.tooltip = 'OpenClaude connected';
+        statusBarItem.text = '$(comment-discussion) Limitless';
+        statusBarItem.tooltip = 'Limitless connected';
         break;
       default:
-        statusBarItem.text = '$(comment-discussion) OpenClaude';
-        statusBarItem.tooltip = 'Open OpenClaude Chat';
+        statusBarItem.text = '$(comment-discussion) Limitless';
+        statusBarItem.tooltip = 'Open Limitless Chat';
         break;
     }
   });
 
   // ── Existing commands ──
-  const startCommand = vscode.commands.registerCommand('openclaude.start', async () => {
+  const startCommand = vscode.commands.registerCommand('limitless.start', async () => {
     await launchOpenClaude();
   });
 
   const startInWorkspaceRootCommand = vscode.commands.registerCommand(
-    'openclaude.startInWorkspaceRoot',
+    'limitless.startInWorkspaceRoot',
     async () => {
       await launchOpenClaude({ requireWorkspace: true });
     },
   );
 
-  const openDocsCommand = vscode.commands.registerCommand('openclaude.openDocs', async () => {
-    await vscode.env.openExternal(vscode.Uri.parse(OPENCLAUDE_REPO_URL));
+  const openDocsCommand = vscode.commands.registerCommand('limitless.openDocs', async () => {
+    await vscode.env.openExternal(vscode.Uri.parse(LIMITLESS_REPO_URL));
   });
 
   const openSetupDocsCommand = vscode.commands.registerCommand(
-    'openclaude.openSetupDocs',
+    'limitless.openSetupDocs',
     async () => {
-      await vscode.env.openExternal(vscode.Uri.parse(OPENCLAUDE_SETUP_URL));
+      await vscode.env.openExternal(vscode.Uri.parse(LIMITLESS_SETUP_URL));
     },
   );
 
   const openWorkspaceProfileCommand = vscode.commands.registerCommand(
-    'openclaude.openWorkspaceProfile',
+    'limitless.openWorkspaceProfile',
     async () => {
       await openWorkspaceProfile();
     },
   );
 
-  const openUiCommand = vscode.commands.registerCommand('openclaude.openControlCenter', async () => {
-    await vscode.commands.executeCommand('workbench.view.extension.openclaude');
+  const openUiCommand = vscode.commands.registerCommand('limitless.openControlCenter', async () => {
+    await vscode.commands.executeCommand('workbench.view.extension.limitless');
   });
 
   // ── New chat commands ──
-  const newChatCommand = vscode.commands.registerCommand('openclaude.newChat', () => {
+  const newChatCommand = vscode.commands.registerCommand('limitless.newChat', () => {
     chatController.stopSession();
     chatController.broadcast({ type: 'session_cleared' });
   });
 
-  const openChatCommand = vscode.commands.registerCommand('openclaude.openChat', () => {
+  const openChatCommand = vscode.commands.registerCommand('limitless.openChat', () => {
     chatPanelManager.openPanel();
   });
 
-  const resumeSessionCommand = vscode.commands.registerCommand('openclaude.resumeSession', async () => {
+  const resumeSessionCommand = vscode.commands.registerCommand('limitless.resumeSession', async () => {
     const sessions = await sessionManager.listSessions();
     if (sessions.length === 0) {
       await vscode.window.showInformationMessage('No sessions found to resume.');
@@ -1161,18 +1169,18 @@ function activate(context) {
     }
   });
 
-  const abortChatCommand = vscode.commands.registerCommand('openclaude.abortChat', () => {
+  const abortChatCommand = vscode.commands.registerCommand('limitless.abortChat', () => {
     chatController.abort();
   });
 
   // ── Register providers ──
   const controlCenterProviderReg = vscode.window.registerWebviewViewProvider(
-    'openclaude.controlCenter',
+    'limitless.controlCenter',
     provider,
   );
 
   const chatViewProviderReg = vscode.window.registerWebviewViewProvider(
-    'openclaude.chat',
+    'limitless.chat',
     chatViewProvider,
     { webviewOptions: { retainContextWhenHidden: true } },
   );
@@ -1199,7 +1207,7 @@ function activate(context) {
     // watchers
     profileWatcher,
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('openclaude')) {
+      if (event.affectsConfiguration('limitless')) {
         refreshProvider();
       }
     }),
@@ -1226,10 +1234,10 @@ function deactivate() {}
 module.exports = {
   activate,
   deactivate,
-  OpenClaudeControlCenterProvider,
+  LimitlessControlCenterProvider,
   renderControlCenterHtml,
   resolveLaunchTargets,
   ChatController,
-  OpenClaudeChatViewProvider,
-  OpenClaudeChatPanelManager,
+  LimitlessChatViewProvider,
+  LimitlessChatPanelManager,
 };

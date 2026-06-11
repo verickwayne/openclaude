@@ -47,7 +47,7 @@ import { which } from './which.js'
 function getCliBinaryName(): string {
   return MACRO.PACKAGE_URL === '@anthropic-ai/claude-code'
     ? 'claude'
-    : 'openclaude'
+    : 'limitless'
 }
 
 function getNativeDataDirName(): string {

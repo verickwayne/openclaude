@@ -10,7 +10,7 @@ export default defineAnthropicProxy({
     requiresAuth: true,
     authMode: 'oauth',
     setupPrompt:
-      'Sign in with `openclaude auth login --claudeai`, then start the local Claude Max proxy.',
+      'Sign in with `limitless auth login --claudeai`, then start the local Claude Max proxy.',
   },
   startup: {
     autoDetectable: true,

@@ -53,6 +53,7 @@ import {
   loadMarkdownFilesForSubdir,
   type MarkdownFile,
   parseSlashCommandToolsFromFrontmatter,
+  PROJECT_CONFIG_DIR_NAMES,
 } from '../utils/markdownConfigLoader.js'
 import { parseUserSpecifiedModel } from '../utils/model/model.js'
 import { executeShellCommandsInPrompt } from '../utils/promptShellExecution.js'
@@ -748,10 +749,12 @@ export const getSkillDirCommands = memoize(
         return []
       }
       const additionalSkillsNested = await Promise.all(
-        additionalDirs.map(dir =>
-          loadSkillsFromSkillsDir(
-            join(dir, '.claude', 'skills'),
-            'projectSettings',
+        additionalDirs.flatMap(dir =>
+          PROJECT_CONFIG_DIR_NAMES.map(configDirName =>
+            loadSkillsFromSkillsDir(
+              join(dir, configDirName, 'skills'),
+              'projectSettings',
+            ),
           ),
         ),
       )
@@ -783,10 +786,12 @@ export const getSkillDirCommands = memoize(
         : Promise.resolve([]),
       projectSettingsEnabled
         ? Promise.all(
-            additionalDirs.map(dir =>
-              loadSkillsFromSkillsDir(
-                join(dir, '.claude', 'skills'),
-                'projectSettings',
+            additionalDirs.flatMap(dir =>
+              PROJECT_CONFIG_DIR_NAMES.map(configDirName =>
+                loadSkillsFromSkillsDir(
+                  join(dir, configDirName, 'skills'),
+                  'projectSettings',
+                ),
               ),
             ),
           )
@@ -959,30 +964,34 @@ export async function discoverSkillDirsForPaths(
     // CWD-level skills are already loaded at startup, so we only discover nested ones
     // Use prefix+separator check to avoid matching /project-backup when cwd is /project
     while (currentDir.startsWith(resolvedCwd + pathSep)) {
-      const skillDir = join(currentDir, '.claude', 'skills')
+      // Check all known config dir names so .limitless/, .openclaude/, and
+      // .claude/ are all discovered during dynamic walk.
+      for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+        const skillDir = join(currentDir, configDirName, 'skills')
 
-      // Skip if we've already checked this path (hit or miss) — avoids
-      // repeating the same failed stat on every Read/Write/Edit call when
-      // the directory doesn't exist (the common case).
-      if (!dynamicSkillDirs.has(skillDir)) {
-        dynamicSkillDirs.add(skillDir)
-        try {
-          await fs.stat(skillDir)
-          // Skills dir exists. Before loading, check if the containing dir
-          // is gitignored — blocks e.g. node_modules/pkg/.claude/skills from
-          // loading silently. `git check-ignore` handles nested .gitignore,
-          // .git/info/exclude, and global gitignore. Fails open outside a
-          // git repo (exit 128 → false); the invocation-time trust dialog
-          // is the actual security boundary.
-          if (await isPathGitignored(currentDir, resolvedCwd)) {
-            logForDebugging(
-              `[skills] Skipped gitignored skills dir: ${skillDir}`,
-            )
-            continue
+        // Skip if we've already checked this path (hit or miss) — avoids
+        // repeating the same failed stat on every Read/Write/Edit call when
+        // the directory doesn't exist (the common case).
+        if (!dynamicSkillDirs.has(skillDir)) {
+          dynamicSkillDirs.add(skillDir)
+          try {
+            await fs.stat(skillDir)
+            // Skills dir exists. Before loading, check if the containing dir
+            // is gitignored — blocks e.g. node_modules/pkg/.claude/skills from
+            // loading silently. `git check-ignore` handles nested .gitignore,
+            // .git/info/exclude, and global gitignore. Fails open outside a
+            // git repo (exit 128 → false); the invocation-time trust dialog
+            // is the actual security boundary.
+            if (await isPathGitignored(currentDir, resolvedCwd)) {
+              logForDebugging(
+                `[skills] Skipped gitignored skills dir: ${skillDir}`,
+              )
+              continue
+            }
+            newDirs.push(skillDir)
+          } catch {
+            // Directory doesn't exist — already recorded above, continue
           }
-          newDirs.push(skillDir)
-        } catch {
-          // Directory doesn't exist — already recorded above, continue
         }
       }
 

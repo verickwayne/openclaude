@@ -31,6 +31,7 @@ import {
   getDirectoryForPath,
   sanitizePath,
 } from '../path.js'
+import { resolveProjectStateDirname } from '../productStateDir.js'
 import { getPlanSlug, getPlansDirectory } from '../plans.js'
 import { getPlatform } from '../platform.js'
 import { getProjectDir } from '../sessionStorage.js'
@@ -112,15 +113,34 @@ export function getClaudeSkillScope(
   const absolutePath = expandPath(filePath)
   const absolutePathLower = normalizeCaseForComparison(absolutePath)
 
+  const projectCwd = getOriginalCwd()
+  const projectStateDir = resolveProjectStateDirname(projectCwd)
+  const configHome = getClaudeConfigHomeDir()
+  // Derive the last path segment of configHome for use as display prefix
+  // (e.g. ".limitless" → "~/.limitless/skills/").
+  const configHomeName = configHome.split('/').pop() ?? '.limitless'
   const bases = [
+    // Project-level skills: use the resolved state dir (.limitless, .openclaude, or .claude)
     {
-      dir: expandPath(join(getOriginalCwd(), '.claude', 'skills')),
+      dir: expandPath(join(projectCwd, projectStateDir, 'skills')),
+      prefix: `/${projectStateDir}/skills/`,
+    },
+    // Global skills: use the resolved config home (~/.limitless by default)
+    {
+      dir: expandPath(join(configHome, 'skills')),
+      prefix: `~/${configHomeName}/skills/`,
+    },
+    // Legacy project compat: .claude/skills/ (always checked for backward compatibility)
+    {
+      dir: expandPath(join(projectCwd, '.claude', 'skills')),
       prefix: '/.claude/skills/',
     },
+    // Legacy global compat: ~/.openclaude/skills/
     {
       dir: expandPath(join(homedir(), '.openclaude', 'skills')),
       prefix: '~/.openclaude/skills/',
     },
+    // Legacy global compat: ~/.claude/skills/
     {
       dir: expandPath(join(homedir(), '.claude', 'skills')),
       prefix: '~/.claude/skills/',

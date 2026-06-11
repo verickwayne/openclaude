@@ -246,6 +246,12 @@ export function migrateLegacyClaudeConfigHome(options?: {
   }
 }
 
+/**
+ * Resolve the config home directory from explicit options.
+ * `configDirEnv` should already be the resolved value of
+ * `LIMITLESS_CONFIG_DIR ?? CLAUDE_CONFIG_DIR` — callers must perform that
+ * precedence check before passing it here.
+ */
 export function resolveClaudeConfigHomeDir(options?: {
   configDirEnv?: string
   homeDir?: string
@@ -268,15 +274,19 @@ export function setClaudeConfigHomeDirForTesting(
   claudeConfigHomeDirOverride = configDir?.normalize('NFC')
 }
 
-// Memoized: 150+ callers, many on hot paths. Keyed off CLAUDE_CONFIG_DIR so
-// tests that change the env var get a fresh value without explicit cache.clear.
+// Memoized: 150+ callers, many on hot paths. Keyed off LIMITLESS_CONFIG_DIR /
+// CLAUDE_CONFIG_DIR so tests that change the env var get a fresh value without
+// explicit cache.clear.
 export const getClaudeConfigHomeDir = memoize(
   (): string => {
     if (claudeConfigHomeDirOverride) {
       return claudeConfigHomeDirOverride
     }
 
-    const configDirEnv = process.env.CLAUDE_CONFIG_DIR
+    // LIMITLESS_CONFIG_DIR is the primary env var; CLAUDE_CONFIG_DIR is the
+    // legacy compat name.  Both are kept intentionally (see KEEP-ZONE).
+    const configDirEnv =
+      process.env.LIMITLESS_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR
     const homeDir = homedir()
 
     // Run both legacy migrations (non-destructive copy-only) when no explicit
@@ -319,7 +329,8 @@ export const getClaudeConfigHomeDir = memoize(
       homeDir,
     })
   },
-  () => `${claudeConfigHomeDirOverride ?? ''}\0${process.env.CLAUDE_CONFIG_DIR ?? ''}`,
+  () =>
+    `${claudeConfigHomeDirOverride ?? ''}\0${process.env.LIMITLESS_CONFIG_DIR ?? ''}\0${process.env.CLAUDE_CONFIG_DIR ?? ''}`,
 )
 
 export function getTeamsDir(): string {

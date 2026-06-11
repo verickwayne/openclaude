@@ -38,6 +38,7 @@ import {
 } from './hooks.js'
 import { containsPathTraversal } from './path.js'
 import { getPlatform } from './platform.js'
+import { resolveProjectStateDirname } from './productStateDir.js'
 import {
   getInitialSettings,
   getRelativeSettingsFilePathForSource,
@@ -51,7 +52,7 @@ const MAX_WORKTREE_SLUG_LENGTH = 64
 /**
  * Validates a worktree slug to prevent path traversal and directory escape.
  *
- * The slug is joined into `.claude/worktrees/<slug>` via path.join, which
+ * The slug is joined into `<statedir>/worktrees/<slug>` via path.join, which
  * normalizes `..` segments — so `../../../target` would escape the worktrees
  * directory. Similarly, an absolute path (leading `/` or `C:\`) would discard
  * the prefix entirely.
@@ -232,7 +233,7 @@ const GIT_NO_PROMPT_ENV = {
 }
 
 function worktreesDir(repoRoot: string): string {
-  return join(repoRoot, '.claude', 'worktrees')
+  return join(repoRoot, resolveProjectStateDirname(repoRoot), 'worktrees')
 }
 
 // Flatten nested slugs (`user/feature` → `user+feature`) for both the branch
