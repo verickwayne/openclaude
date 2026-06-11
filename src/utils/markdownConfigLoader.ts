@@ -24,6 +24,7 @@ import {
   type SettingSource,
 } from './settings/constants.js'
 import { getManagedFilePath } from './settings/managedPath.js'
+import { getInitialSettings } from './settings/settings.js'
 import { isRestrictedToPluginOnly } from './settings/pluginOnlyPolicy.js'
 
 // Claude configuration directory names
@@ -38,13 +39,57 @@ export const CLAUDE_CONFIG_DIRECTORIES = [
 
 export type ClaudeConfigDirectory = (typeof CLAUDE_CONFIG_DIRECTORIES)[number]
 
-// Read order: left = lowest priority, right = highest priority.
-// All dirs that exist are discovered; for same-named agents the LAST-written
-// entry in the agentMap wins (see getActiveAgentsFromList).
-// .limitless is last so it wins over both legacy names when all three exist.
-// .claude is kept for Claude Code interop; .openclaude for compat with users
-// who haven't yet migrated to .limitless.
-export const PROJECT_CONFIG_DIR_NAMES = ['.claude', '.openclaude', '.limitless'] as const
+// Limitless reads its OWN config directory as PRIMARY. `.claude`/`.openclaude`
+// are LEGACY, opt-in reads kept so existing users aren't silently broken.
+//
+// `.limitless` is the native, primary config directory — listed FIRST so it is
+// checked/wins first. The legacy dirs are read only when the
+// `readLegacyConfigDirs` setting is enabled (default true); strict zero-link
+// mode (setting false) reads `.limitless` alone.
+export const PROJECT_CONFIG_PRIMARY_DIR = '.limitless'
+export const PROJECT_CONFIG_LEGACY_DIRS = ['.claude', '.openclaude'] as const
+
+/**
+ * Whether legacy config dirs (.claude/.openclaude) and the legacy CLAUDE.md
+ * instruction filename should be read. Defaults to true so existing setups keep
+ * working; set `readLegacyConfigDirs: false` for strict zero-link mode.
+ */
+export function isLegacyConfigReadEnabled(): boolean {
+  return getInitialSettings().readLegacyConfigDirs !== false
+}
+
+/**
+ * Returns the ordered list of project config directory names to read.
+ * `.limitless` is always first (primary, wins / checked first). Legacy dirs are
+ * appended only when legacy reads are enabled.
+ */
+export function getProjectConfigDirNames(): string[] {
+  return [
+    PROJECT_CONFIG_PRIMARY_DIR,
+    ...(isLegacyConfigReadEnabled() ? PROJECT_CONFIG_LEGACY_DIRS : []),
+  ]
+}
+
+// Back-compat alias for existing importers (loadSkillsDir.ts,
+// addDirPluginSettings.ts, permissions) that need the full set of names to
+// compile and don't dynamically respect the legacy-read setting. `.limitless`
+// is FIRST (primary). Callers that must honor `readLegacyConfigDirs` at runtime
+// should call getProjectConfigDirNames() instead (claudemd.ts does).
+export const PROJECT_CONFIG_DIR_NAMES: readonly string[] = [
+  PROJECT_CONFIG_PRIMARY_DIR,
+  ...PROJECT_CONFIG_LEGACY_DIRS,
+]
+
+// Merge order for consumers that resolve same-named entries with a LAST-written-
+// wins map (agents/commands/skills via getActiveAgentsFromList). Here legacy
+// dirs come FIRST and `.limitless` LAST, so `.limitless` overrides the legacy
+// names — the inverse of the memory-read order, where dedup makes the
+// first-checked (`.limitless`) win. Keeping both orders explicit avoids a
+// silent priority flip in either consumer.
+export const PROJECT_CONFIG_DIR_NAMES_MERGE_ORDER: readonly string[] = [
+  ...PROJECT_CONFIG_LEGACY_DIRS,
+  PROJECT_CONFIG_PRIMARY_DIR,
+]
 
 export type MarkdownFile = {
   filePath: string
@@ -259,7 +304,7 @@ export function getProjectDirsUpToHome(
       break
     }
 
-    for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+    for (const configDirName of PROJECT_CONFIG_DIR_NAMES_MERGE_ORDER) {
       const configSubdir = join(current, configDirName, subdir)
       // Filter to existing dirs. This is a perf filter (avoids spawning
       // ripgrep on non-existent dirs downstream) and the worktree fallback
@@ -338,7 +383,7 @@ export const loadMarkdownFilesForSubdir = memoize(
         worktreeSubdirs.includes(normalizePathForComparison(dir)),
       )
       if (!worktreeHasSubdir) {
-        for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+        for (const configDirName of PROJECT_CONFIG_DIR_NAMES_MERGE_ORDER) {
           const mainConfigSubdir = join(canonicalRoot, configDirName, subdir)
           if (!projectDirs.includes(mainConfigSubdir)) {
             projectDirs.push(mainConfigSubdir)

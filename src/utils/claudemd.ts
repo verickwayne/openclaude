@@ -1,20 +1,26 @@
 /**
+ * Limitless reads its OWN memory files as PRIMARY (`.limitless/` + `LIMITLESS.md`).
+ * The legacy Claude/OpenClaude locations (`.claude`/`.openclaude` + `CLAUDE.md`)
+ * are read only as an OPT-IN fallback, gated on the `readLegacyConfigDirs`
+ * setting (default true) so existing users aren't silently broken.
+ *
  * Files are loaded in the following order:
  *
  * 1. Managed memory (eg. /etc/claude-code/CLAUDE.md) - Global instructions for all users
- * 2. User memory (~/.claude/CLAUDE.md) - Private global instructions for all projects
- * 3. Project memory (AGENTS.md or fallback CLAUDE.md, plus .claude/CLAUDE.md and .claude/rules/*.md in project roots) - Instructions checked into the codebase
+ * 2. User memory (LIMITLESS.md under the config home, falling back to legacy CLAUDE.md) - Private global instructions for all projects
+ * 3. Project memory (AGENTS.md → LIMITLESS.md → CLAUDE.md legacy, plus <configDir>/LIMITLESS.md (then legacy <configDir>/CLAUDE.md) and <configDir>/rules/*.md in project roots) - Instructions checked into the codebase
  * 4. Local memory (CLAUDE.local.md in project roots) - Private project-specific instructions
  *
  * Files are loaded in reverse order of priority, i.e. the latest files are highest priority
  * with the model paying more attention to them.
  *
  * File discovery:
- * - User memory is loaded from the user's home directory
+ * - User memory is loaded from the config home directory (~/.limitless), with a legacy ~/.claude/CLAUDE.md fallback
  * - Project and Local files are discovered by traversing from the current directory up to root
  * - Files closer to the current directory have higher priority (loaded later)
- * - AGENTS.md is preferred for root project instructions; CLAUDE.md is only used when AGENTS.md is absent
- * - .claude/CLAUDE.md and all .md files in .claude/rules/ are checked in each directory for Project memory
+ * - Root project instruction resolution order: AGENTS.md (harness-neutral, preferred) → LIMITLESS.md (Limitless-native) → CLAUDE.md (LEGACY fallback)
+ * - Config dirs are read `.limitless` first (primary), then legacy `.claude`/`.openclaude` when enabled
+ * - In each config dir, <configDir>/LIMITLESS.md is preferred, then legacy <configDir>/CLAUDE.md; all .md files in <configDir>/rules/ are also checked for Project memory
  *
  * Memory @include directive:
  * - Memory files can include other files using @ notation
@@ -80,7 +86,11 @@ import {
   getProjectInstructionFilePath,
   isProjectInstructionFileName,
 } from './projectInstructions.js'
-import { PROJECT_CONFIG_DIR_NAMES } from './markdownConfigLoader.js'
+import {
+  getProjectConfigDirNames,
+  isLegacyConfigReadEnabled,
+  PROJECT_CONFIG_DIR_NAMES,
+} from './markdownConfigLoader.js'
 import { isSettingSourceEnabled } from './settings/constants.js'
 import { getInitialSettings } from './settings/settings.js'
 
@@ -250,6 +260,16 @@ export type MemoryFileInfo = {
 
 function pathInOriginalCwd(path: string): boolean {
   return pathInWorkingPath(path, getOriginalCwd())
+}
+
+// Per-config-dir instruction filenames, in priority order: the Limitless-native
+// LIMITLESS.md first, then the legacy CLAUDE.md (only when legacy reads are
+// enabled). processMemoryFile dedupes by path, so reading both is safe.
+function getConfigDirInstructionFileNames(): string[] {
+  return [
+    'LIMITLESS.md',
+    ...(isLegacyConfigReadEnabled() ? ['CLAUDE.md'] : []),
+  ]
 }
 
 /**
@@ -837,18 +857,30 @@ export const getMemoryFiles = memoize(
       })),
     )
 
-    // Process User file (only if userSettings is enabled)
+    // Process User file (only if userSettings is enabled).
+    // getMemoryPath('User') prefers LIMITLESS.md under the config home
+    // (~/.limitless), else legacy CLAUDE.md. Read both filenames so a user
+    // with the native file AND a legacy one isn't silently truncated; the
+    // legacy CLAUDE.md read is skipped in strict zero-link mode. processMemoryFile
+    // dedupes by path, so this never double-loads the same file.
     if (isSettingSourceEnabled('userSettings')) {
-      const userClaudeMd = getMemoryPath('User')
-      result.push(
-        ...(await processMemoryFile(
-          userClaudeMd,
-          'User',
-          processedPaths,
-          true, // User memory can always include external files
-        )),
-      )
-      // Process User ~/.claude/rules/*.md files
+      const userConfigHome = getClaudeConfigHomeDir()
+      const userMemoryNames = [
+        'LIMITLESS.md',
+        ...(isLegacyConfigReadEnabled() ? ['CLAUDE.md'] : []),
+      ]
+      for (const userMemoryName of userMemoryNames) {
+        const userMemoryPath = join(userConfigHome, userMemoryName)
+        result.push(
+          ...(await processMemoryFile(
+            userMemoryPath,
+            'User',
+            processedPaths,
+            true, // User memory can always include external files
+          )),
+        )
+      }
+      // Process User ~/.limitless/rules/*.md files
       const userClaudeRulesDir = getUserClaudeRulesDir()
       result.push(
         ...(await processMdRules({
@@ -913,23 +945,25 @@ export const getMemoryFiles = memoize(
           )),
         )
 
-        // Try reading <configDir>/CLAUDE.md (Project) — checked for all
-        // known config dir names so .limitless/, .openclaude/, and .claude/
-        // are all discovered.
-        for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
-          const dotClaudePath = join(dir, configDirName, 'CLAUDE.md')
-          result.push(
-            ...(await processMemoryFile(
-              dotClaudePath,
-              'Project',
-              processedPaths,
-              includeExternal,
-            )),
-          )
+        // Try reading <configDir>/LIMITLESS.md (then legacy <configDir>/CLAUDE.md)
+        // for each config dir. `.limitless` is primary; `.claude`/`.openclaude`
+        // are read only when legacy reads are enabled.
+        for (const configDirName of getProjectConfigDirNames()) {
+          for (const fileName of getConfigDirInstructionFileNames()) {
+            const configInstructionPath = join(dir, configDirName, fileName)
+            result.push(
+              ...(await processMemoryFile(
+                configInstructionPath,
+                'Project',
+                processedPaths,
+                includeExternal,
+              )),
+            )
+          }
         }
 
         // Try reading <configDir>/rules/*.md files (Project)
-        for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+        for (const configDirName of getProjectConfigDirNames()) {
           const rulesDir = join(dir, configDirName, 'rules')
           result.push(
             ...(await processMdRules({
@@ -978,21 +1012,24 @@ export const getMemoryFiles = memoize(
           )),
         )
 
-        // Try reading <configDir>/CLAUDE.md from the additional directory
-        for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
-          const dotClaudePath = join(dir, configDirName, 'CLAUDE.md')
-          result.push(
-            ...(await processMemoryFile(
-              dotClaudePath,
-              'Project',
-              processedPaths,
-              includeExternal,
-            )),
-          )
+        // Try reading <configDir>/LIMITLESS.md (then legacy <configDir>/CLAUDE.md)
+        // from the additional directory
+        for (const configDirName of getProjectConfigDirNames()) {
+          for (const fileName of getConfigDirInstructionFileNames()) {
+            const configInstructionPath = join(dir, configDirName, fileName)
+            result.push(
+              ...(await processMemoryFile(
+                configInstructionPath,
+                'Project',
+                processedPaths,
+                includeExternal,
+              )),
+            )
+          }
         }
 
         // Try reading <configDir>/rules/*.md files from the additional directory
-        for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+        for (const configDirName of getProjectConfigDirNames()) {
           const rulesDir = join(dir, configDirName, 'rules')
           result.push(
             ...(await processMdRules({
@@ -1299,16 +1336,18 @@ export async function getMemoryFilesForNestedDirectory(
         false,
       )),
     )
-    for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
-      const dotClaudePath = join(dir, configDirName, 'CLAUDE.md')
-      result.push(
-        ...(await processMemoryFile(
-          dotClaudePath,
-          'Project',
-          processedPaths,
-          false,
-        )),
-      )
+    for (const configDirName of getProjectConfigDirNames()) {
+      for (const fileName of getConfigDirInstructionFileNames()) {
+        const configInstructionPath = join(dir, configDirName, fileName)
+        result.push(
+          ...(await processMemoryFile(
+            configInstructionPath,
+            'Project',
+            processedPaths,
+            false,
+          )),
+        )
+      }
     }
   }
 
@@ -1323,7 +1362,7 @@ export async function getMemoryFilesForNestedDirectory(
   // Process project unconditional <configDir>/rules/*.md files, which were not eagerly loaded
   // Use a separate processedPaths set to avoid marking conditional rule files as processed
   const unconditionalProcessedPaths = new Set(processedPaths)
-  for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+  for (const configDirName of getProjectConfigDirNames()) {
     const rulesDir = join(dir, configDirName, 'rules')
     result.push(
       ...(await processMdRules({
@@ -1337,7 +1376,7 @@ export async function getMemoryFilesForNestedDirectory(
   }
 
   // Process project conditional <configDir>/rules/*.md files
-  for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+  for (const configDirName of getProjectConfigDirNames()) {
     const rulesDir = join(dir, configDirName, 'rules')
     result.push(
       ...(await processConditionedMdRules(
@@ -1373,7 +1412,7 @@ export async function getConditionalRulesForCwdLevelDirectory(
   processedPaths: Set<string>,
 ): Promise<MemoryFileInfo[]> {
   const results: MemoryFileInfo[] = []
-  for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+  for (const configDirName of getProjectConfigDirNames()) {
     const rulesDir = join(dir, configDirName, 'rules')
     results.push(
       ...(await processConditionedMdRules(
@@ -1477,7 +1516,8 @@ export async function shouldShowClaudeMdExternalIncludesWarning(): Promise<boole
 }
 
 /**
- * Check if a file path is a memory file (AGENTS.md, CLAUDE.md, CLAUDE.local.md, or .claude/rules/*.md)
+ * Check if a file path is a memory file (AGENTS.md, LIMITLESS.md, CLAUDE.md,
+ * CLAUDE.local.md, or <configDir>/rules/*.md for any known config dir).
  */
 export function isMemoryFilePath(filePath: string): boolean {
   const name = basename(filePath)
@@ -1487,10 +1527,12 @@ export function isMemoryFilePath(filePath: string): boolean {
     return true
   }
 
-  // .md files in .claude/rules/ directories
+  // .md files in any <configDir>/rules/ directory (.limitless/.claude/.openclaude)
   if (
     name.endsWith('.md') &&
-    filePath.includes(`${sep}.claude${sep}rules${sep}`)
+    PROJECT_CONFIG_DIR_NAMES.some(configDirName =>
+      filePath.includes(`${sep}${configDirName}${sep}rules${sep}`),
+    )
   ) {
     return true
   }

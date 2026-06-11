@@ -1112,6 +1112,16 @@ export const SettingsSchema = lazySchema(() =>
             'Useful for enterprise administrators to add organization-specific context ' +
             '(e.g., "All plugins from our internal marketplace are vetted and approved.").',
         ),
+      readLegacyConfigDirs: z
+        .boolean()
+        .optional()
+        .describe(
+          'Whether to read legacy config directories (.claude, .openclaude) and the ' +
+            'legacy CLAUDE.md instruction filename in addition to the native .limitless ' +
+            'directory and LIMITLESS.md filename. Defaults to true so existing setups keep ' +
+            'working. Set to false for strict zero-link mode where only .limitless and ' +
+            'LIMITLESS.md (plus the harness-neutral AGENTS.md) are read.',
+        ),
     })
     .passthrough(),
 )

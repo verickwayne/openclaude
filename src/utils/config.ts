@@ -1884,8 +1884,18 @@ export function getMemoryPath(memoryType: MemoryType): string {
   const cwd = getOriginalCwd()
 
   switch (memoryType) {
-    case 'User':
-      return join(getClaudeConfigHomeDir(), 'CLAUDE.md')
+    case 'User': {
+      // Prefer the Limitless-native LIMITLESS.md under the config home
+      // (~/.limitless); fall back to the legacy CLAUDE.md filename when the
+      // native file is absent so existing user memory keeps loading. The dir
+      // is the config home, never a hardcoded ~/.claude.
+      const configHome = getClaudeConfigHomeDir()
+      const nativeUserMemory = join(configHome, 'LIMITLESS.md')
+      if (getFsImplementation().existsSync(nativeUserMemory)) {
+        return nativeUserMemory
+      }
+      return join(configHome, 'CLAUDE.md')
+    }
     case 'Local':
       return join(cwd, 'CLAUDE.local.md')
     case 'Project':

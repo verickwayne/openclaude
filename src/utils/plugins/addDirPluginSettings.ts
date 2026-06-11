@@ -9,7 +9,7 @@
 import { join } from 'path'
 import type { z } from 'zod/v4'
 import { getAdditionalDirectoriesForClaudeMd } from '../../bootstrap/state.js'
-import { PROJECT_CONFIG_DIR_NAMES } from '../markdownConfigLoader.js'
+import { PROJECT_CONFIG_DIR_NAMES_MERGE_ORDER } from '../markdownConfigLoader.js'
 import { parseSettingsFile } from '../settings/settings.js'
 import type {
   ExtraKnownMarketplaceSchema,
@@ -37,7 +37,7 @@ export function getAddDirEnabledPlugins(): NonNullable<
 > {
   const result: NonNullable<SettingsJson['enabledPlugins']> = {}
   for (const dir of getAdditionalDirectoriesForClaudeMd()) {
-    for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+    for (const configDirName of PROJECT_CONFIG_DIR_NAMES_MERGE_ORDER) {
       for (const file of SETTINGS_FILES) {
         const { settings } = parseSettingsFile(join(dir, configDirName, file))
         if (!settings?.enabledPlugins) {
@@ -62,7 +62,7 @@ export function getAddDirExtraMarketplaces(): Record<
 > {
   const result: Record<string, ExtraKnownMarketplace> = {}
   for (const dir of getAdditionalDirectoriesForClaudeMd()) {
-    for (const configDirName of PROJECT_CONFIG_DIR_NAMES) {
+    for (const configDirName of PROJECT_CONFIG_DIR_NAMES_MERGE_ORDER) {
       for (const file of SETTINGS_FILES) {
         const { settings } = parseSettingsFile(
           join(dir, configDirName, file),
