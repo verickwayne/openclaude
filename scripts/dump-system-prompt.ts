@@ -8,8 +8,8 @@
   VERSION: '0.14.0',
   DISPLAY_VERSION: '0.14.0',
   BUILD_TIME: new Date().toISOString(),
-  ISSUES_EXPLAINER: 'report the issue at https://github.com/Gitlawb/openclaude/issues',
-  FEEDBACK_CHANNEL: 'https://github.com/Gitlawb/openclaude/issues',
+  ISSUES_EXPLAINER: 'report the issue at https://github.com/verickwayne/limitless/issues',
+  FEEDBACK_CHANNEL: 'https://github.com/verickwayne/limitless/issues',
   PACKAGE_URL: '@gitlawb/limitless',
   NATIVE_PACKAGE_URL: undefined,
 }
