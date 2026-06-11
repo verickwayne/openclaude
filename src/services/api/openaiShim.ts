@@ -26,6 +26,9 @@
  */
 
 import { APIError } from '@anthropic-ai/sdk'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import {
   readCodexCredentialsAsync,
   refreshCodexAccessTokenIfNeeded,
@@ -246,6 +249,72 @@ function redactUrlForDiagnostics(url: string): string {
 
 function redactUrlsInMessage(message: string): string {
   return message.replace(/https?:\/\/\S+/g, match => redactUrlForDiagnostics(match))
+}
+
+function getOpenAIRequestDumpPath(): string | null {
+  const raw =
+    process.env.LIMITLESS_OPENAI_DUMP_REQUEST ??
+    process.env.OPENCLAUDE_OPENAI_DUMP_REQUEST
+  if (!raw || /^(0|false|no|off)$/i.test(raw.trim())) {
+    return null
+  }
+  if (/^(1|true|yes|on)$/i.test(raw.trim())) {
+    return join(tmpdir(), 'limitless-openai-request.json')
+  }
+  return raw
+}
+
+function redactHeadersForDump(headers: Record<string, string>): Record<string, string> {
+  const redacted: Record<string, string> = {}
+  for (const [key, value] of Object.entries(headers)) {
+    redacted[key] = /authorization|api[-_]?key|token|secret/i.test(key)
+      ? 'redacted'
+      : value
+  }
+  return redacted
+}
+
+function dumpOpenAIRequestIfEnabled(input: {
+  baseUrl: string
+  body: Record<string, unknown>
+  headers: Record<string, string>
+  transport: string
+  url: string
+}): void {
+  const dumpPath = getOpenAIRequestDumpPath()
+  if (!dumpPath) {
+    return
+  }
+
+  try {
+    mkdirSync(dirname(dumpPath), { recursive: true })
+    writeFileSync(
+      dumpPath,
+      `${JSON.stringify(
+        {
+          writtenAt: new Date().toISOString(),
+          baseUrl: redactUrlForDiagnostics(input.baseUrl),
+          url: redactUrlForDiagnostics(input.url),
+          transport: input.transport,
+          headers: redactHeadersForDump(input.headers),
+          body: input.body,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+    logForDebugging(`[OpenAIShim] wrote request dump to ${dumpPath}`, {
+      level: 'debug',
+    })
+  } catch (error) {
+    logForDebugging(
+      `[OpenAIShim] failed to write request dump: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { level: 'warn' },
+    )
+  }
 }
 
 function sleepMs(ms: number): Promise<void> {
@@ -2262,12 +2331,28 @@ class OpenAIShimMessages {
       serializedBody = serializeBody()
     }
 
-    const buildFetchInit = () => ({
-      method: 'POST' as const,
-      headers,
-      body: serializedBody,
-      signal: options?.signal,
-    })
+    const buildFetchInit = () => {
+      let parsedBody: Record<string, unknown> = {}
+      try {
+        parsedBody = JSON.parse(serializedBody) as Record<string, unknown>
+      } catch {
+        parsedBody = { unparseableBody: true }
+      }
+      dumpOpenAIRequestIfEnabled({
+        baseUrl: activeBaseUrl,
+        body: parsedBody,
+        headers,
+        transport: request.transport,
+        url: requestUrl,
+      })
+
+      return {
+        method: 'POST' as const,
+        headers,
+        body: serializedBody,
+        signal: options?.signal,
+      }
+    }
 
     const maxSelfHealAttempts = isLocal
       ? localRetryBaseUrls.length + 1
