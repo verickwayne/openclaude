@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import type { ProviderOutput } from './providers/types.js'
 import { __test } from './WebSearchTool.js'
 
@@ -100,5 +100,60 @@ describe('buildAdapterUnavailableError', () => {
     expect(msg).toMatch(/Codex/)
     expect(msg).toMatch(/TAVILY_API_KEY/)
     expect(msg).not.toMatch(/Try switching/)
+  })
+})
+
+describe('native web search execution', () => {
+  test('forces the native web_search server tool instead of letting the helper model answer without searching', async () => {
+    let capturedParams: any
+    const queryModelWithStreaming = mock((params: any) => {
+      capturedParams = params
+      return (async function* () {
+        yield {
+          type: 'assistant',
+          message: { content: [] },
+        }
+      })()
+    })
+
+    mock.module('../../services/api/claude.js', () => ({
+      queryModelWithStreaming,
+    }))
+    mock.module('../../utils/model/providers.js', () => ({
+      getAPIProvider: () => 'firstParty',
+    }))
+
+    const { WebSearchTool } = await import(
+      `./WebSearchTool.js?native-tool-choice-${Date.now()}`
+    )
+
+    await WebSearchTool.call(
+      { query: 'current weather in Cancun' },
+      {
+        abortController: new AbortController(),
+        getAppState: () => ({
+          effortValue: undefined,
+          toolPermissionContext: {},
+        }),
+        options: {
+          agentDefinitions: { activeAgents: [] },
+          appendSystemPrompt: undefined,
+          isNonInteractiveSession: false,
+          mainLoopModel: 'claude-sonnet-4-5',
+          thinkingConfig: { type: 'disabled' },
+        },
+      } as any,
+      undefined as any,
+      undefined as any,
+      undefined,
+    )
+
+    expect(queryModelWithStreaming).toHaveBeenCalled()
+    expect(capturedParams.options.toolChoice).toEqual({
+      type: 'tool',
+      name: 'web_search',
+    })
+
+    mock.restore()
   })
 })
