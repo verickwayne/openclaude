@@ -2313,26 +2313,23 @@ export async function refreshAllMarketplaces(): Promise<void> {
     // inc-5046: same GCS intercept as refreshMarketplace() — bulk update
     // hits this path on `claude plugin marketplace update` (no name arg).
     if (name === OFFICIAL_MARKETPLACE_NAME) {
+      // v1: official-marketplace remote refresh disabled (no phone-home).
+      // The GCS CDN fetch is neutralized and the git fallback to
+      // github.com/anthropics/claude-plugins-official is suppressed — skip
+      // the official marketplace entirely instead of git-cloning it.
       const sha = await fetchOfficialMarketplaceFromGcs(
         entry.installLocation,
         getMarketplacesCacheDir(),
       )
       if (sha !== null) {
         config[name]!.lastUpdated = new Date().toISOString()
-        continue
-      }
-      if (
-        !getFeatureValue_CACHED_MAY_BE_STALE(
-          'tengu_plugin_official_mkt_git_fallback',
-          true,
-        )
-      ) {
+      } else {
         logForDebugging(
-          `Skipping official marketplace bulk refresh: GCS failed, git fallback disabled`,
+          `Skipping official marketplace bulk refresh: remote fetch disabled in v1`,
         )
-        continue
       }
-      // fall through to git
+      void getFeatureValue_CACHED_MAY_BE_STALE
+      continue
     }
     try {
       const { cachePath } = await loadAndCacheMarketplace(entry.source)
@@ -2431,6 +2428,9 @@ export async function refreshMarketplace(
     // no data migration is needed — existing known_marketplaces.json entries
     // still say source:'github', which is true (GCS is a mirror).
     if (name === OFFICIAL_MARKETPLACE_NAME) {
+      // v1: official-marketplace remote refresh disabled (no phone-home).
+      // The GCS CDN fetch is neutralized and the git fallback to
+      // github.com/anthropics/claude-plugins-official is suppressed.
       const sha = await fetchOfficialMarketplaceFromGcs(
         installLocation,
         getMarketplacesCacheDir(),
@@ -2440,28 +2440,14 @@ export async function refreshMarketplace(
         await saveKnownMarketplacesConfig(config)
         return
       }
-      // GCS failed — fall through to git ONLY if the kill-switch allows.
-      // Default true (backend write perms are pending as of inc-5046); flip
-      // to false via GrowthBook once the backend is confirmed live so new
-      // clients NEVER hit GitHub for the official marketplace.
-      if (
-        !getFeatureValue_CACHED_MAY_BE_STALE(
-          'tengu_plugin_official_mkt_git_fallback',
-          true,
-        )
-      ) {
-        // Throw, don't return — every other failure path in this function
-        // throws, and callers like ManageMarketplaces.tsx:259 increment
-        // updatedCount on any non-throwing return. A silent return would
-        // report "Updated 1 marketplace" when nothing was refreshed.
-        throw new Error(
-          'Official marketplace GCS fetch failed and git fallback is disabled',
-        )
-      }
-      logForDebugging('Official marketplace GCS failed; falling back to git', {
-        level: 'warn',
-      })
-      // ...falls through to source.source === 'github' branch below
+      void getFeatureValue_CACHED_MAY_BE_STALE
+      // Throw, don't return — every other failure path in this function
+      // throws, and callers like ManageMarketplaces.tsx:259 increment
+      // updatedCount on any non-throwing return. A silent return would
+      // report "Updated 1 marketplace" when nothing was refreshed.
+      throw new Error(
+        'Official marketplace remote refresh is disabled in v1 (no phone-home)',
+      )
     }
 
     // Update based on source type

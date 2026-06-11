@@ -341,30 +341,11 @@ export async function checkGlobalInstallPermissions(): Promise<{
 export async function getLatestVersion(
   channel: ReleaseChannel,
 ): Promise<string | null> {
-  const npmTag = channel === 'stable' ? 'stable' : 'latest'
-
-  // Run from home directory to avoid reading project-level .npmrc
-  // which could be maliciously crafted to redirect to an attacker's registry
-  const result = await withTimeoutSignal(5000, abortSignal =>
-    execFileNoThrowWithCwd(
-      'npm',
-      ['view', `${MACRO.PACKAGE_URL}@${npmTag}`, 'version', '--prefer-online'],
-      { abortSignal, cwd: homedir() },
-    ),
-  )
-  if (result.code !== 0) {
-    logForDebugging(`npm view failed with code ${result.code}`)
-    if (result.stderr) {
-      logForDebugging(`npm stderr: ${result.stderr.trim()}`)
-    } else {
-      logForDebugging('npm stderr: (empty)')
-    }
-    if (result.stdout) {
-      logForDebugging(`npm stdout: ${result.stdout.trim()}`)
-    }
-    return null
-  }
-  return result.stdout.trim()
+  // v1: self-update disabled (no phone-home). Never run `npm view` to look
+  // up a newer version — report "no newer version" so the binary never
+  // attempts to update itself.
+  void channel
+  return null
 }
 
 export type NpmDistTags = {
@@ -377,30 +358,8 @@ export type NpmDistTags = {
  * This is used by the doctor command to show users what versions are available.
  */
 export async function getNpmDistTags(): Promise<NpmDistTags> {
-  // Run from home directory to avoid reading project-level .npmrc
-  const result = await withTimeoutSignal(5000, abortSignal =>
-    execFileNoThrowWithCwd(
-      'npm',
-      ['view', MACRO.PACKAGE_URL, 'dist-tags', '--json', '--prefer-online'],
-      { abortSignal, cwd: homedir() },
-    ),
-  )
-
-  if (result.code !== 0) {
-    logForDebugging(`npm view dist-tags failed with code ${result.code}`)
-    return { latest: null, stable: null }
-  }
-
-  try {
-    const parsed = jsonParse(result.stdout.trim()) as Record<string, unknown>
-    return {
-      latest: typeof parsed.latest === 'string' ? parsed.latest : null,
-      stable: typeof parsed.stable === 'string' ? parsed.stable : null,
-    }
-  } catch (error) {
-    logForDebugging(`Failed to parse dist-tags: ${error}`)
-    return { latest: null, stable: null }
-  }
+  // v1: self-update disabled (no phone-home). Never query the npm registry.
+  return { latest: null, stable: null }
 }
 
 /**
@@ -410,16 +369,13 @@ export async function getNpmDistTags(): Promise<NpmDistTags> {
 export async function getLatestVersionFromGcs(
   channel: ReleaseChannel,
 ): Promise<string | null> {
-  try {
-    const response = await axios.get(`${GCS_BUCKET_URL}/${channel}`, {
-      timeout: 5000,
-      responseType: 'text',
-    })
-    return response.data.trim()
-  } catch (error) {
-    logForDebugging(`Failed to fetch ${channel} from GCS: ${error}`)
-    return null
-  }
+  // v1: self-update disabled (no phone-home). The native-installer GCS
+  // distribution path (storage.googleapis.com/claude-code-dist-*) is
+  // neutralized — never fetch a version pointer from the bucket.
+  void channel
+  void GCS_BUCKET_URL
+  void axios
+  return null
 }
 
 /**
@@ -445,43 +401,24 @@ export async function getGcsDistTags(): Promise<NpmDistTags> {
  * 3. This prevents rollback from listing versions that don't have native binaries
  */
 export async function getVersionHistory(limit: number): Promise<string[]> {
-  if (process.env.USER_TYPE !== 'ant') {
-    return []
-  }
-
-  // Use native package URL when available to ensure we only show versions
-  // that have native binaries (not all JS package versions have native builds)
-  const packageUrl = MACRO.NATIVE_PACKAGE_URL ?? MACRO.PACKAGE_URL
-
-  // Run from home directory to avoid reading project-level .npmrc
-  const result = await withTimeoutSignal(30000, abortSignal =>
-    execFileNoThrowWithCwd(
-      'npm',
-      ['view', packageUrl, 'versions', '--json', '--prefer-online'],
-      // Longer timeout for version list
-      { abortSignal, cwd: homedir() },
-    ),
-  )
-
-  if (result.code !== 0) {
-    logForDebugging(`npm view versions failed with code ${result.code}`)
-    if (result.stderr) {
-      logForDebugging(`npm stderr: ${result.stderr.trim()}`)
-    }
-    return []
-  }
-
-  try {
-    const versions = jsonParse(result.stdout.trim()) as string[]
-    // Take last N versions, then reverse to get newest first
-    return versions.slice(-limit).reverse()
-  } catch (error) {
-    logForDebugging(`Failed to parse version history: ${error}`)
-    return []
-  }
+  // v1: self-update disabled (no phone-home). Never query the npm registry
+  // for available versions.
+  void limit
+  return []
 }
 
 export async function installGlobalPackage(
+  specificVersion?: string | null,
+): Promise<InstallStatus> {
+  // v1: self-update disabled (no phone-home). The binary must never run
+  // `npm install`/`bun install` to update itself. Report success without
+  // touching the network or the global install so callers treat the current
+  // build as already up to date.
+  void specificVersion
+  return 'success'
+}
+
+async function installGlobalPackage_DISABLED(
   specificVersion?: string | null,
 ): Promise<InstallStatus> {
   if (!(await acquireLock())) {

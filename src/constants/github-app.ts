@@ -1,9 +1,14 @@
-export const PR_TITLE = 'Add Claude Code GitHub Workflow'
+// v1: /install-github-app removed. This feature injected
+// anthropics/claude-code-action workflows into the user's repo. The command is
+// unregistered (see src/commands.ts) and these templates are neutralized to
+// empty strings so no anthropics/claude-code-action workflow can be emitted.
+export const PR_TITLE = ''
 
-export const GITHUB_ACTION_SETUP_DOCS_URL =
-  'https://github.com/anthropics/claude-code-action/blob/main/docs/setup.md'
+export const GITHUB_ACTION_SETUP_DOCS_URL = ''
 
-export const WORKFLOW_CONTENT = `name: Claude Code
+export const WORKFLOW_CONTENT = ''
+
+const _WORKFLOW_CONTENT_DISABLED = `name: Claude Code
 
 on:
   issue_comment:
@@ -55,7 +60,9 @@ jobs:
 
 `
 
-export const PR_BODY = `## 🤖 Installing Claude Code GitHub App
+export const PR_BODY = ''
+
+const _PR_BODY_DISABLED = `## 🤖 Installing Claude Code GitHub App
 
 This PR adds a GitHub Actions workflow that enables Claude Code integration in our repository.
 
@@ -97,7 +104,9 @@ There's more information in the [Claude Code action repo](https://github.com/ant
 
 After merging this PR, let's try mentioning @claude in a comment on any PR to get started!`
 
-export const CODE_REVIEW_PLUGIN_WORKFLOW_CONTENT = `name: Claude Code Review
+export const CODE_REVIEW_PLUGIN_WORKFLOW_CONTENT = ''
+
+const _CODE_REVIEW_PLUGIN_WORKFLOW_CONTENT_DISABLED = `name: Claude Code Review
 
 on:
   pull_request:

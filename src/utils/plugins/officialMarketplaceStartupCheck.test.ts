@@ -130,7 +130,7 @@ beforeEach(() => {
 })
 
 describe('checkAndInstallOfficialMarketplace', () => {
-  test('repairs missing known marketplace even when global config says installed', async () => {
+  test('v1: remote auto-install disabled — no phone-home, returns disabled_v1', async () => {
     config = {
       officialMarketplaceAutoInstallAttempted: true,
       officialMarketplaceAutoInstalled: true,
@@ -138,12 +138,17 @@ describe('checkAndInstallOfficialMarketplace', () => {
 
     const result = await checkAndInstallOfficialMarketplace()
 
-    expect(result).toEqual({ installed: true, skipped: false })
-    expect(fetchOfficialMarketplaceFromGcs).toHaveBeenCalled()
-    expect(saveKnownMarketplacesConfig).toHaveBeenCalled()
-    expect(knownMarketplaces).toHaveProperty('claude-plugins-official')
-    expect(config.officialMarketplaceAutoInstalled).toBe(true)
-    expect(config.officialMarketplaceAutoInstallFailReason).toBeUndefined()
+    // v1: official-marketplace remote auto-install (GCS CDN + git fallback)
+    // is disabled to avoid any phone-home to downloads.claude.ai or
+    // github.com/anthropics/claude-plugins-official. When the marketplace is
+    // not present in known_marketplaces.json we skip rather than fetch.
+    expect(result).toEqual({
+      installed: false,
+      skipped: true,
+      reason: 'disabled_v1',
+    })
+    expect(fetchOfficialMarketplaceFromGcs).not.toHaveBeenCalled()
+    expect(saveKnownMarketplacesConfig).not.toHaveBeenCalled()
   })
 
   test('uses known marketplaces as the installed source of truth', async () => {

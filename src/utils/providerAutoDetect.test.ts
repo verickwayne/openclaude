@@ -273,7 +273,7 @@ describe('detectBestProvider — orchestrator', () => {
     expect(result?.kind).toBe('ollama')
   })
 
-  test('skipLocal + OPENGATEWAY_API_KEY falls back to opengateway without probing', async () => {
+  test('v1: opengateway fallback removed — OPENGATEWAY_API_KEY no longer auto-selects, no probing', async () => {
     let probeCalled = false
     const fetchImpl = (async () => {
       probeCalled = true
@@ -286,8 +286,8 @@ describe('detectBestProvider — orchestrator', () => {
       skipLocal: true,
       hasCodexAuth: () => false,
     })
-    expect(result?.kind).toBe('gitlawb-opengateway')
-    expect(result?.model).toBe('mimo-v2.5-pro')
+    // v1: opengateway.gitlawb.com fallback removed (link to old project).
+    expect(result).toBeNull()
     expect(probeCalled).toBe(false)
   })
 
@@ -307,7 +307,7 @@ describe('detectBestProvider — orchestrator', () => {
     expect(result).toBeNull()
   })
 
-  test('OPENGATEWAY_BASE_URL env overrides the opengateway fallback base URL', async () => {
+  test('v1: OPENGATEWAY_BASE_URL no longer routes to the removed opengateway fallback', async () => {
     const fetchImpl = (async () => {
       throw new Error('nothing reachable')
     }) as typeof fetch
@@ -321,11 +321,11 @@ describe('detectBestProvider — orchestrator', () => {
       timeoutMs: 100,
       hasCodexAuth: () => false,
     })
-    expect(result?.kind).toBe('gitlawb-opengateway')
-    expect(result?.baseUrl).toBe('http://localhost:8181/v1/xiaomi-mimo')
+    // v1: opengateway.gitlawb.com fallback removed (link to old project).
+    expect(result).toBeNull()
   })
 
-  test('OPENGATEWAY_BASE_URL normalizes hosted legacy Xiaomi route to smart route', async () => {
+  test('v1: opengateway.gitlawb.com is never returned by auto-detect', async () => {
     const fetchImpl = (async () => {
       throw new Error('nothing reachable')
     }) as typeof fetch
@@ -339,8 +339,8 @@ describe('detectBestProvider — orchestrator', () => {
       timeoutMs: 100,
       hasCodexAuth: () => false,
     })
-    expect(result?.kind).toBe('gitlawb-opengateway')
-    expect(result?.baseUrl).toBe('https://opengateway.gitlawb.com/v1')
+    // v1: opengateway.gitlawb.com fallback removed (link to old project).
+    expect(result).toBeNull()
   })
 
   test('skipOpengatewayFallback returns null when nothing else is detected', async () => {

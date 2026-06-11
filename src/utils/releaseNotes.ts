@@ -28,8 +28,9 @@ type GitHubRelease = {
 }
 
 /**
- * We fetch OpenClaude release notes from GitHub instead of bundling them with
- * the build.
+ * v1: release-notes fetch disabled (no phone-home). We previously fetched
+ * release notes from GitHub instead of bundling them; the network call is now
+ * a no-op and only locally-cached notes are surfaced.
  *
  * This is necessary because Ink's static rendering makes it difficult to
  * dynamically update/show components after initial render. By storing the
@@ -172,18 +173,12 @@ export function getReleaseNotesForVersionFromReleases(
 }
 
 async function fetchGitHubReleases(): Promise<GitHubRelease[]> {
-  const response = await axios.get<GitHubRelease[]>(RELEASES_API_URL, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'openclaude',
-    },
-  })
-
-  if (!Array.isArray(response.data)) {
-    return []
-  }
-
-  return response.status === 200 ? response.data : []
+  // v1: release-notes fetch disabled (no phone-home)
+  // The startup GET to api.github.com is suppressed; callers receive an
+  // empty release list and fall back to any locally-cached changelog.
+  void RELEASES_API_URL
+  void axios
+  return []
 }
 
 async function storeSerializedChangelog(changelogContent: string): Promise<void> {
@@ -243,39 +238,24 @@ export async function migrateChangelogFromConfig(): Promise<void> {
  * This runs in the background and doesn't block the UI
  */
 export async function fetchAndStoreChangelog(): Promise<void> {
-  // Skip in noninteractive mode
-  if (getIsNonInteractiveSession()) {
-    return
-  }
-
-  // Skip network requests if nonessential traffic is disabled
-  if (isEssentialTrafficOnly()) {
-    return
-  }
-
-  const releases = await fetchGitHubReleases()
-  await storeSerializedChangelog(serializeGitHubReleasesAsChangelog(releases))
+  // v1: release-notes fetch disabled (no phone-home). Return early so we
+  // neither hit the network nor clobber any locally-cached changelog.
+  void getIsNonInteractiveSession
+  void isEssentialTrafficOnly
+  void fetchGitHubReleases
+  void serializeGitHubReleasesAsChangelog
+  void storeSerializedChangelog
+  return
 }
 
 export async function fetchReleaseNotesForVersion(
   version: string,
 ): Promise<string[]> {
-  if (getIsNonInteractiveSession()) {
-    return []
-  }
-
-  if (isEssentialTrafficOnly()) {
-    return []
-  }
-
-  const releases = await fetchGitHubReleases()
-  const notes = getReleaseNotesForVersionFromReleases(version, releases)
-
-  if (notes.length > 0) {
-    await storeSerializedChangelog(serializeGitHubReleasesAsChangelog(releases))
-  }
-
-  return notes
+  // v1: release-notes fetch disabled (no phone-home). Resolve from the
+  // locally-cached changelog only; never hit the network.
+  void version
+  void getReleaseNotesForVersionFromReleases
+  return []
 }
 
 /**
@@ -378,7 +358,7 @@ export function getRecentReleaseNotes(
     const baseCurrentVersion = coerce(currentVersion)
     let basePreviousVersion = previousVersion ? coerce(previousVersion) : null
 
-    // Older OpenClaude builds stored the internal compatibility version
+    // Older builds stored the internal compatibility version
     // (e.g. 99.0.0) as the "seen" marker. Treat that as unseen so users
     // can start receiving release notes keyed to the public version.
     if (

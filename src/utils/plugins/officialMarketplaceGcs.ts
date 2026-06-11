@@ -48,6 +48,26 @@ export async function fetchOfficialMarketplaceFromGcs(
   installLocation: string,
   marketplacesCacheDir: string,
 ): Promise<string | null> {
+  // v1: official-marketplace CDN fetch disabled (no phone-home). We never
+  // contact downloads.claude.ai. Returning null signals "not fetched" to
+  // callers; the official-marketplace git fallback is also gated off in v1
+  // (see officialMarketplaceStartupCheck.ts / marketplaceManager.ts), so the
+  // general plugin system and locally-installed/bundled marketplaces continue
+  // to work without any remote call.
+  void installLocation
+  void marketplacesCacheDir
+  void axios
+  void waitForScrollIdle
+  void unzipFile
+  void parseZipModes
+  void logEvent
+  return null
+}
+
+async function fetchOfficialMarketplaceFromGcs_DISABLED(
+  installLocation: string,
+  marketplacesCacheDir: string,
+): Promise<string | null> {
   // Defense in depth: this function does `rm(installLocation, {recursive})`
   // during the atomic swap. A corrupted known_marketplaces.json (gh-32793 —
   // Windows path read on WSL, literal tilde, manual edit) could point at the

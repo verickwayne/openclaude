@@ -32,7 +32,7 @@ import keybindings from './commands/keybindings/index.js'
 import lsp from './commands/lsp/index.js'
 import login from './commands/login/index.js'
 import logout from './commands/logout/index.js'
-import installGitHubApp from './commands/install-github-app/index.js'
+// v1: /install-github-app removed (injected anthropics/claude-code-action workflows)
 import installSlackApp from './commands/install-slack-app/index.js'
 import breakCache from './commands/break-cache/index.js'
 import cacheProbe from './commands/cache-probe/index.js'
@@ -312,7 +312,7 @@ const COMMANDS = memoize((): Command[] => [
   keybindings,
   knowledge,
   lsp,
-  installGitHubApp,
+  // v1: installGitHubApp command removed (no anthropics/claude-code-action injection)
   installSlackApp,
   mcp,
   memory,

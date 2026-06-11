@@ -39,6 +39,7 @@ export type OfficialMarketplaceSkipReason =
   | 'policy_blocked'
   | 'git_unavailable'
   | 'gcs_unavailable'
+  | 'disabled_v1'
   | 'unknown'
 
 /**
@@ -159,6 +160,17 @@ export async function checkAndInstallOfficialMarketplace(): Promise<OfficialMark
       }))
       return { installed: false, skipped: true, reason: 'already_installed' }
     }
+
+    // v1: official-marketplace remote auto-install disabled (no phone-home).
+    // The GCS CDN fetch is neutralized AND the git fallback to
+    // github.com/anthropics/claude-plugins-official is suppressed here so the
+    // startup path makes zero network calls. Locally-installed/bundled
+    // marketplaces and the general plugin system are unaffected — only the
+    // remote official-marketplace auto-install is skipped.
+    logForDebugging(
+      'Official marketplace remote auto-install disabled in v1 (no phone-home)',
+    )
+    return { installed: false, skipped: true, reason: 'disabled_v1' }
 
     // Check if we should retry installation
     if (!shouldRetryInstallation(config)) {

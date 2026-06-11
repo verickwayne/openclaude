@@ -957,20 +957,20 @@ export function installLatest(
   channelOrVersion: string,
   forceReinstall: boolean = false,
 ): Promise<InstallLatestResult> {
-  if (forceReinstall) {
-    return installLatestImpl(channelOrVersion, forceReinstall)
-  }
-  if (inFlightInstall) {
-    logForDebugging('installLatest: joining in-flight call')
-    return inFlightInstall
-  }
-  const promise = installLatestImpl(channelOrVersion, forceReinstall)
-  inFlightInstall = promise
-  const clear = (): void => {
-    inFlightInstall = null
-  }
-  void promise.then(clear, clear)
-  return promise
+  // v1: self-update disabled (no phone-home). The native installer downloads
+  // binaries from the GCS distribution bucket
+  // (storage.googleapis.com/claude-code-dist-*), which we do not control.
+  // Neutralize the entrypoint so it never reaches installLatestImpl /
+  // downloadVersion — report "native install not supported in v1" by leaving
+  // the install unchanged (no version, not updated).
+  void channelOrVersion
+  void forceReinstall
+  void inFlightInstall
+  void installLatestImpl
+  logForDebugging(
+    'installLatest: native install/self-update disabled in v1 (no phone-home)',
+  )
+  return Promise.resolve({ latestVersion: null, wasUpdated: false })
 }
 
 async function installLatestImpl(
