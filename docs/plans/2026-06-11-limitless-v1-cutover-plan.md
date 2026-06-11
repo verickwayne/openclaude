@@ -84,3 +84,17 @@ North star: **ZERO runtime/identity/network link back to openclaude or the old p
 
 ## Execution sequence (after decisions)
 1. Branch `feat/limitless-v1` off merged base (coordinate Codex). 2. Parallel scrub agents by disjoint territory (edit-only, orchestrator commits): [A] config paths+env alias, [B] CLI/UI branding strings, [C] external-id macros+urls+gRPC, [D] OS identifiers, [E] VSCode ext + web, [F] stale tests. 3. Merge cross-harness. 4. Rebuild dist, full suite + `bun run build`. 5. Manual smoke (`limitless` launches, `/resume` works, no startup fetch to old repo). 6. LAST: create private repo + push on explicit go.
+
+## PROGRESS (branch feat/limitless-v1, worktree ~/Projects/limitless-v1)
+Base = feat/multi-provider + merged feat/cross-harness-resume (incl. purple/infinity banner). Commits:
+- 18eb47c Wave 1: config independence (LIMITLESS_CONFIG_DIR alias, resolveProjectStateDirname, ~/.limitless paths) + CLI/vscode/web product-name scrub; removed dead openclaude-aliases/, renamed vscode dir+assets.
+- 0f8b480 Wave 2a: external identity -> verickwayne/limitless, @verickwayne/limitless; gRPC limitless.v1 (proto renamed); originator headers + MCP/WebFetch UA -> limitless (claude-cli kept for Anthropic API); OS ids (limitless-cli://, com.limitless.*); 4 stale tests fixed.
+- ab48cef Wave 2b: decouple — release-notes fetch + auto-update + native-installer = no-ops; official-plugin CDN + git fallback disabled (nothing to bundle); /install-github-app removed; opengateway.gitlawb.com removed.
+- 3d93ae4 Wave 3: bulk repo-URL/pkg flip -> 0 live Gitlawb/openclaude or @gitlawb/openclaude refs in code.
+State: bun run build GREEN; regression GREEN; 0 live phone-home to old project/Anthropic dist.
+
+### Remaining
+- Cosmetic ~34: internal identifiers/comments (openclaudeProto, __openclaude* keys, openclaude-local temp pkg, comments). Optional.
+- Test fixtures ~353: mostly not.toContain('OpenClaude') guards (keep). Optional.
+- .openclaude legacy local-data reads (211): INTENTIONAL migration support (not a project link). Drop in a later release once fully migrated.
+- CUTOVER (gated on explicit user go — irreversible): (1) relocate worktree -> ~/Projects/Limitless, repoint launcher, rebuild, relink; (2) collapse feat/limitless-v1 -> fresh/orphan main (zero openclaude git history); (3) create PRIVATE github.com/verickwayne/limitless + remote + push.
