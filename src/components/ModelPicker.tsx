@@ -11,7 +11,10 @@ import { useAppState, useSetAppState } from '../state/AppState.js';
 import { convertEffortValueToLevel, type EffortLevel, getDefaultEffortForModel, modelSupportsEffort, modelSupportsMaxEffort, resolvePickerEffortPersistence, toPersistableEffort } from '../utils/effort.js';
 import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel } from '../utils/model/model.js';
 import { getModelOptions, type ModelOption } from '../utils/model/modelOptions.js';
-import { isGroupHeaderValue } from '../utils/model/multiProviderOptions.js';
+import {
+  GROUP_HEADER_VALUE_PREFIX,
+  isGroupHeaderValue,
+} from '../utils/model/multiProviderOptions.js';
 import { getSettingsForSource, updateSettingsForSource } from '../utils/settings/settings.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Select } from './CustomSelect/index.js';
@@ -57,6 +60,51 @@ function mapDiscoveryToneToColor(tone: ModelPickerDiscoveryState['tone']): 'erro
       return 'subtle';
   }
 }
+
+export function getLikelyProviderGroupForModelValue(value: string): string | null {
+  const model = value.trim()
+  if (!model || isGroupHeaderValue(model)) {
+    return null
+  }
+
+  if (model.includes('/') && !model.includes('://')) {
+    return 'openrouter'
+  }
+
+  if (model.includes(':')) {
+    return 'local'
+  }
+
+  return null
+}
+
+export function insertCurrentModelIntoProviderSection(
+  options: ModelOption[],
+  currentOption: ModelOption,
+): ModelOption[] {
+  const group = getLikelyProviderGroupForModelValue(String(currentOption.value))
+  if (!group) {
+    return [...options, currentOption]
+  }
+
+  const headerValue = `${GROUP_HEADER_VALUE_PREFIX}${group}`
+  const headerIndex = options.findIndex(option => option.value === headerValue)
+  if (headerIndex < 0) {
+    return [...options, currentOption]
+  }
+
+  const nextHeaderIndex = options.findIndex(
+    (option, index) =>
+      index > headerIndex && isGroupHeaderValue(String(option.value)),
+  )
+  const insertionIndex = nextHeaderIndex < 0 ? options.length : nextHeaderIndex
+  return [
+    ...options.slice(0, insertionIndex),
+    currentOption,
+    ...options.slice(insertionIndex),
+  ]
+}
+
 export function ModelPicker(t0) {
   const $ = _c(83);
   const {
@@ -124,7 +172,7 @@ export function ModelPicker(t0) {
       }
       let t7;
       if ($[9] !== modelOptions || $[10] !== t6) {
-        t7 = [...modelOptions, t6];
+        t7 = insertCurrentModelIntoProviderSection(modelOptions, t6);
         $[9] = modelOptions;
         $[10] = t6;
         $[11] = t7;
