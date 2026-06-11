@@ -50,6 +50,7 @@ export type LogOption = {
   mode?: 'coordinator' | 'normal' // Session mode for coordinator/normal detection
   worktreeSession?: PersistedWorktreeSession | null // Worktree state at session end (null = exited, undefined = never entered)
   contentReplacements?: ContentReplacementRecord[] // Replacement decisions for resume reconstruction
+  crossHarness?: import('../services/crossHarness/harnessTypes.js').DiscoveredTranscript // Foreign-harness transcript this entry was discovered from (materialized lazily on select)
 }
 
 export type SummaryMessage = {
