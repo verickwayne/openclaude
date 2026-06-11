@@ -12,6 +12,7 @@ import { queryModelWithStreaming } from '../../services/api/claude.js'
 import { collectCodexCompletedResponse } from '../../services/api/codexShim.js'
 import { fetchWithProxyRetry } from '../../services/api/fetchWithProxyRetry.js'
 import {
+  DEFAULT_CODEX_BASE_URL,
   resolveCodexApiCredentials,
   resolveProviderRequest,
 } from '../../services/api/providerConfig.js'
@@ -123,7 +124,7 @@ function buildEmptyAdapterResultHint(provider: string, providerName: string): st
     `The default DuckDuckGo backend is rate-limited from many networks (datacenter IPs, VPNs, repeated requests) and returns 0 results when blocked. ` +
     `For reliable web search on this provider, set one of: ` +
     `FIRECRAWL_API_KEY, TAVILY_API_KEY, EXA_API_KEY, JINA_API_KEY, BING_API_KEY, MOJEEK_API_KEY, LINKUP_API_KEY, YOU_API_KEY — ` +
-    `or switch to an Anthropic / Vertex / Foundry provider that supports the native web_search tool.`
+    `or make Codex auth available for fallback web search. Anthropic / Vertex / Foundry providers also support native web_search.`
   )
 }
 
@@ -171,6 +172,47 @@ function isCodexResponsesWebSearchEnabled(): boolean {
     baseUrl: process.env.OPENAI_BASE_URL,
   })
   return request.transport === 'codex_responses'
+}
+
+function currentProviderHasNativeAnthropicSearch(): boolean {
+  const provider = getAPIProvider()
+  return provider === 'firstParty' || provider === 'vertex' || provider === 'foundry'
+}
+
+function resolveActiveCodexWebSearchRoute() {
+  if (!isCodexResponsesWebSearchEnabled()) return null
+  const credentials = resolveCodexApiCredentials()
+  if (!credentials.apiKey || !credentials.accountId) return null
+  return {
+    request: resolveProviderRequest({
+      model: getMainLoopModel(),
+      baseUrl: process.env.OPENAI_BASE_URL,
+    }),
+    credentials,
+  }
+}
+
+function resolveFallbackCodexWebSearchRoute() {
+  if (currentProviderHasNativeAnthropicSearch()) return null
+
+  const credentials = resolveCodexApiCredentials()
+  if (!credentials.apiKey || !credentials.accountId) return null
+
+  const request = resolveProviderRequest({
+    model: 'codexspark',
+    baseUrl: DEFAULT_CODEX_BASE_URL,
+  })
+  if (request.transport !== 'codex_responses') return null
+
+  return { request, credentials }
+}
+
+function resolveCodexWebSearchRoute() {
+  return resolveActiveCodexWebSearchRoute() ?? resolveFallbackCodexWebSearchRoute()
+}
+
+function shouldUseCodexWebSearchPath(): boolean {
+  return resolveCodexWebSearchRoute() !== null
 }
 
 function makeCodexWebSearchTool(input: Input): Record<string, unknown> {
@@ -367,9 +409,9 @@ function buildAdapterUnavailableError(
   errMsg: string,
 ): string {
   return (
-    `Web search is unavailable for provider "${provider}". ` +
-    `The search adapter failed (${errMsg}). ` +
-    `Try switching to a provider with built-in web search (e.g. Anthropic, Codex) or try again later.`
+    `Web search is unavailable because all configured search backends failed while using provider "${provider}". ` +
+    `The adapter failure was: ${errMsg}. ` +
+    `Configure one of FIRECRAWL_API_KEY, TAVILY_API_KEY, EXA_API_KEY, JINA_API_KEY, BING_API_KEY, MOJEEK_API_KEY, LINKUP_API_KEY, YOU_API_KEY, or make Codex auth available for fallback web search.`
   )
 }
 
@@ -385,11 +427,14 @@ async function runCodexWebSearch(
   signal: AbortSignal,
 ): Promise<Output> {
   const startTime = performance.now()
-  const request = resolveProviderRequest({
-    model: getMainLoopModel(),
-    baseUrl: process.env.OPENAI_BASE_URL,
-  })
-  const credentials = resolveCodexApiCredentials()
+  const route = resolveCodexWebSearchRoute()
+  const request =
+    route?.request ??
+    resolveProviderRequest({
+      model: 'codexspark',
+      baseUrl: DEFAULT_CODEX_BASE_URL,
+    })
+  const credentials = route?.credentials ?? resolveCodexApiCredentials()
 
   if (!credentials.apiKey) {
     throw new Error('Codex web search requires CODEX_API_KEY or a valid auth.json.')
@@ -547,27 +592,25 @@ function shouldUseAdapterProvider(): boolean {
   if (mode === 'native') return false
   if (mode !== 'auto') return true // explicit adapter mode (tavily, ddg, custom, etc.)
 
-  // Auto mode: native/first-party/Codex take precedence over adapter
-  if (isCodexResponsesWebSearchEnabled()) return false
-  const provider = getAPIProvider()
-  if (provider === 'firstParty' || provider === 'vertex' || provider === 'foundry') {
-    return false
-  }
+  // Auto mode: native Anthropic paths take precedence over adapter. Codex is
+  // also native when it is the active provider; otherwise it is a fallback
+  // backend for OpenAI-compatible providers after adapters fail.
+  if (resolveActiveCodexWebSearchRoute()) return false
+  if (currentProviderHasNativeAnthropicSearch()) return false
   // No native path available — fall back to adapter
   return getAvailableProviders().length > 0
 }
 
 /**
- * Returns true when the current provider has a working native or Codex
- * web-search fallback after an adapter failure. OpenAI shim providers
- * (moonshot, minimax, nvidia-nim, openai, github, etc.) do NOT support
- * Anthropic's web_search_20250305 tool, so falling through to the native
- * path silently produces "Did 0 searches".
+ * Returns true when there is a working native or Codex web-search fallback
+ * after an adapter failure. OpenAI shim providers (OpenRouter, RunPod,
+ * minimax, nvidia-nim, github copilot, etc.) do NOT support Anthropic's
+ * web_search_20250305 tool, so falling through to that native path silently
+ * produces "Did 0 searches". They can still use Codex as an independent tool
+ * backend when Codex auth is present.
  */
 function hasNativeSearchFallback(): boolean {
-  if (isCodexResponsesWebSearchEnabled()) return true
-  const provider = getAPIProvider()
-  return provider === 'firstParty' || provider === 'vertex' || provider === 'foundry'
+  return shouldUseCodexWebSearchPath() || currentProviderHasNativeAnthropicSearch()
 }
 
 // ---------------------------------------------------------------------------
@@ -600,7 +643,7 @@ export const WebSearchTool = buildTool({
 
     // Auto/native mode: check all paths
     if (getAvailableProviders().length > 0) return true
-    if (isCodexResponsesWebSearchEnabled()) return true
+    if (shouldUseCodexWebSearchPath()) return true
 
     const provider = getAPIProvider()
     const model = getMainLoopModel()
@@ -658,7 +701,7 @@ export const WebSearchTool = buildTool({
   },
   async prompt() {
     // Strip "US only" when using non-native backends
-    if (shouldUseAdapterProvider() || isCodexResponsesWebSearchEnabled()) {
+    if (shouldUseAdapterProvider() || shouldUseCodexWebSearchPath()) {
       return getWebSearchPrompt().replace(
         /\n\s*-\s*Web search is only available in the US/,
         '',
@@ -759,7 +802,7 @@ export const WebSearchTool = buildTool({
     }
 
     // --- Codex / OpenAI Responses path ---
-    if (isCodexResponsesWebSearchEnabled()) {
+    if (shouldUseCodexWebSearchPath()) {
       const codexData = await runCodexWebSearch(
         input,
         context.abortController.signal,

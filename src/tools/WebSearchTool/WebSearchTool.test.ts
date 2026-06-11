@@ -33,6 +33,7 @@ describe('buildEmptyAdapterResultHint', () => {
 
   test('mentions the native-provider escape hatch', () => {
     const msg = buildEmptyAdapterResultHint('nvidia-nim', 'duckduckgo')
+    expect(msg).toMatch(/Codex auth/)
     expect(msg).toMatch(/Anthropic/)
     expect(msg).toMatch(/Vertex/)
     expect(msg).toMatch(/Foundry/)
@@ -75,15 +76,11 @@ describe('formatProviderOutputWithEmptyHint', () => {
   })
 })
 
-// Regression for #994: when the adapter path fails in auto mode on an
-// openai-shim provider with NO native web-search fallback (moonshot, minimax,
-// nvidia-nim, github copilot, etc.), the user must see the underlying adapter
-// failure embedded in the thrown error instead of getting "Did 0 searches"
-// from a silent fall-through to the native path. This is the only reachable
-// surfacing path under the current `shouldUseAdapterProvider()` /
-// `hasNativeSearchFallback()` semantics — auto mode prefers native whenever
-// it exists, so the "adapter tried then native ran" config is not actually
-// invoked today.
+// Regression for #994: when every available search backend fails on an
+// OpenAI-compatible provider (OpenRouter, RunPod, minimax, nvidia-nim, github
+// copilot, etc.), the user must see the underlying adapter failure embedded in
+// the thrown error instead of getting "Did 0 searches" from a silent fall-
+// through to Anthropic's native path.
 describe('buildAdapterUnavailableError', () => {
   test('names the active provider', () => {
     const msg = buildAdapterUnavailableError('minimax', 'rate limited')
@@ -98,9 +95,10 @@ describe('buildAdapterUnavailableError', () => {
     expect(msg).toContain('duckduckgo: 429 Too Many Requests')
   })
 
-  test('points the user at a working native-search provider', () => {
+  test('points the user at backend configuration instead of switching models', () => {
     const msg = buildAdapterUnavailableError('nvidia-nim', 'timeout')
-    expect(msg).toMatch(/Anthropic/)
     expect(msg).toMatch(/Codex/)
+    expect(msg).toMatch(/TAVILY_API_KEY/)
+    expect(msg).not.toMatch(/Try switching/)
   })
 })
