@@ -121,6 +121,21 @@ export function detectHarness(
       if (match) sessionId = match[1]
     }
 
+    // Strip harness-injected XML preamble (<environment_context>…</…>, AGENTS
+    // context) that Codex prepends to the first user turn, so the session
+    // name/search text is the operator's actual first words — not boilerplate.
+    const stripPreamble = (text: string): string => {
+      let s = text.trim()
+      let prev: string
+      do {
+        prev = s
+        s = s.replace(/^<([a-zA-Z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>\s*/, '')
+        s = s.replace(/^<[^>]*>\s*/, '')
+        s = s.trimStart()
+      } while (s !== prev && s.length > 0)
+      return s.trim()
+    }
+
     // Find first user message for firstPrompt
     let firstPrompt = ''
     let messageCount = 0
@@ -132,7 +147,7 @@ export function detectHarness(
           const role = payload.role as string | undefined
           const content = payload.content
           if (!firstPrompt && role === 'user') {
-            firstPrompt = extractText(content).trim()
+            firstPrompt = stripPreamble(extractText(content))
           }
         }
       }
