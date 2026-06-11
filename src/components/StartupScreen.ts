@@ -74,9 +74,10 @@ const LOGO_LESS = [
 
 // Infinity flourish \u2014 ties the LIMIT / LESS stack into the LIMITLESS wordmark.
 const LOGO_INFINITY = [
-  `               \u256d\u2500\u2500\u256e\u256d\u2500\u2500\u256e               `,
-  `       \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524  \u2502\u2502  \u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500       `,
-  `               \u2570\u2500\u2500\u256f\u2570\u2500\u2500\u256f               `,
+  `                \u2571\u2572  \u2571\u2572                `,
+  `               \u2571  \u2572\u2571  \u2572               `,
+  `               \u2572  \u2571\u2572  \u2571               `,
+  `                \u2572\u2571  \u2572\u2571                `,
 ]
 
 // ─── Provider detection ───────────────────────────────────────────────────────
