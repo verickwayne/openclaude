@@ -131,7 +131,7 @@ export function detectHarness(
           messageCount++
           const role = payload.role as string | undefined
           const content = payload.content
-          if (!firstPrompt && (role === 'user' || role === 'developer')) {
+          if (!firstPrompt && role === 'user') {
             firstPrompt = extractText(content).trim()
           }
         }
