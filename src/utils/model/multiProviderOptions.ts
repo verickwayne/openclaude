@@ -136,7 +136,7 @@ export function isAddRemoveModelsValue(value: string): boolean {
  * - 'openai': profile.provider === 'openai' (covers ChatGPT/Codex base URLs).
  * - 'openrouter': baseUrl contains 'openrouter.ai'.
  * - 'local': provider is 'ollama' or 'lmstudio', or baseUrl is a localhost/
- *   127.0.0.1 address.
+ *   127.0.0.1 address, or a remote RunPod-hosted local model proxy.
  * - 'other': everything else (sorts last alongside local).
  */
 export function classifyProviderGroup(
@@ -171,7 +171,8 @@ export function classifyProviderGroup(
     lowerProvider === 'ollama' ||
     lowerProvider === 'lmstudio' ||
     lowerBaseUrl.includes('localhost') ||
-    lowerBaseUrl.includes('127.0.0.1')
+    lowerBaseUrl.includes('127.0.0.1') ||
+    lowerBaseUrl.includes('runpod.net')
   ) {
     return 'local'
   }

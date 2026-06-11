@@ -94,6 +94,15 @@ describe('classifyProviderGroup', () => {
     ).toBe('local')
   })
 
+  test('RunPod-hosted local proxy baseUrl → local', () => {
+    expect(
+      classifyProviderGroup('p1', {
+        provider: 'openai',
+        baseUrl: 'https://wfcedwrz49vpv9-11434.proxy.runpod.net/v1',
+      }),
+    ).toBe('local')
+  })
+
   test('unknown provider + external baseUrl → other', () => {
     expect(
       classifyProviderGroup('p1', { provider: 'custom', baseUrl: 'https://api.example.com' }),
