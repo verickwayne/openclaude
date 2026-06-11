@@ -61,6 +61,21 @@ describe('classifyProviderGroup', () => {
     ).toBe('openrouter')
   })
 
+  test('provider=openrouter → openrouter even if baseUrl is missing or generic', () => {
+    expect(
+      classifyProviderGroup('p1', {
+        provider: 'openrouter',
+        baseUrl: '',
+      }),
+    ).toBe('openrouter')
+    expect(
+      classifyProviderGroup('p1', {
+        provider: 'openrouter',
+        baseUrl: 'https://example.local/v1',
+      }),
+    ).toBe('openrouter')
+  })
+
   test('provider=openai with non-openrouter non-local baseUrl → openai', () => {
     expect(
       classifyProviderGroup('p1', {

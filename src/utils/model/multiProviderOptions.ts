@@ -160,9 +160,10 @@ export function classifyProviderGroup(
     return 'anthropic'
   }
 
-  // OpenRouter — check before generic OpenAI because openrouter uses openai
-  // compatibility and its baseUrl is the primary signal.
-  if (lowerBaseUrl.includes('openrouter.ai')) {
+  // OpenRouter — check before generic OpenAI and local providers because
+  // OpenRouter uses OpenAI compatibility and persisted profiles can identify
+  // it either by provider id or by baseUrl.
+  if (lowerProvider === 'openrouter' || lowerBaseUrl.includes('openrouter.ai')) {
     return 'openrouter'
   }
 
