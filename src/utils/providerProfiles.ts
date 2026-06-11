@@ -305,17 +305,31 @@ function mergeModelOptionsByValue(
   additionalOptions: ModelOption[],
 ): ModelOption[] {
   const merged: ModelOption[] = []
-  const seen = new Set<string>()
+  const indexByValue = new Map<string, number>()
 
   for (const option of [...primaryOptions, ...additionalOptions]) {
     if (typeof option.value !== 'string') {
       continue
     }
     const value = option.value.trim()
-    if (!value || seen.has(value)) {
+    if (!value) {
       continue
     }
-    seen.add(value)
+    const key = value.toLowerCase()
+    const existingIndex = indexByValue.get(key)
+    if (existingIndex !== undefined) {
+      merged[existingIndex] = {
+        ...option,
+        ...merged[existingIndex],
+        value,
+        contextWindow: merged[existingIndex].contextWindow ?? option.contextWindow,
+        parameterCount: merged[existingIndex].parameterCount ?? option.parameterCount,
+        parameterLabel: merged[existingIndex].parameterLabel ?? option.parameterLabel,
+        pricing: merged[existingIndex].pricing ?? option.pricing,
+      }
+      continue
+    }
+    indexByValue.set(key, merged.length)
     merged.push({
       ...option,
       value,

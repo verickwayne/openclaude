@@ -28,4 +28,36 @@ describe('buildRouteCatalogModelOptions', () => {
       },
     ])
   })
+
+  test('carries parameter, context, and price metadata onto model options', () => {
+    const options = buildRouteCatalogModelOptions(
+      'OpenRouter',
+      [
+        {
+          id: 'kimi',
+          apiName: 'moonshotai/kimi-k2-thinking',
+          label: 'Kimi K2 Thinking',
+          parameterLabel: '1T total / 32B active',
+          contextWindow: 262_144,
+          pricing: {
+            inputPerMillionUsd: '$0.60',
+            outputPerMillionUsd: '$2.50',
+          },
+        },
+      ],
+    )
+
+    expect(options[0]).toMatchObject({
+      value: 'moonshotai/kimi-k2-thinking',
+      parameterLabel: '1T total / 32B active',
+      contextWindow: 262_144,
+      pricing: {
+        inputPerMillionUsd: '$0.60',
+        outputPerMillionUsd: '$2.50',
+      },
+    })
+    expect(options[0]?.description).toContain('parameters 1T total / 32B active')
+    expect(options[0]?.description).toContain('context 262,144')
+    expect(options[0]?.description).toContain('price input $0.60 / output $2.50 per 1M')
+  })
 })

@@ -235,6 +235,11 @@ describe('discoverModelsForRoute', () => {
 
     expect(result?.models.map((model: { apiName: string }) => model.apiName)).toEqual([
       'openai/gpt-5-mini',
+      'minimax/minimax-m3',
+      'moonshotai/kimi-k2-thinking',
+      'meta-llama/llama-4-scout',
+      'qwen/qwen3-coder',
+      'deepseek/deepseek-v4-flash',
       'anthropic/claude-sonnet-4',
     ])
     expect(result?.models[0]?.label).toBe('GPT-5 Mini (via OpenRouter)')
@@ -282,6 +287,48 @@ describe('discoverModelsForRoute', () => {
       outputPerMillionUsd: '$75.00',
     })
     expect(opus?.contextWindow).toBe(200000)
+  })
+
+  test('OpenRouter discovery maps parameter labels from model descriptions', async () => {
+    const { discoverModelsForRoute } = await loadDiscoveryServiceModule()
+
+    process.env.OPENROUTER_API_KEY = 'or-key'
+    setMockFetch(mock(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'deepseek/deepseek-v4-flash',
+                name: 'DeepSeek V4 Flash',
+                description:
+                  'DeepSeek V4 Flash is an efficiency-optimized Mixture-of-Experts model from DeepSeek with 284B total parameters and 13B activated parameters.',
+                context_length: 1048576,
+                pricing: {
+                  prompt: '0.0000000983',
+                  completion: '0.0000001966',
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    ) as unknown as typeof globalThis.fetch)
+
+    const result = await discoverModelsForRoute('openrouter', {
+      forceRefresh: true,
+    })
+
+    const flash = result?.models.find(
+      (model: { apiName: string }) =>
+        model.apiName === 'deepseek/deepseek-v4-flash',
+    )
+    expect(flash?.parameterLabel).toBe('284B total / 13B active')
+    expect(flash?.pricing).toEqual({
+      inputPerMillionUsd: '$0.0983',
+      outputPerMillionUsd: '$0.1966',
+    })
   })
 
   test('openai-compatible discovery applies descriptor static headers with auth', async () => {

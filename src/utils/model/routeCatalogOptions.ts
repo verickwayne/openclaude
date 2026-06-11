@@ -19,8 +19,18 @@ function toDescription(
   if (entry.notes?.trim()) {
     parts.push(entry.notes.trim())
   }
+  if (entry.parameterLabel?.trim()) {
+    parts.push(`parameters ${entry.parameterLabel.trim()}`)
+  } else if (entry.parameterCount) {
+    parts.push(`parameters ${entry.parameterCount.toLocaleString()}`)
+  }
   if (entry.contextWindow) {
     parts.push(`context ${entry.contextWindow.toLocaleString()}`)
+  }
+  const inputPrice = entry.pricing?.inputPerMillionUsd
+  const outputPrice = entry.pricing?.outputPerMillionUsd
+  if (inputPrice || outputPrice) {
+    parts.push(`price input ${inputPrice ?? '?'} / output ${outputPrice ?? '?'} per 1M`)
   }
 
   return parts.join(' · ')
@@ -73,6 +83,10 @@ export function buildRouteCatalogModelOptions(
         label === value
           ? description
           : `${description} (${value})`,
+      ...(entry.contextWindow ? { contextWindow: entry.contextWindow } : {}),
+      ...(entry.parameterCount ? { parameterCount: entry.parameterCount } : {}),
+      ...(entry.parameterLabel ? { parameterLabel: entry.parameterLabel } : {}),
+      ...(entry.pricing ? { pricing: entry.pricing } : {}),
     })
   }
 

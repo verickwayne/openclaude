@@ -63,29 +63,43 @@ export const OPENAI_PICKER_MODELS: ModelOption[] = [
 
 export const OPENROUTER_PICKER_MODELS: ModelOption[] = [
   {
-    value: 'openai/gpt-5-mini',
-    label: 'GPT-5 Mini',
+    value: 'minimax/minimax-m3',
+    label: 'MiniMax M3',
     description: 'OpenRouter',
+    contextWindow: 1_048_576,
+    pricing: { inputPerMillionUsd: '$0.30', outputPerMillionUsd: '$1.20' },
   },
   {
-    value: 'google/gemini-2.5-pro',
-    label: 'Gemini 2.5 Pro',
+    value: 'moonshotai/kimi-k2-thinking',
+    label: 'Kimi K2 Thinking',
     description: 'OpenRouter',
+    contextWindow: 262_144,
+    parameterLabel: '1T total / 32B active',
+    pricing: { inputPerMillionUsd: '$0.60', outputPerMillionUsd: '$2.50' },
   },
   {
-    value: 'deepseek/deepseek-chat-v3-0324',
-    label: 'DeepSeek V3 0324',
+    value: 'meta-llama/llama-4-scout',
+    label: 'Llama 4 Scout',
     description: 'OpenRouter',
+    contextWindow: 10_000_000,
+    parameterLabel: '109B total / 17B active',
+    pricing: { inputPerMillionUsd: '$0.10', outputPerMillionUsd: '$0.30' },
   },
   {
     value: 'qwen/qwen3-coder',
     label: 'Qwen3 Coder',
     description: 'OpenRouter',
+    contextWindow: 1_048_576,
+    parameterLabel: '480B total / 35B active',
+    pricing: { inputPerMillionUsd: '$0.22', outputPerMillionUsd: '$1.80' },
   },
   {
-    value: 'meta-llama/llama-3.3-70b-instruct',
-    label: 'Llama 3.3 70B Instruct',
+    value: 'deepseek/deepseek-v4-flash',
+    label: 'DeepSeek V4 Flash',
     description: 'OpenRouter',
+    contextWindow: 1_048_576,
+    parameterLabel: '284B total / 13B active',
+    pricing: { inputPerMillionUsd: '$0.0983', outputPerMillionUsd: '$0.1966' },
   },
 ]
 
@@ -264,15 +278,90 @@ function groupHasAvailableProfile(profiles: ProviderProfile[]): boolean {
   return profiles.some(profile => isProviderAvailable(profile))
 }
 
-function getConfiguredOptionsForProfiles(profiles: ProviderProfile[]): ModelOption[] {
+function getMetadataKey(value: ModelOption['value']): string {
+  return String(value).trim().toLowerCase()
+}
+
+function buildMetadataByValue(options: ModelOption[] | undefined): Map<string, ModelOption> {
+  const metadata = new Map<string, ModelOption>()
+  for (const option of options ?? []) {
+    const key = getMetadataKey(option.value)
+    if (!key) continue
+    metadata.set(key, option)
+  }
+  return metadata
+}
+
+function mergeOptionMetadata(option: ModelOption, metadata?: ModelOption): ModelOption {
+  if (!metadata) {
+    return option
+  }
+  return {
+    ...option,
+    contextWindow: metadata.contextWindow ?? option.contextWindow,
+    parameterCount: metadata.parameterCount ?? option.parameterCount,
+    parameterLabel: metadata.parameterLabel ?? option.parameterLabel,
+    pricing: metadata.pricing ?? option.pricing,
+  }
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) {
+    return `${Number((value / 1_000_000).toFixed(1))}M`
+  }
+  if (value >= 1_000) {
+    return `${Number((value / 1_000).toFixed(1))}K`
+  }
+  return value.toLocaleString()
+}
+
+function getParameterDisplay(option: ModelOption): string {
+  if (option.parameterLabel?.trim()) {
+    return option.parameterLabel.trim()
+  }
+  if (option.parameterCount) {
+    return formatTokenCount(option.parameterCount)
+  }
+  return 'not published'
+}
+
+function getContextDisplay(option: ModelOption): string {
+  return option.contextWindow ? formatTokenCount(option.contextWindow) : 'not published'
+}
+
+function getPriceDisplay(option: ModelOption): string {
+  const input = option.pricing?.inputPerMillionUsd
+  const output = option.pricing?.outputPerMillionUsd
+  return `in ${input ?? '?'} / out ${output ?? '?'} per 1M`
+}
+
+function withVisibleModelMetadata(option: ModelOption): ModelOption {
+  const metadata = `Params: ${getParameterDisplay(option)} · Context: ${getContextDisplay(option)} · Price: ${getPriceDisplay(option)}`
+  const baseDescription = option.description.trim()
+  return {
+    ...option,
+    description: baseDescription ? `${baseDescription} · ${metadata}` : metadata,
+  }
+}
+
+function getConfiguredOptionsForProfiles(
+  profiles: ProviderProfile[],
+  modelOptionsByProfileId?: Record<string, ModelOption[]>,
+): ModelOption[] {
   const configured: ModelOption[] = []
   for (const profile of profiles) {
+    const metadataByValue = buildMetadataByValue(modelOptionsByProfileId?.[profile.id])
     for (const model of parseModelList(profile.model ?? '')) {
-      configured.push({
-        value: model,
-        label: model,
-        description: `Provider: ${profile.name}`,
-      })
+      configured.push(
+        mergeOptionMetadata(
+          {
+            value: model,
+            label: model,
+            description: `Provider: ${profile.name}`,
+          },
+          metadataByValue.get(model.trim().toLowerCase()),
+        ),
+      )
     }
   }
   return configured
@@ -282,17 +371,25 @@ function getStableGroupModelOptions(
   group: ProviderGroup,
   profiles: ProviderProfile[],
   _firstPartyOptions: ModelOption[],
+  modelOptionsByProfileId?: Record<string, ModelOption[]>,
 ): ModelOption[] {
-  const configured = getConfiguredOptionsForProfiles(profiles)
+  const configured = getConfiguredOptionsForProfiles(profiles, modelOptionsByProfileId)
+  const metadataByValue = buildMetadataByValue(
+    profiles.flatMap(profile => modelOptionsByProfileId?.[profile.id] ?? []),
+  )
+  const mergeGroupMetadata = (options: ModelOption[]): ModelOption[] =>
+    options.map(option =>
+      mergeOptionMetadata(option, metadataByValue.get(getMetadataKey(option.value))),
+    )
   switch (group) {
     case 'anthropic':
-      return [...ANTHROPIC_PICKER_MODELS, ...configured]
+      return mergeGroupMetadata([...ANTHROPIC_PICKER_MODELS, ...configured])
     case 'openai':
-      return [...OPENAI_PICKER_MODELS, ...configured]
+      return mergeGroupMetadata([...OPENAI_PICKER_MODELS, ...configured])
     case 'openrouter':
-      return [...OPENROUTER_PICKER_MODELS, ...configured]
+      return mergeGroupMetadata([...OPENROUTER_PICKER_MODELS, ...configured])
     case 'local':
-      return [...LOCAL_PICKER_MODELS, ...configured]
+      return mergeGroupMetadata([...LOCAL_PICKER_MODELS, ...configured])
     case 'other':
       return configured
   }
@@ -309,6 +406,7 @@ function getStableGroupModelOptions(
 export function getGroupedProviderModelOptions(input: {
   firstPartyOptions: ModelOption[]
   profiles: ProviderProfile[]
+  modelOptionsByProfileId?: Record<string, ModelOption[]>
 }): TaggedModelOption[] {
   // Build a map from group → tagged options in insertion order
   const groups = new Map<ProviderGroup, TaggedModelOption[]>()
@@ -331,6 +429,7 @@ export function getGroupedProviderModelOptions(input: {
       group,
       groupProfiles,
       input.firstPartyOptions,
+      input.modelOptionsByProfileId,
     )) {
       const normalized = String(option.value).trim().toLowerCase()
       if (!normalized || groupSeen.has(normalized) || globalSeen.has(normalized)) {
@@ -341,7 +440,7 @@ export function getGroupedProviderModelOptions(input: {
       addModelOption(
         groups.get(group)!,
         new Set<string>(),
-        option,
+        withVisibleModelMetadata(option),
         providerId,
         providerName,
         available,
@@ -351,11 +450,11 @@ export function getGroupedProviderModelOptions(input: {
 
   const otherProfiles = getProfilesForGroup(input.profiles, 'other')
   for (const profile of otherProfiles) {
-    for (const option of getConfiguredOptionsForProfiles([profile])) {
+    for (const option of getConfiguredOptionsForProfiles([profile], input.modelOptionsByProfileId)) {
       addModelOption(
         groups.get('other')!,
         globalSeen,
-        option,
+        withVisibleModelMetadata(option),
         profile.id,
         profile.name,
         isProviderAvailable(profile),

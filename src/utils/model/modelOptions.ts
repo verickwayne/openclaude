@@ -51,6 +51,13 @@ export type ModelOption = {
   label: string
   description: string
   descriptionForModel?: string
+  contextWindow?: number
+  parameterCount?: number
+  parameterLabel?: string
+  pricing?: {
+    inputPerMillionUsd?: string
+    outputPerMillionUsd?: string
+  }
 }
 
 export function getScopedAdditionalModelOptions(activeScope: string | null = null): ModelOption[] {

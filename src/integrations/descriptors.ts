@@ -82,6 +82,8 @@ export interface ModelCatalogEntry {
   modelDescriptorId?: string
   capabilities?: CapabilityFlags
   contextWindow?: number
+  parameterCount?: number
+  parameterLabel?: string
   maxOutputTokens?: number
   pricing?: {
     inputPerMillionUsd?: string

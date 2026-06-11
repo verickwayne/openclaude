@@ -198,10 +198,69 @@ describe('getGroupedProviderModelOptions', () => {
     expect(opts.some(o => o.value === 'haiku')).toBe(true)
     expect(opts.some(o => o.value === 'claude-fable-5')).toBe(true)
     expect(opts.some(o => o.value === 'gpt-5.5-mini')).toBe(true)
-    expect(opts.some(o => o.value === 'deepseek/deepseek-chat-v3-0324')).toBe(true)
+    expect(opts.some(o => o.value === 'minimax/minimax-m3')).toBe(true)
+    expect(opts.some(o => o.value === 'moonshotai/kimi-k2-thinking')).toBe(true)
+    expect(opts.some(o => o.value === 'meta-llama/llama-4-scout')).toBe(true)
+    expect(opts.some(o => o.value === 'qwen/qwen3-coder')).toBe(true)
+    expect(opts.some(o => o.value === 'deepseek/deepseek-v4-flash')).toBe(true)
     expect(opts.find(o => o.value === 'claude-opus-4-8')?.label).toStartWith('● ')
     expect(opts.find(o => o.value === 'gpt-5.5-mini')?.label).toStartWith('● ')
-    expect(opts.find(o => o.value === 'deepseek/deepseek-chat-v3-0324')?.label).toStartWith('● ')
+    expect(opts.find(o => o.value === 'deepseek/deepseek-v4-flash')?.label).toStartWith('● ')
+    expect(opts.find(o => o.value === 'minimax/minimax-m3')?.description).toContain(
+      'Params:',
+    )
+    expect(opts.find(o => o.value === 'minimax/minimax-m3')?.description).toContain(
+      'Context: 1M',
+    )
+    expect(opts.find(o => o.value === 'minimax/minimax-m3')?.description).toContain(
+      'Price: in $0.30 / out $1.20 per 1M',
+    )
+  })
+
+  test('uses cached discovery metadata on visible stable and configured OpenRouter rows', () => {
+    const opts = getGroupedProviderModelOptions({
+      firstPartyOptions: [],
+      profiles: [
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          provider: 'openrouter',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          model: 'moonshotai/kimi-k2-thinking, vendor/custom-model',
+          apiKey: 'test-key',
+        },
+      ] as any[],
+      modelOptionsByProfileId: {
+        openrouter: [
+          {
+            value: 'moonshotai/kimi-k2-thinking',
+            label: 'Kimi K2 Thinking',
+            description: 'Discovered',
+            contextWindow: 262_144,
+            parameterLabel: '1T total / 32B active',
+            pricing: { inputPerMillionUsd: '$0.55', outputPerMillionUsd: '$2.20' },
+          },
+          {
+            value: 'vendor/custom-model',
+            label: 'Custom Model',
+            description: 'Discovered',
+            contextWindow: 128_000,
+            parameterLabel: '70B',
+            pricing: { inputPerMillionUsd: '$0.10', outputPerMillionUsd: '$0.40' },
+          },
+        ],
+      },
+    })
+
+    const kimi = opts.find(o => o.value === 'moonshotai/kimi-k2-thinking')
+    expect(kimi?.description).toContain('Params: 1T total / 32B active')
+    expect(kimi?.description).toContain('Context: 262.1K')
+    expect(kimi?.description).toContain('Price: in $0.55 / out $2.20 per 1M')
+
+    const custom = opts.find(o => o.value === 'vendor/custom-model')
+    expect(custom?.description).toContain('Params: 70B')
+    expect(custom?.description).toContain('Context: 128K')
+    expect(custom?.description).toContain('Price: in $0.10 / out $0.40 per 1M')
   })
 
   test('appends Add models action', () => {
@@ -251,7 +310,8 @@ describe('getGroupedProviderModelOptions', () => {
       makeGroupHeaderValue('local'),
     ])
     expect(opts.find(o => o.value === 'gpt-5.5')?.label).toStartWith('○ ')
-    expect(opts.find(o => o.value === 'openai/gpt-5-mini')?.label).toStartWith('○ ')
+    expect(opts.find(o => o.value === 'minimax/minimax-m3')?.label).toStartWith('○ ')
+    expect(opts.some(o => o.value === 'openai/gpt-5-mini')).toBe(false)
     expect(opts.find(o => o.value === 'llama3.2:latest')?.label).toStartWith('○ ')
   })
 

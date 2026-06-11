@@ -109,7 +109,13 @@ export function buildMultiProviderOptionsOverride(input: {
   firstPartyOptions: ModelOption[]
   profiles: ProviderProfile[]
 }): ModelOption[] | null {
-  return getGroupedProviderModelOptions(input)
+  const modelOptionsByProfileId = Object.fromEntries(
+    input.profiles.map(profile => [profile.id, getProfileModelOptions(profile)]),
+  )
+  return getGroupedProviderModelOptions({
+    ...input,
+    modelOptionsByProfileId,
+  })
 }
 
 function renderModelLabel(model: string | null): string {
