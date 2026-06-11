@@ -210,9 +210,9 @@ export function resolveClaudeConfigHomeDir(options?: {
   }
 
   const homeDir = options?.homeDir ?? homedir()
-  const openClaudeDir = join(homeDir, '.openclaude')
+  const limitlessDir = join(homeDir, '.limitless')
 
-  return openClaudeDir.normalize('NFC')
+  return limitlessDir.normalize('NFC')
 }
 
 let claudeConfigHomeDirOverride: string | undefined
@@ -233,16 +233,34 @@ export const getClaudeConfigHomeDir = memoize(
 
     const configDirEnv = process.env.CLAUDE_CONFIG_DIR
     const homeDir = homedir()
+
+    // Run .claude → .openclaude migration (non-destructive copy-only).
+    // The .openclaude → .limitless migration is wired in Task 1.2.
     const migrationSucceeded = migrateLegacyClaudeConfigHome({
       configDirEnv,
       homeDir,
     })
+
+    const limitlessDir = join(homeDir, '.limitless')
     const openClaudeDir = join(homeDir, '.openclaude')
     const legacyClaudeDir = join(homeDir, '.claude')
 
+    // Tier 3 (not-yet-migrated): fall back to ~/.openclaude when it exists
+    //   but ~/.limitless does not.
+    if (
+      !configDirEnv &&
+      !pathIsDirectory(limitlessDir) &&
+      pathIsDirectory(openClaudeDir)
+    ) {
+      return openClaudeDir.normalize('NFC')
+    }
+
+    // Tier 4 (original legacy): ~/.claude when neither new dir exists and the
+    //   .claude→.openclaude migration failed.
     if (
       !configDirEnv &&
       !migrationSucceeded &&
+      !pathIsDirectory(limitlessDir) &&
       !pathIsDirectory(openClaudeDir) &&
       pathExists(legacyClaudeDir)
     ) {
