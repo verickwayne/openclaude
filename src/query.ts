@@ -83,6 +83,7 @@ import type {
   TombstoneMessage,
 } from './types/message.js'
 import { logError } from './utils/log.js'
+import { errorMessage } from './utils/errors.js'
 import {
   PROMPT_TOO_LONG_ERROR_MESSAGE,
   isPromptTooLongMessage,
@@ -166,6 +167,10 @@ import {
 } from './bootstrap/state.js'
 import { createBudgetTracker, checkTokenBudget } from './query/tokenBudget.js'
 import { count } from './utils/array.js'
+import {
+  buildRepoMap,
+  getLastRealUserText,
+} from './services/contextCompiler/index.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const snipModule = feature('HISTORY_SNIP')
   ? (require('./services/compact/snipCompact.js') as typeof import('./services/compact/snipCompact.js'))
@@ -846,6 +851,29 @@ async function* queryLoop(
       }
     }
     queryCheckpoint('query_tool_history_compression_end')
+
+    if (readBrandedEnv('REPO_MAP') === '1') {
+      queryCheckpoint('query_repo_map_start')
+      const repoMap = await buildRepoMap({
+        cwd: getOriginalCwd(),
+        taskText: getLastRealUserText(messagesForQuery),
+        maxTokens: parseInt(readBrandedEnv('REPO_MAP_TOKENS') ?? '1500', 10),
+      }).catch(error => {
+        logForDebugging(`repo map build failed: ${errorMessage(error)}`)
+        return ''
+      })
+      if (repoMap.length > 0) {
+        messagesForQuery = [
+          ...messagesForQuery,
+          createUserMessage({ content: repoMap, isMeta: true }),
+        ]
+        toolUseContext = {
+          ...toolUseContext,
+          messages: messagesForQuery,
+        }
+      }
+      queryCheckpoint('query_repo_map_end')
+    }
 
     // Create fetch wrapper once per query session to avoid memory retention.
     // Each call to createDumpPromptsFetch creates a closure that captures the request body.

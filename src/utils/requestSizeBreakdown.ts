@@ -31,6 +31,7 @@ export type RequestSizeReport = {
   estimatedBytes: number
   contributors: RequestSizeContributor[]
   topContributors: RequestSizeContributor[]
+  policyHints: string[]
 }
 
 function estimateBytes(tokens: number): number {
@@ -343,7 +344,55 @@ export function createRequestSizeReport(data: ContextData): RequestSizeReport {
     estimatedBytes: estimateBytes(estimatedTokens),
     contributors: sortedContributors,
     topContributors: sortedContributors.slice(0, 10),
+    policyHints: createPolicyHints(sortedContributors, estimatedTokens),
   }
+}
+
+function createPolicyHints(
+  contributors: RequestSizeContributor[],
+  estimatedTokens: number,
+): string[] {
+  const hints: string[] = []
+  const minSignificantTokens = Math.max(2_000, Math.round(estimatedTokens * 0.08))
+  const byKind = new Map<ContributorKind, RequestSizeContributor>()
+  for (const contributor of contributors) {
+    const existing = byKind.get(contributor.kind)
+    if (!existing || contributor.tokens > existing.tokens) {
+      byKind.set(contributor.kind, contributor)
+    }
+  }
+
+  const toolResults = byKind.get('tool_results')
+  if (toolResults && toolResults.tokens >= minSignificantTokens) {
+    hints.push(
+      'Tool results dominate the payload: keep recent outputs, compress old outputs, and prefer retrievable result handles for large observations.',
+    )
+  }
+
+  const toolSchemas =
+    (byKind.get('tool_schemas')?.tokens ?? 0) +
+    (byKind.get('mcp_tool_schemas')?.tokens ?? 0)
+  if (toolSchemas >= minSignificantTokens) {
+    hints.push(
+      'Tool schemas are large: keep schema ordering stable for cache hits, defer low-value MCP tools, and mask tool choice instead of changing the tool list mid-loop.',
+    )
+  }
+
+  const memory = byKind.get('memory')
+  if (memory && memory.tokens >= minSignificantTokens) {
+    hints.push(
+      'Memory files are significant: move durable facts into Mnemo and inject a budgeted, cited recall block instead of whole memory files.',
+    )
+  }
+
+  const conversation = byKind.get('conversation_history')
+  if (conversation && conversation.tokens >= minSignificantTokens) {
+    hints.push(
+      'Conversation history is significant: summarize old decisions with provenance and keep the live prompt focused on the current working set.',
+    )
+  }
+
+  return hints.slice(0, 4)
 }
 
 export function formatRequestSizeReport(report: RequestSizeReport): string {
@@ -382,6 +431,14 @@ export function formatRequestSizeReport(report: RequestSizeReport): string {
         `${formatFileSize(contributor.bytes)} |`,
       ].join(' | '),
     )
+  }
+
+  if (report.policyHints.length > 0) {
+    lines.push('')
+    lines.push('Context policy hints:')
+    for (const hint of report.policyHints) {
+      lines.push(`- ${hint}`)
+    }
   }
 
   return lines.join('\n')

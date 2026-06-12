@@ -53,6 +53,7 @@ describe('request size breakdown', () => {
 
     expect(report.topContributors[0]?.label).toBe('Tool results')
     expect(report.topContributors[0]?.tokens).toBe(16_000)
+    expect(report.policyHints.join('\n')).toContain('Tool results dominate')
   })
 
   test('uses rough message contributors when the Messages category is unavailable', () => {
@@ -77,6 +78,27 @@ describe('request size breakdown', () => {
     expect(report.topContributors[0]).toEqual(
       expect.objectContaining({ label: 'Tool results', tokens: 16_000 }),
     )
+  })
+
+  test('formatted report includes context policy hints', () => {
+    const report = createRequestSizeReport(
+      makeContextData({
+        categories: [{ name: 'Messages', tokens: 20_000, color: 'permission' }],
+        messageBreakdown: {
+          toolCallTokens: 500,
+          toolResultTokens: 16_000,
+          attachmentTokens: 0,
+          assistantMessageTokens: 1_500,
+          userMessageTokens: 2_000,
+          toolCallsByType: [
+            { name: 'Bash', callTokens: 500, resultTokens: 16_000 },
+          ],
+          attachmentsByType: [],
+        },
+      }),
+    )
+
+    expect(formatRequestSizeReport(report)).toContain('Context policy hints:')
   })
 
   test('message contributor estimates are reconciled to the Messages category total', () => {

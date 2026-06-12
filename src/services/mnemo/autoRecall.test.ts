@@ -3,6 +3,8 @@ import {
   buildMnemoHandoffMessage,
   buildRecallQuery,
   DEFAULT_AUTO_RECALL_LIMIT,
+  DEFAULT_AUTO_RECALL_TOKEN_BUDGET,
+  getMnemoAutoRecallTokenBudget,
   isMnemoAutoRecallEnabled,
   performAutoRecall,
   type MnemoContext,
@@ -28,6 +30,32 @@ describe('isMnemoAutoRecallEnabled', () => {
     expect(
       isMnemoAutoRecallEnabled({ LIMITLESS_MNEMO_AUTO_RECALL: 'yes' }),
     ).toBe(false)
+  })
+})
+
+describe('getMnemoAutoRecallTokenBudget', () => {
+  it('uses the default budget when unset or invalid', () => {
+    expect(getMnemoAutoRecallTokenBudget({})).toBe(
+      DEFAULT_AUTO_RECALL_TOKEN_BUDGET,
+    )
+    expect(
+      getMnemoAutoRecallTokenBudget({
+        LIMITLESS_MNEMO_AUTO_RECALL_TOKENS: 'wat',
+      }),
+    ).toBe(DEFAULT_AUTO_RECALL_TOKEN_BUDGET)
+  })
+
+  it('honors a positive budget with an upper clamp', () => {
+    expect(
+      getMnemoAutoRecallTokenBudget({
+        LIMITLESS_MNEMO_AUTO_RECALL_TOKENS: '900',
+      }),
+    ).toBe(900)
+    expect(
+      getMnemoAutoRecallTokenBudget({
+        LIMITLESS_MNEMO_AUTO_RECALL_TOKENS: '50000',
+      }),
+    ).toBe(8_000)
   })
 })
 
@@ -227,5 +255,26 @@ describe('buildMnemoHandoffMessage', () => {
     })
     expect(msg).toContain('mnemo_recall')
     expect(msg).toContain('mnemo_invalidate')
+  })
+
+  it('respects the provided token budget', () => {
+    const msg = buildMnemoHandoffMessage(
+      {
+        query: 'q',
+        results: [
+          {
+            uuid: 'u',
+            content: 'x '.repeat(2_000),
+            source: 's',
+            importance: 0.5,
+            recalledAtTurn: 1,
+          },
+        ],
+        retrievedAtTimestamp: 0,
+      },
+      80,
+    )
+    expect(msg).toContain('truncated to 80 token budget')
+    expect(msg.length).toBeLessThan(1_000)
   })
 })

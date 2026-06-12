@@ -1,3 +1,5 @@
+import { clampToTokenBudget } from '../contextCompiler/text.js'
+
 // Mnemo auto-recall at loop initialization.
 //
 // Per the 2026-05-14 conversation slice (tenet/docs/harness-engineering-
@@ -64,6 +66,19 @@ export function isMnemoAutoRecallEnabled(
  * prompt manageable — the model can mnemo_recall for more on demand.
  */
 export const DEFAULT_AUTO_RECALL_LIMIT = 5
+export const DEFAULT_AUTO_RECALL_TOKEN_BUDGET = 1_200
+
+export function getMnemoAutoRecallTokenBudget(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = env.LIMITLESS_MNEMO_AUTO_RECALL_TOKENS
+  if (!raw) return DEFAULT_AUTO_RECALL_TOKEN_BUDGET
+  const parsed = parseInt(raw, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_AUTO_RECALL_TOKEN_BUDGET
+  }
+  return Math.min(parsed, 8_000)
+}
 
 /**
  * Extract a recall query from the user's first prompt. v1 is the
@@ -122,7 +137,10 @@ export async function performAutoRecall(args: {
  * top-K memories with their importance and content, plus a reminder
  * to mnemo_recall for related entries.
  */
-export function buildMnemoHandoffMessage(ctx: MnemoContext): string {
+export function buildMnemoHandoffMessage(
+  ctx: MnemoContext,
+  maxTokens = getMnemoAutoRecallTokenBudget(),
+): string {
   if (ctx.results.length === 0) return ''
   const lines = [
     '<mnemo-auto-recall>',
@@ -148,5 +166,5 @@ export function buildMnemoHandoffMessage(ctx: MnemoContext): string {
     'These are prior decisions, findings, and corrections. Treat them as the operator\'s working notes — they will not always be perfectly current. If you find a contradiction, mnemo_recall a fresher query OR mnemo_invalidate the stale entry.',
   )
   lines.push('</mnemo-auto-recall>')
-  return lines.join('\n')
+  return clampToTokenBudget(lines.join('\n'), maxTokens)
 }
