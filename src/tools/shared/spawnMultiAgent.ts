@@ -4,7 +4,6 @@
  */
 
 import {
-  getChromeFlagOverride,
   getFlagSettingsPath,
   getInlinePlugins,
   getMainLoopModelOverride,
@@ -315,14 +314,6 @@ function buildInheritedCliFlags(options?: {
   const inlinePlugins = getInlinePlugins()
   for (const pluginDir of inlinePlugins) {
     flags.push(`--plugin-dir ${quote([pluginDir])}`)
-  }
-
-  // Propagate --chrome / --no-chrome if explicitly set on the CLI
-  const chromeFlagOverride = getChromeFlagOverride()
-  if (chromeFlagOverride === true) {
-    flags.push('--chrome')
-  } else if (chromeFlagOverride === false) {
-    flags.push('--no-chrome')
   }
 
   return flags.join(' ')

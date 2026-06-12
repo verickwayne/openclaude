@@ -11,7 +11,6 @@ import color from './commands/color/index.js'
 import commit from './commands/commit.js'
 import commitMessage from './commands/commit-message/index.js'
 import copy from './commands/copy/index.js'
-import desktop from './commands/desktop/index.js'
 import commitPushPr from './commands/commit-push-pr.js'
 import compact from './commands/compact/index.js'
 import config from './commands/config/index.js'
@@ -33,12 +32,11 @@ import lsp from './commands/lsp/index.js'
 import login from './commands/login/index.js'
 import logout from './commands/logout/index.js'
 // v1: /install-github-app removed (injected anthropics/claude-code-action workflows)
-import installSlackApp from './commands/install-slack-app/index.js'
+// v1: /install-slack-app removed (installed the Anthropic-hosted Claude Slack app)
 import breakCache from './commands/break-cache/index.js'
 import cacheProbe from './commands/cache-probe/index.js'
 import cacheStats from './commands/cacheStats/index.js'
 import mcp from './commands/mcp/index.js'
-import mobile from './commands/mobile/index.js'
 import onboarding from './commands/onboarding/index.js'
 import pr_comments from './commands/pr_comments/index.js'
 import releaseNotes from './commands/release-notes/index.js'
@@ -101,11 +99,8 @@ const workflowsCmd = feature('WORKFLOW_SCRIPTS')
       require('./commands/workflows/index.js') as typeof import('./commands/workflows/index.js')
     ).default
   : null
-const webCmd = feature('CCR_REMOTE_SETUP')
-  ? (
-      require('./commands/remote-setup/index.js') as typeof import('./commands/remote-setup/index.js')
-    ).default
-  : null
+// v1: /web-setup (remote-setup) removed — it uploaded local GitHub tokens to
+// Anthropic's CCR backend and opened claude.ai/code; Claude-web-specific.
 const clearSkillIndexCache = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? (
       require('./services/skillSearch/localSearch.js') as typeof import('./services/skillSearch/localSearch.js')
@@ -163,7 +158,6 @@ import {
 import antTrace from './commands/ant-trace/index.js'
 import perfIssue from './commands/perf-issue/index.js'
 import sandboxToggle from './commands/sandbox-toggle/index.js'
-import chrome from './commands/chrome/index.js'
 import stickers from './commands/stickers/index.js'
 import advisor from './commands/advisor.js'
 import { logError } from './utils/log.js'
@@ -287,14 +281,12 @@ const COMMANDS = memoize((): Command[] => [
   btw,
   cacheProbe,
   cacheStats,
-  chrome,
   clear,
   color,
   compact,
   commitMessage,
   config,
   copy,
-  desktop,
   context,
   contextNonInteractive,
   cost,
@@ -313,10 +305,9 @@ const COMMANDS = memoize((): Command[] => [
   knowledge,
   lsp,
   // v1: installGitHubApp command removed (no anthropics/claude-code-action injection)
-  installSlackApp,
+  // v1: installSlackApp command removed (Anthropic-hosted Claude Slack app)
   mcp,
   memory,
-  mobile,
   model,
   limitlessQwen30b,
   limitlessDolphin,
@@ -357,7 +348,6 @@ const COMMANDS = memoize((): Command[] => [
   usageReport,
   vim,
   wiki,
-  ...(webCmd ? [webCmd] : []),
   ...(forkCmd ? [forkCmd] : []),
   ...(buddy ? [buddy] : []),
   ...(proactive ? [proactive] : []),
@@ -681,7 +671,6 @@ export const REMOTE_SAFE_COMMANDS: Set<Command> = new Set([
   keybindings, // Keybinding management
   statusline, // Status line toggle
   stickers, // Stickers
-  mobile, // Mobile QR code
 ])
 
 /**
