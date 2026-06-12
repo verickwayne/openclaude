@@ -16,7 +16,8 @@ reports/
 GEMINI.md
 CLAUDE.md
 package-lock.json
-/.claude
+/.claude/*
+!/.claude/rules/
 coverage/
 agent.log
 plan/
