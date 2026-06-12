@@ -83,6 +83,12 @@ import {
 } from '../../utils/sessionStorage.js'
 import { sleep } from '../../utils/sleep.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
+import {
+  getActiveProviderProfile,
+  getProviderProfiles,
+} from '../../utils/providerProfiles.js'
+import { loadProfileFile } from '../../utils/providerProfile.js'
+import { parseModelList } from '../../utils/providerModels.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
@@ -104,6 +110,10 @@ import {
   getMaxOutputTokensForModel,
   queryModelWithStreaming,
 } from '../api/claude.js'
+import {
+  resolvedProviderFromProfile,
+  type ResolvedProvider,
+} from '../api/resolvedProvider.js'
 import {
   getPromptTooLongTokenGap,
   PROMPT_TOO_LONG_ERROR_MESSAGE,
@@ -132,6 +142,8 @@ export const POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000
 export const POST_COMPACT_MAX_TOKENS_PER_SKILL = 5_000
 export const POST_COMPACT_SKILLS_TOKEN_BUDGET = 25_000
 const MAX_COMPACT_STREAMING_RETRIES = 2
+const HIERARCHICAL_COMPACT_THRESHOLD_TOKENS = 360_000
+const HIERARCHICAL_COMPACT_CHUNK_TOKENS = 240_000
 
 /**
  * Strip image blocks from user messages before sending for compaction.
@@ -403,6 +415,189 @@ export interface CompactionResult {
   compactionUsage?: ReturnType<typeof getTokenUsage>
 }
 
+function emitCompactProgress(
+  context: ToolUseContext,
+  percent: number,
+  label: string,
+): void {
+  context.onCompactProgress?.({
+    type: 'compact_progress',
+    percent,
+    label,
+  })
+}
+
+function getSummaryTextOrThrow(
+  response: AssistantMessage,
+  preCompactTokenCount: number,
+  promptCacheSharingEnabled: boolean,
+): string {
+  const summary = getAssistantMessageText(response)
+  if (!summary) {
+    logForDebugging(
+      `Compact failed: no summary text in response. Response: ${jsonStringify(response)}`,
+      { level: 'error' },
+    )
+    logEvent('tengu_compact_failed', {
+      reason:
+        'no_summary' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+      preCompactTokenCount,
+      promptCacheSharingEnabled,
+    })
+    throw new Error(
+      `Failed to generate conversation summary - response did not contain valid text content`,
+    )
+  }
+  if (startsWithApiErrorPrefix(summary)) {
+    logEvent('tengu_compact_failed', {
+      reason:
+        'api_error' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+      preCompactTokenCount,
+      promptCacheSharingEnabled,
+    })
+    throw new Error(summary)
+  }
+  return summary
+}
+
+function splitMessagesForHierarchicalCompact(messages: Message[]): Message[][] {
+  const chunks: Message[][] = []
+  let current: Message[] = []
+  let currentTokens = 0
+
+  for (const group of groupMessagesByApiRound(messages)) {
+    const groupTokens = roughTokenCountEstimationForMessages(group)
+    if (
+      current.length > 0 &&
+      currentTokens + groupTokens > HIERARCHICAL_COMPACT_CHUNK_TOKENS
+    ) {
+      chunks.push(current)
+      current = []
+      currentTokens = 0
+    }
+    current.push(...group)
+    currentTokens += groupTokens
+  }
+
+  if (current.length > 0) {
+    chunks.push(current)
+  }
+  return chunks
+}
+
+function createHierarchicalChunkPrompt(
+  basePrompt: string,
+  chunkIndex: number,
+  chunkCount: number,
+): string {
+  return `${basePrompt}
+
+You are summarizing chunk ${chunkIndex + 1} of ${chunkCount} from one continuous conversation. Produce a dense, durable chunk summary that preserves:
+- concrete user requests and decisions
+- files, commands, session IDs, process IDs, and paths
+- implementation status, failures, fixes, and remaining blockers
+- tool results and evidence that future agents would need
+- chronological context needed to stitch this chunk into the full conversation
+
+Do not mention that this is a partial summary except where chronology requires it.`
+}
+
+function createHierarchicalFinalPrompt(basePrompt: string): string {
+  return `${basePrompt}
+
+The preceding messages are ordered summaries of chunks from one very large conversation. Synthesize them into one robust resume summary. Preserve specific IDs, paths, decisions, failures, fixes, commands, and unresolved work. The result must be thorough enough for a different harness to resume the work without the original transcript.`
+}
+
+async function streamCompactSummaryRobust({
+  messages,
+  summaryRequest,
+  appState,
+  context,
+  preCompactTokenCount,
+  cacheSafeParams,
+  promptCacheSharingEnabled,
+  basePrompt,
+}: {
+  messages: Message[]
+  summaryRequest: UserMessage
+  appState: Awaited<ReturnType<ToolUseContext['getAppState']>>
+  context: ToolUseContext
+  preCompactTokenCount: number
+  cacheSafeParams: CacheSafeParams
+  promptCacheSharingEnabled: boolean
+  basePrompt: string
+}): Promise<AssistantMessage> {
+  const estimatedTokens = roughTokenCountEstimationForMessages(messages)
+  if (estimatedTokens <= HIERARCHICAL_COMPACT_THRESHOLD_TOKENS) {
+    return streamCompactSummary({
+      messages,
+      summaryRequest,
+      appState,
+      context,
+      preCompactTokenCount,
+      cacheSafeParams,
+    })
+  }
+
+  const chunks = splitMessagesForHierarchicalCompact(messages)
+  logEvent('tengu_compact_hierarchical_start', {
+    preCompactTokenCount,
+    estimatedTokens,
+    chunks: chunks.length,
+  })
+
+  const chunkSummaries: string[] = []
+  for (const [index, chunk] of chunks.entries()) {
+    const startPercent = 25
+    const endPercent = 55
+    const percent = startPercent + Math.floor((index / chunks.length) * (endPercent - startPercent))
+    emitCompactProgress(
+      context,
+      percent,
+      `Summarizing chunk ${index + 1}/${chunks.length}`,
+    )
+    const chunkResponse = await streamCompactSummary({
+      messages: chunk,
+      summaryRequest: createUserMessage({
+        content: createHierarchicalChunkPrompt(basePrompt, index, chunks.length),
+      }),
+      appState,
+      context,
+      preCompactTokenCount,
+      cacheSafeParams: {
+        ...cacheSafeParams,
+        forkContextMessages: chunk,
+      },
+    })
+    const chunkSummary = getSummaryTextOrThrow(
+      chunkResponse,
+      preCompactTokenCount,
+      promptCacheSharingEnabled,
+    )
+    chunkSummaries.push(
+      `## Chunk ${index + 1}/${chunks.length}\n\n${chunkSummary}`,
+    )
+  }
+
+  emitCompactProgress(context, 56, 'Synthesizing chunk summaries')
+  const summaryMessages = chunkSummaries.map(summary =>
+    createUserMessage({ content: summary, isMeta: true }),
+  )
+  return streamCompactSummary({
+    messages: summaryMessages,
+    summaryRequest: createUserMessage({
+      content: createHierarchicalFinalPrompt(basePrompt),
+    }),
+    appState,
+    context,
+    preCompactTokenCount,
+    cacheSafeParams: {
+      ...cacheSafeParams,
+      forkContextMessages: summaryMessages,
+    },
+  })
+}
+
 /**
  * Diagnosis context passed from autoCompactIfNeeded into compactConversation.
  * Lets the tengu_compact event disambiguate same-chain loops (H2) from
@@ -474,6 +669,75 @@ export function mergeHookInstructions(
   return `${userInstructions}\n\n${hookInstructions}`
 }
 
+function profileContainsModel(profileModel: string | undefined, model: string): boolean {
+  return parseModelList(profileModel ?? '').includes(model)
+}
+
+function resolveCompactProviderOverride(
+  model: string,
+  context: ToolUseContext,
+): ResolvedProvider | undefined {
+  if (context.options.providerOverride) {
+    return context.options.providerOverride
+  }
+
+  if (
+    process.env.OPENAI_BASE_URL &&
+    (process.env.OPENAI_API_KEY || process.env.OPENAI_AUTH_HEADER_VALUE) &&
+    (!process.env.OPENAI_MODEL || process.env.OPENAI_MODEL === model)
+  ) {
+    return {
+      profileId: 'env-openai-compatible',
+      kind: 'openai-compatible',
+      model,
+      baseURL: process.env.OPENAI_BASE_URL,
+      apiKey: process.env.OPENAI_API_KEY,
+      authHeader: process.env.OPENAI_AUTH_HEADER,
+      authScheme: process.env.OPENAI_AUTH_SCHEME as
+        | 'bearer'
+        | 'raw'
+        | undefined,
+      authHeaderValue: process.env.OPENAI_AUTH_HEADER_VALUE,
+      apiFormat: process.env.OPENAI_API_FORMAT as
+        | 'chat_completions'
+        | 'responses'
+        | undefined,
+    }
+  }
+
+  const persisted = loadProfileFile()
+  if (
+    persisted?.profile === 'openai' &&
+    persisted.env.OPENAI_BASE_URL &&
+    (persisted.env.OPENAI_API_KEY || persisted.env.OPENAI_AUTH_HEADER_VALUE) &&
+    (!persisted.env.OPENAI_MODEL || persisted.env.OPENAI_MODEL === model)
+  ) {
+    return {
+      profileId: 'legacy-openai-compatible',
+      kind: 'openai-compatible',
+      model,
+      baseURL: persisted.env.OPENAI_BASE_URL,
+      apiKey: persisted.env.OPENAI_API_KEY,
+      authHeader: persisted.env.OPENAI_AUTH_HEADER,
+      authScheme: persisted.env.OPENAI_AUTH_SCHEME,
+      authHeaderValue: persisted.env.OPENAI_AUTH_HEADER_VALUE,
+      apiFormat: persisted.env.OPENAI_API_FORMAT,
+    }
+  }
+
+  const activeProfile = getActiveProviderProfile()
+  if (activeProfile && profileContainsModel(activeProfile.model, model)) {
+    return resolvedProviderFromProfile(activeProfile, model)
+  }
+
+  const matchingProfile = getProviderProfiles().find(profile =>
+    profileContainsModel(profile.model, model),
+  )
+  return matchingProfile
+    ? resolvedProviderFromProfile(matchingProfile, model)
+    : undefined
+}
+
 /**
  * Creates a compact version of a conversation by summarizing older messages
  * and preserving recent conversation history.
@@ -496,6 +760,7 @@ export async function compactConversation(
 
     const appState = context.getAppState()
 
+    emitCompactProgress(context, 5, 'Preparing transcript')
     context.onCompactProgress?.({
       type: 'hooks_start',
       hookType: 'pre_compact',
@@ -515,11 +780,13 @@ export async function compactConversation(
       hookResult.newCustomInstructions,
     )
     const userDisplayMessage = hookResult.userDisplayMessage
+    emitCompactProgress(context, 15, 'PreCompact hooks complete')
 
     // Show requesting mode with up arrow and custom message
     context.setStreamMode?.('requesting')
     context.setResponseLength?.(() => 0)
     context.onCompactProgress?.({ type: 'compact_start' })
+    emitCompactProgress(context, 25, 'Generating summary')
 
     // 3P default: true — forked-agent path reuses main conversation's prompt cache.
     // Experiment (Jan 2026) confirmed: false path is 98% cache miss, costs ~0.76% of
@@ -541,13 +808,15 @@ export async function compactConversation(
     let summary: string | null
     let ptlAttempts = 0
     for (;;) {
-      summaryResponse = await streamCompactSummary({
+      summaryResponse = await streamCompactSummaryRobust({
         messages: messagesToSummarize,
         summaryRequest,
         appState,
         context,
         preCompactTokenCount,
         cacheSafeParams: retryCacheSafeParams,
+        promptCacheSharingEnabled,
+        basePrompt: compactPrompt,
       })
       summary = getAssistantMessageText(summaryResponse)
       if (!summary?.startsWith(PROMPT_TOO_LONG_ERROR_MESSAGE)) break
@@ -575,6 +844,7 @@ export async function compactConversation(
         remainingMessages: truncated.length,
       })
       messagesToSummarize = truncated
+      emitCompactProgress(context, 30, 'Retrying with a smaller transcript')
       // The forked-agent path reads from cacheSafeParams.forkContextMessages,
       // not the messages param — thread the truncated set through both paths.
       retryCacheSafeParams = {
@@ -583,31 +853,14 @@ export async function compactConversation(
       }
     }
 
-    if (!summary) {
-      logForDebugging(
-        `Compact failed: no summary text in response. Response: ${jsonStringify(summaryResponse)}`,
-        { level: 'error' },
-      )
-      logEvent('tengu_compact_failed', {
-        reason:
-          'no_summary' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        preCompactTokenCount,
-        promptCacheSharingEnabled,
-      })
-      throw new Error(
-        `Failed to generate conversation summary - response did not contain valid text content`,
-      )
-    } else if (startsWithApiErrorPrefix(summary)) {
-      logEvent('tengu_compact_failed', {
-        reason:
-          'api_error' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-        preCompactTokenCount,
-        promptCacheSharingEnabled,
-      })
-      throw new Error(summary)
-    }
+    summary = getSummaryTextOrThrow(
+      summaryResponse,
+      preCompactTokenCount,
+      promptCacheSharingEnabled,
+    )
 
     // Store the current file state before clearing
+    emitCompactProgress(context, 60, 'Rebuilding compacted context')
     const preCompactReadFileState = cacheToObject(context.readFileState)
 
     // Clear the cache
@@ -677,6 +930,7 @@ export async function compactConversation(
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
 
+    emitCompactProgress(context, 75, 'Running SessionStart hooks')
     context.onCompactProgress?.({
       type: 'hooks_start',
       hookType: 'session_start',
@@ -685,6 +939,7 @@ export async function compactConversation(
     const hookMessages = await processSessionStartHooks('compact', {
       model: context.options.mainLoopModel,
     })
+    emitCompactProgress(context, 85, 'Finalizing compacted transcript')
 
     // Create the compact boundary marker and summary messages before the
     // event so we can compute the true resulting-context size.
@@ -809,6 +1064,7 @@ export async function compactConversation(
       void sessionTranscriptModule?.writeSessionTranscriptSegment(messages)
     }
 
+    emitCompactProgress(context, 92, 'Running PostCompact hooks')
     context.onCompactProgress?.({
       type: 'hooks_start',
       hookType: 'post_compact',
@@ -827,6 +1083,7 @@ export async function compactConversation(
     ]
       .filter(Boolean)
       .join('\n')
+    emitCompactProgress(context, 100, 'Compaction complete')
 
     return {
       boundaryMarker,
@@ -1382,6 +1639,12 @@ async function streamCompactSummary({
           )
         : [FileReadTool]
 
+      const compactModel = context.options.mainLoopModel
+      const activeProviderOverride = resolveCompactProviderOverride(
+        compactModel,
+        context,
+      )
+
       const streamingGen = queryModelWithStreaming({
         messages: normalizeMessagesForAPI(
           sanitizeMessagesForCompactSummary(
@@ -1405,18 +1668,19 @@ async function streamCompactSummary({
             const appState = context.getAppState()
             return appState.toolPermissionContext
           },
-          model: context.options.mainLoopModel,
+          model: compactModel,
           toolChoice: undefined,
           isNonInteractiveSession: context.options.isNonInteractiveSession,
           hasAppendSystemPrompt: !!context.options.appendSystemPrompt,
           maxOutputTokensOverride: Math.min(
             COMPACT_MAX_OUTPUT_TOKENS,
-            getMaxOutputTokensForModel(context.options.mainLoopModel),
+            getMaxOutputTokensForModel(compactModel),
           ),
           querySource: 'compact',
           agents: context.options.agentDefinitions.activeAgents,
           mcpTools: [],
           effortValue: appState.effortValue,
+          providerOverride: activeProviderOverride,
         },
       })
       const streamIter = streamingGen[Symbol.asyncIterator]()
