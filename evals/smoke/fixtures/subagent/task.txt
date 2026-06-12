@@ -1,0 +1,3 @@
+Task: Count the number of lines in this file
+Expected: 3 lines of content
+Result format: Just a number

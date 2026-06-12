@@ -1,0 +1,13 @@
+{
+  "id": "single-file-edit",
+  "prompt": "Read the file target.ts in the fixture directory. Then edit it to change the greeting to say 'Hi' instead of 'Hello'. Use the Read tool to confirm the current content first, then use Edit to make the change.",
+  "model": "claude-haiku-4-5",
+  "max_turns": 4,
+  "cwd_fixture": "evals/smoke/fixtures/single-file-edit",
+  "ci_subset": false,
+  "assert": {
+    "tools_called": ["Read"],
+    "tools_forbidden": [],
+    "final_contains": null
+  }
+}

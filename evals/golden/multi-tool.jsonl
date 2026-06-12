@@ -1,0 +1,1 @@
+{"tools_called":["Read","Read","Bash"],"final_text":"Created `src/version.ts` exporting:\n\n```ts\nimport { formatVersion } from './utils'\n\nexport const FORMATTED_VERSION = formatVersion('1.0.0')\n```"}

@@ -1,0 +1,4 @@
+Project notes
+=============
+The magic constant is defined in math.ts.
+It is used for scaling calculations.

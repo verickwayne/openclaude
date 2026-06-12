@@ -1,0 +1,13 @@
+{
+  "id": "multi-tool",
+  "prompt": "Read config.json to find the version, then read src/utils.ts to understand the formatVersion function, then create a new file src/version.ts that exports a constant FORMATTED_VERSION using formatVersion with the version from config.json.",
+  "model": "claude-haiku-4-5",
+  "max_turns": 6,
+  "cwd_fixture": "evals/smoke/fixtures/multi-tool",
+  "ci_subset": false,
+  "assert": {
+    "tools_called": ["Read"],
+    "tools_forbidden": [],
+    "final_contains": "1.0.0"
+  }
+}

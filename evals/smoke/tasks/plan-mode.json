@@ -1,0 +1,14 @@
+{
+  "id": "plan-mode",
+  "prompt": "Enter plan mode, then read spec.md and create a brief implementation plan for the user authentication feature described in it. Do not write any code.",
+  "model": "claude-haiku-4-5",
+  "max_turns": 4,
+  "cwd_fixture": "evals/smoke/fixtures/plan-mode",
+  "permission_mode": "plan",
+  "ci_subset": true,
+  "assert": {
+    "tools_called": ["Read"],
+    "tools_forbidden": ["Write", "Edit", "Bash"],
+    "final_contains": "auth"
+  }
+}

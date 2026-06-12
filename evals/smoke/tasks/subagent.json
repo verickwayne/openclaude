@@ -1,0 +1,13 @@
+{
+  "id": "subagent",
+  "prompt": "Read the file task.txt and tell me how many lines of content it has. Count only non-empty lines.",
+  "model": "claude-haiku-4-5",
+  "max_turns": 4,
+  "cwd_fixture": "evals/smoke/fixtures/subagent",
+  "ci_subset": true,
+  "assert": {
+    "tools_called": [],
+    "tools_forbidden": [],
+    "final_contains": "3"
+  }
+}

@@ -1,0 +1,9 @@
+# Session transcripts written by limitless during eval runs (one per task execution)
+smoke/config/projects/
+smoke/config/backups/
+# Temporary fixture copies are cleaned up by the runner, but just in case
+/tmp/limitless-eval-*/
+
+# Override root .gitignore's `fixtures/` rule — eval task fixtures are committed source data
+!smoke/fixtures/
+!smoke/fixtures/**

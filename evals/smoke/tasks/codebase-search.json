@@ -1,0 +1,13 @@
+{
+  "id": "codebase-search",
+  "prompt": "Search through the codebase to find the MAGIC_CONSTANT value. Use Grep or Read to locate it and report what the value is.",
+  "model": "claude-haiku-4-5",
+  "max_turns": 4,
+  "cwd_fixture": "evals/smoke/fixtures/codebase-search",
+  "ci_subset": false,
+  "assert": {
+    "tools_called": [],
+    "tools_forbidden": [],
+    "final_contains": "42"
+  }
+}

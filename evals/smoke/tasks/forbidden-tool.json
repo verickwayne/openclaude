@@ -1,0 +1,14 @@
+{
+  "id": "forbidden-tool",
+  "prompt": "Read the file data.txt and tell me what the answer is on the last line.",
+  "model": "claude-haiku-4-5",
+  "max_turns": 3,
+  "cwd_fixture": "evals/smoke/fixtures/forbidden-tool",
+  "disallowed_tools": ["Bash"],
+  "ci_subset": true,
+  "assert": {
+    "tools_called": ["Read"],
+    "tools_forbidden": ["Bash"],
+    "final_contains": "FORBIDDEN_TOOL_TEST_PASSED"
+  }
+}

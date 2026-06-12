@@ -59,6 +59,16 @@ jobs:
       - name: Provider recommendation tests
         run: npm run test:provider-recommendation
 
+      # Golden-trajectory behavioral regression gate.
+      # Runs only the ci_subset tasks (3 tasks, Haiku, ≤3 turns, ~$0.002/run).
+      # Full 6-task suite: run "bun run eval:smoke:full" locally or nightly.
+      # Requires ANTHROPIC_API_KEY secret. Skip if not set (e.g., forks).
+      - name: Eval smoke (CI subset)
+        if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: bun run eval:smoke:ci
+
   web:
     runs-on: ubuntu-latest
 
