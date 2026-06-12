@@ -108,7 +108,7 @@ function ResumeCommand({
   const [worktreePaths, setWorktreePaths] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [resuming, setResuming] = React.useState(false);
-  const [showAllProjects, setShowAllProjects] = React.useState(false);
+  const [showAllProjects, setShowAllProjects] = React.useState(true);
   // When set, the user picked a foreign (cross-harness) entry and we render the
   // full/summary mode chooser instead of the picker. Seeded from initialForeign
   // when /resume <query> resolves to exactly one cross-harness hit.
@@ -149,7 +149,7 @@ function ResumeCommand({
     async function init() {
       const paths_0 = await getWorktreePaths(getOriginalCwd());
       setWorktreePaths(paths_0);
-      void loadLogs(false, paths_0);
+      void loadLogs(true, paths_0);
     }
     void init();
   }, [loadLogs]);

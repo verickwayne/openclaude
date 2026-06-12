@@ -93,7 +93,7 @@ export function ResumeConversation({
   const [logs, setLogs] = React.useState<LogOption[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [resuming, setResuming] = React.useState(false);
-  const [showAllProjects, setShowAllProjects] = React.useState(false);
+  const [showAllProjects, setShowAllProjects] = React.useState(true);
   const [resumeData, setResumeData] = React.useState<{
     messages: Message[];
     fileHistorySnapshots?: FileHistorySnapshot[];
@@ -126,7 +126,7 @@ export function ResumeConversation({
   }, [logs, filterByPr]);
   const isResumeWithRenameEnabled = isCustomTitleEnabled();
   React.useEffect(() => {
-    loadSameRepoMessageLogsProgressive(worktreePaths).then(result_0 => {
+    loadAllProjectsMessageLogsProgressive().then(result_0 => {
       sessionLogResultRef.current = result_0;
       logCountRef.current = result_0.logs.length;
       setLogs(result_0.logs);
