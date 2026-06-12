@@ -11,6 +11,7 @@ import {
   ProviderFailoverError,
   shouldFailover,
 } from './services/api/providerFailover.js'
+import { compressToolHistory } from './services/api/compressToolHistory.js'
 import {
   buildLiveRegistryInput,
   resolveProviderForClass,
@@ -830,6 +831,20 @@ async function* queryLoop(
     })
 
     queryCheckpoint('query_setup_end')
+
+    queryCheckpoint('query_tool_history_compression_start')
+    const compressedMessagesForQuery = compressToolHistory(
+      messagesForQuery,
+      currentModel,
+    )
+    if (compressedMessagesForQuery !== messagesForQuery) {
+      messagesForQuery = compressedMessagesForQuery
+      toolUseContext = {
+        ...toolUseContext,
+        messages: messagesForQuery,
+      }
+    }
+    queryCheckpoint('query_tool_history_compression_end')
 
     // Create fetch wrapper once per query session to avoid memory retention.
     // Each call to createDumpPromptsFetch creates a closure that captures the request body.

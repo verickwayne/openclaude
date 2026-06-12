@@ -551,6 +551,30 @@ test('blocks already cleared by microCompact are NOT re-compressed', () => {
   expect(getResultText(resultMsgs[0])).toBe('[Old tool result content cleared]')
 })
 
+test('old-tier stubs are idempotent across repeated compression passes', () => {
+  const messages = buildConversation(20, 5_000)
+  const once = compressToolHistory(messages, 'gpt-4o')
+  const twice = compressToolHistory(once, 'gpt-4o')
+  const onceMsgs = getResultMessages(once)
+  const twiceMsgs = getResultMessages(twice)
+
+  expect(getResultText(onceMsgs[0])).toMatch(
+    /^\[Read args=\{.*\} → 5000 chars omitted\]$/,
+  )
+  expect(getResultText(twiceMsgs[0])).toBe(getResultText(onceMsgs[0]))
+})
+
+test('mid-tier truncation markers are idempotent across repeated compression passes', () => {
+  const messages = buildConversation(10, 5_000)
+  const once = compressToolHistory(messages, 'gpt-4o')
+  const twice = compressToolHistory(once, 'gpt-4o')
+  const onceMsgs = getResultMessages(once)
+  const twiceMsgs = getResultMessages(twice)
+
+  expect(getResultText(onceMsgs[0])).toContain('[…truncated')
+  expect(getResultText(twiceMsgs[0])).toBe(getResultText(onceMsgs[0]))
+})
+
 test('extra block attributes (e.g. cache_control) preserved across rewrites', () => {
   const cacheControl = { type: 'ephemeral' }
   const messages: Msg[] = [

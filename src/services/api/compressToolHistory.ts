@@ -11,14 +11,16 @@
  * Complements (does not replace) microCompact.ts:
  * - microCompact: time/cache-based, runs from query.ts, binary clear/keep,
  *   limited to Claude (cache editing) or idle gaps (time-based).
- * - compressToolHistory: size-based, runs at the shim layer, tiered
- *   compression, covers the gap for active sessions on non-Claude providers.
+ * - compressToolHistory: size-based, runs before provider dispatch with
+ *   shim-level backstops, tiered compression, covers the gap for active
+ *   sessions across providers.
  *
  * Reuses isCompactableTool from microCompact to avoid touching tools the
  * project already classifies as unsafe to compress (e.g. Task, Agent).
  * Skips blocks already cleared by microCompact (TOOL_RESULT_CLEARED_MESSAGE).
  *
- * Anthropic native bypasses both shims, so it is unaffected by this module.
+ * Idempotent by design: adapters may call this as a safety net after query.ts
+ * has already compressed the shared request payload.
  */
 import { getEffectiveContextWindowSize } from '../compact/autoCompact.js'
 import { isCompactableTool } from '../compact/microCompact.js'
@@ -34,6 +36,8 @@ const MID_MAX_CHARS = 2_000
 // (file paths, short commands, small queries). Long inputs are rare and clamping
 // here keeps the stub size bounded even when callers pass oversized arguments.
 const STUB_ARGS_MAX_CHARS = 200
+const MID_TRUNCATION_MARKER = 'chars from tool history]'
+const OLD_STUB_PATTERN = /^\[[^\]]+ args=.* → \d+ chars omitted\]$/
 
 type AnyMessage = {
   role?: string
@@ -191,11 +195,16 @@ function isAlreadyCleared(block: ToolResultBlock): boolean {
   return text === TOOL_RESULT_CLEARED_MESSAGE
 }
 
+function isAlreadyCompressed(block: ToolResultBlock): boolean {
+  const text = extractText(block.content)
+  return text.includes(MID_TRUNCATION_MARKER) || OLD_STUB_PATTERN.test(text)
+}
+
 function shouldCompressBlock(
   block: ToolResultBlock,
   toolUsesById: Map<string, ToolUseBlock>,
 ): boolean {
-  if (isAlreadyCleared(block)) return false
+  if (isAlreadyCleared(block) || isAlreadyCompressed(block)) return false
   const toolUse = toolUsesById.get(block.tool_use_id ?? '')
   // Unknown tool name (orphan tool_result with no matching tool_use) falls
   // through to compression with a generic "tool" stub. Safer default: the
