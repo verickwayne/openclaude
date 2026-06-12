@@ -4,8 +4,10 @@ import { randomUUID } from 'node:crypto'
 import { adapterFor } from './adapters/index.js'
 import type { DiscoveredTranscript, ResumeMode } from './harnessTypes.js'
 import type { TranscriptMessage, LogOption, SerializedMessage } from '../../types/logs.js'
-import { getProjectsDir } from '../../utils/envUtils.js'
-import { sanitizePath } from '../../utils/path.js'
+import {
+  getCanonicalSessionsDir,
+  recordSessionIndexEntry,
+} from '../../utils/sessionStorage.js'
 
 /**
  * Materialize a foreign `DiscoveredTranscript` into a Limitless session on
@@ -52,7 +54,7 @@ export async function materialize(
   // -----------------------------------------------------------------------
   // Write JSONL file
   // -----------------------------------------------------------------------
-  const dir = join(getProjectsDir(), sanitizePath(cwd))
+  const dir = getCanonicalSessionsDir()
   mkdirSync(dir, { recursive: true })
 
   const filePath = join(dir, `${newSessionId}.jsonl`)
@@ -75,6 +77,7 @@ export async function materialize(
   lines.push(JSON.stringify(tagRecord) + '\n')
 
   writeFileSync(filePath, lines.join(''), 'utf8')
+  recordSessionIndexEntry(newSessionId, filePath, cwd)
 
   // -----------------------------------------------------------------------
   // Build LogOption
@@ -93,6 +96,7 @@ export async function materialize(
     modified: now,
     messages: recs as unknown as SerializedMessage[],
     projectPath: cwd,
+    fullPath: filePath,
     // Required fields with no natural cross-harness equivalent
     date: now.toISOString(),
     value: 0,

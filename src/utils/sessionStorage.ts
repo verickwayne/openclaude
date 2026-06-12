@@ -4,7 +4,15 @@ import type { Dirent } from 'fs'
 // Sync fs primitives for readFileTailSync — separate from fs/promises
 // imports above. Named (not wildcard) per CLAUDE.md style; no collisions
 // with the async-suffixed names.
-import { closeSync, fstatSync, openSync, readSync } from 'fs'
+import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  readSync,
+  statSync,
+} from 'fs'
 import {
   appendFile as fsAppendFile,
   open as fsOpen,
@@ -220,6 +228,96 @@ export function getTranscriptPathForSession(sessionId: string): string {
   return join(projectDir, `${sessionId}.jsonl`)
 }
 
+export function getCanonicalSessionsDir(): string {
+  return join(getClaudeConfigHomeDir(), 'sessions')
+}
+
+export function getCanonicalTranscriptPathForSession(sessionId: string): string {
+  return join(getCanonicalSessionsDir(), `${sessionId}.jsonl`)
+}
+
+type SessionIndexEntry = {
+  type: 'session-index'
+  version: 1
+  sessionId: string
+  fullPath: string
+  projectPath?: string
+  updatedAt: string
+  modifiedMs: number
+  createdMs: number
+  fileSize: number
+}
+
+function getSessionIndexPath(): string {
+  return join(getClaudeConfigHomeDir(), 'session_index.jsonl')
+}
+
+export function recordSessionIndexEntry(
+  sessionId: string,
+  fullPath: string,
+  projectPath?: string,
+): void {
+  try {
+    const st = statSync(fullPath)
+    appendEntryToFile(getSessionIndexPath(), {
+      type: 'session-index',
+      version: 1,
+      sessionId,
+      fullPath,
+      projectPath,
+      updatedAt: new Date().toISOString(),
+      modifiedMs: st.mtime.getTime(),
+      createdMs: st.birthtime.getTime(),
+      fileSize: st.size,
+    } satisfies SessionIndexEntry)
+  } catch {
+    // Best-effort index. The filesystem scan fallback still works.
+  }
+}
+
+async function resolveIndexedSessionFilePath(
+  sessionId: string,
+): Promise<string | null> {
+  let raw: string
+  try {
+    raw = await readFile(getSessionIndexPath(), 'utf-8')
+  } catch {
+    return null
+  }
+
+  let best:
+    | {
+        fullPath: string
+        modifiedMs: number
+      }
+    | undefined
+
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const entry = jsonParse(line) as Partial<SessionIndexEntry>
+      if (
+        entry.type !== 'session-index' ||
+        entry.version !== 1 ||
+        entry.sessionId !== sessionId ||
+        !entry.fullPath
+      ) {
+        continue
+      }
+      const st = await stat(entry.fullPath)
+      if (!st.isFile() || st.size === 0) continue
+      const modifiedMs = st.mtime.getTime()
+      if (!best || modifiedMs > best.modifiedMs) {
+        best = { fullPath: entry.fullPath, modifiedMs }
+      }
+    } catch {
+      // Ignore stale/corrupt index rows.
+    }
+  }
+
+  return best?.fullPath ?? null
+}
+
 // 50 MB — session JSONL can grow to multiple GB (inc-3930). Callers that
 // read the raw transcript must bail out above this threshold to avoid OOM.
 export const MAX_TRANSCRIPT_READ_BYTES = 50 * 1024 * 1024
@@ -395,12 +493,53 @@ export async function listRemoteAgentMetadata(): Promise<
 }
 
 export function sessionIdExists(sessionId: string): boolean {
-  const projectDir = getProjectDir(getOriginalCwd())
-  const sessionFile = join(projectDir, `${sessionId}.jsonl`)
   const fs = getFsImplementation()
+  const fileName = `${sessionId}.jsonl`
+  const candidates = [
+    join(getProjectDir(getOriginalCwd()), fileName),
+    getCanonicalTranscriptPathForSession(sessionId),
+  ]
+
   try {
-    fs.statSync(sessionFile)
-    return true
+    const raw = readFileSync(getSessionIndexPath(), 'utf-8')
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue
+      try {
+        const entry = jsonParse(line) as Partial<SessionIndexEntry>
+        if (
+          entry.type === 'session-index' &&
+          entry.version === 1 &&
+          entry.sessionId === sessionId &&
+          entry.fullPath
+        ) {
+          candidates.push(entry.fullPath)
+        }
+      } catch {
+        // Ignore corrupt index rows.
+      }
+    }
+  } catch {
+    // Missing index is fine; fall back to direct filesystem checks.
+  }
+
+  try {
+    for (const dirent of readdirSync(getProjectsDir(), { withFileTypes: true })) {
+      if (dirent.isDirectory()) candidates.push(join(getProjectsDir(), dirent.name, fileName))
+    }
+  } catch {
+    // Missing projects dir is fine.
+  }
+
+  try {
+    for (const sessionFile of candidates) {
+      try {
+        const st = fs.statSync(sessionFile)
+        if (st.isFile() && st.size > 0) return true
+      } catch {
+        // Try the next candidate.
+      }
+    }
+    return false
   } catch {
     return false
   }
@@ -4099,6 +4238,20 @@ async function resolveSessionFilePath(sessionId: UUID): Promise<string> {
     // launched from. Fall back to scanning all project buckets for that file.
   }
 
+  const indexed = await resolveIndexedSessionFilePath(sessionId)
+  if (indexed) return indexed
+
+  const canonicalFile = getCanonicalTranscriptPathForSession(sessionId)
+  try {
+    const st = await stat(canonicalFile)
+    if (st.isFile() && st.size > 0) {
+      recordSessionIndexEntry(sessionId, canonicalFile)
+      return canonicalFile
+    }
+  } catch {
+    // Keep scanning legacy project buckets.
+  }
+
   const projectsDir = getProjectsDir()
   let dirents: Dirent[]
   try {
@@ -4112,6 +4265,7 @@ async function resolveSessionFilePath(sessionId: UUID): Promise<string> {
     const candidate = join(projectsDir, dirent.name, fileName)
     try {
       await stat(candidate)
+      recordSessionIndexEntry(sessionId, candidate)
       return candidate
     } catch {
       // Keep scanning other project buckets.
@@ -4271,12 +4425,13 @@ async function loadAllProjectsMessageLogsFull(
   try {
     dirents = await readdir(projectsDir, { withFileTypes: true })
   } catch {
-    return []
+    return getLogsWithoutIndex(getCanonicalSessionsDir(), limit)
   }
 
   const projectDirs = dirents
     .filter(dirent => dirent.isDirectory())
     .map(dirent => join(projectsDir, dirent.name))
+  projectDirs.push(getCanonicalSessionsDir())
 
   const logsPerProject = await Promise.all(
     projectDirs.map(projectDir => getLogsWithoutIndex(projectDir, limit)),
@@ -4312,12 +4467,22 @@ export async function loadAllProjectsMessageLogsProgressive(
   try {
     dirents = await readdir(projectsDir, { withFileTypes: true })
   } catch {
-    return { logs: [], allStatLogs: [], nextIndex: 0 }
+    const rawLogs = await getSessionFilesLite(getCanonicalSessionsDir(), limit)
+    const { logs, nextIndex } = await enrichLogs(
+      rawLogs,
+      0,
+      initialEnrichCount,
+    )
+    logs.forEach((log, i) => {
+      log.value = i
+    })
+    return { logs, allStatLogs: rawLogs, nextIndex }
   }
 
   const projectDirs = dirents
     .filter(dirent => dirent.isDirectory())
     .map(dirent => join(projectsDir, dirent.name))
+  projectDirs.push(getCanonicalSessionsDir())
 
   const rawLogs: LogOption[] = []
   for (const projectDir of projectDirs) {
@@ -5277,6 +5442,7 @@ export async function getSessionFilesLite(
   const logs: LogOption[] = []
 
   for (const [sessionId, fileInfo] of entries) {
+    recordSessionIndexEntry(sessionId, fileInfo.path, projectPath)
     logs.push({
       date: new Date(fileInfo.mtime).toISOString(),
       messages: [],

@@ -1,11 +1,18 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import type { UUID } from 'node:crypto'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { setClaudeConfigHomeDirForTesting } from './envUtils.ts'
 import {
   buildConversationChain,
+  getCanonicalTranscriptPathForSession,
+  getLastSessionLog,
   loadTranscriptFile,
+  recordSessionIndexEntry,
+  resetProjectForTesting,
+  sessionIdExists,
   stripPersistedToolUseResultsFromJSONLBuffer,
 } from './sessionStorage.ts'
 
@@ -96,6 +103,8 @@ async function writeJsonl(entries: unknown[]): Promise<string> {
 }
 
 afterEach(async () => {
+  setClaudeConfigHomeDirForTesting(undefined)
+  resetProjectForTesting()
   await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
 })
 
@@ -258,4 +267,27 @@ test('loadTranscriptFile omits raw toolUseResult for persisted-output transcript
   expect(
     (loaded?.message.content as Array<{ content: string }>)[0]?.content,
   ).toContain('Preview text')
+})
+
+test('getLastSessionLog resolves a canonical transcript through the global session index', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'limitless-session-index-'))
+  tempDirs.push(configDir)
+  setClaudeConfigHomeDirForTesting(configDir)
+  resetProjectForTesting()
+
+  const canonicalSessionId =
+    '00000000-0000-4000-8000-000000000777' as UUID
+  const filePath = getCanonicalTranscriptPathForSession(canonicalSessionId)
+  await mkdir(join(configDir, 'sessions'), { recursive: true })
+  await writeFile(
+    filePath,
+    `${JSON.stringify(user(id(777), null, 'canonical hello'))}\n`,
+  )
+  recordSessionIndexEntry(canonicalSessionId, filePath, '/canonical/project')
+
+  expect(sessionIdExists(canonicalSessionId)).toBe(true)
+  const log = await getLastSessionLog(canonicalSessionId)
+  expect(log).not.toBeNull()
+  expect(log?.fullPath).toBe(filePath)
+  expect(log?.firstPrompt).toBe('canonical hello')
 })

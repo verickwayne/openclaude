@@ -225,15 +225,15 @@ const thirdPartyPermissiveModeNotice: StatusNoticeDefinition = {
       </Box>;
   }
 };
-// `--dangerously-skip-permissions` (a.k.a. bypassPermissions) auto-approves
+// Bypass permissions mode auto-approves
 // every tool call. On first-party builds an employee-only sandbox check
-// (Docker/Bubblewrap + no internet) gates this flag; external users skip the
-// check entirely (setup.ts), so the flag is effectively "run any command with
+// (Docker/Bubblewrap + no internet) gates this mode; external users skip the
+// check entirely (setup.ts), so the mode is effectively "run any command with
 // no review". Warn loudly. Detection reads from process.argv so the notice
 // fires from the first frame, before any AppState mode change propagates.
 // See issue #244 finding 2.
 function hasDangerouslySkipPermissionsArg(): boolean {
-  return process.argv.includes('--dangerously-skip-permissions');
+  return process.argv.includes('--dangerously-skip-permissions') || process.argv.includes('--yolo');
 }
 const dangerouslySkipPermissionsNotice: StatusNoticeDefinition = {
   id: 'dangerously-skip-permissions-no-sandbox',
@@ -244,9 +244,9 @@ const dangerouslySkipPermissionsNotice: StatusNoticeDefinition = {
   render: () => <Box flexDirection="row">
       <Text color="warning">{figures.warning}</Text>
       <Text color="warning">
-        <Text bold>--dangerously-skip-permissions</Text> bypasses every tool
+        <Text bold>bypass permissions mode</Text> bypasses every tool
         consent check.
-        <Text dimColor> Only use inside a sandbox with no internet access. Restart without the flag to re-enable prompts.</Text>
+        <Text dimColor> Only use inside a sandbox with no internet access. Restart with --permission-mode default to re-enable prompts.</Text>
       </Text>
     </Box>
 };
