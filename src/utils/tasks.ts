@@ -76,10 +76,10 @@ export type TaskStatus = z.infer<ReturnType<typeof TaskStatusSchema>>
 export const TaskSchema = lazySchema(() =>
   z.object({
     id: z.string(),
-    subject: z.string(),
+    subject: z.string().min(1),
     description: z.string(),
-    activeForm: z.string().optional(), // present continuous form for spinner (e.g., "Running tests")
-    owner: z.string().optional(), // agent ID
+    activeForm: z.string().min(1).optional(), // present continuous form for spinner (e.g., "Running tests")
+    owner: z.string().min(1).optional(), // agent ID
     status: TaskStatusSchema(),
     blocks: z.array(z.string()), // task IDs this task blocks
     blockedBy: z.array(z.string()), // task IDs that block this task
@@ -87,6 +87,62 @@ export const TaskSchema = lazySchema(() =>
   }),
 )
 export type Task = z.infer<ReturnType<typeof TaskSchema>>
+
+function firstUsefulLine(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  return trimmed.split(/\n+/)[0]?.trim() || undefined
+}
+
+function fallbackSubjectFromDescription(value: unknown): string | undefined {
+  const firstLine = firstUsefulLine(value)
+  if (!firstLine) return undefined
+  const firstSentence = firstLine.match(/^(.+?[.!?])(?:\s|$)/)?.[1]
+  return (firstSentence ?? firstLine).trim()
+}
+
+export function normalizeTaskDataForRead(
+  raw: unknown,
+  taskId: string,
+): unknown {
+  if (!raw || typeof raw !== 'object') return raw
+
+  const data = { ...(raw as Record<string, unknown>) }
+  data.id = typeof data.id === 'string' && data.id.trim() ? data.id : taskId
+
+  const subject =
+    firstUsefulLine(data.subject) ??
+    firstUsefulLine(data.content) ??
+    firstUsefulLine(data.title) ??
+    firstUsefulLine(data.name) ??
+    firstUsefulLine(data.activeForm) ??
+    fallbackSubjectFromDescription(data.description) ??
+    `Task #${data.id}`
+
+  data.subject = subject
+  data.description =
+    typeof data.description === 'string' ? data.description : ''
+
+  const activeForm = firstUsefulLine(data.activeForm)
+  if (activeForm) {
+    data.activeForm = activeForm
+  } else {
+    delete data.activeForm
+  }
+
+  const owner = firstUsefulLine(data.owner)
+  if (owner) {
+    data.owner = owner
+  } else {
+    delete data.owner
+  }
+
+  if (!Array.isArray(data.blocks)) data.blocks = []
+  if (!Array.isArray(data.blockedBy)) data.blockedBy = []
+
+  return data
+}
 
 // High water mark file name - stores the maximum task ID ever assigned
 const HIGH_WATER_MARK_FILE = '.highwatermark'
@@ -314,7 +370,9 @@ export async function getTask(
   const path = getTaskPath(taskListId, taskId)
   try {
     const content = await readFile(path, 'utf-8')
-    const data = jsonParse(content) as { status?: string }
+    const data = normalizeTaskDataForRead(jsonParse(content), taskId) as {
+      status?: string
+    }
 
     // TEMPORARY: Migrate old status names for existing sessions (internal-only)
     if (process.env.USER_TYPE === 'ant') {

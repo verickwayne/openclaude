@@ -36,10 +36,12 @@ const inputSchema = lazySchema(() => {
 
   return z.strictObject({
     taskId: z.string().describe('The ID of the task to update'),
-    subject: z.string().optional().describe('New subject for the task'),
+    subject: z.string().trim().min(1).optional().describe('New subject for the task'),
     description: z.string().optional().describe('New description for the task'),
     activeForm: z
       .string()
+      .trim()
+      .min(1)
       .optional()
       .describe(
         'Present continuous form shown in spinner when in_progress (e.g., "Running tests")',

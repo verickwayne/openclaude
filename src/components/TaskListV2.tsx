@@ -28,6 +28,17 @@ function byIdAsc(a: Task, b: Task): number {
   }
   return a.id.localeCompare(b.id);
 }
+
+function getTaskDisplaySubject(task: Task): string {
+  const subject = task.subject?.trim();
+  if (subject) return subject;
+  const activeForm = task.activeForm?.trim();
+  if (activeForm) return activeForm;
+  const description = task.description?.trim().split(/\n+/)[0]?.trim();
+  if (description) return description;
+  return `Task #${task.id}`;
+}
+
 export function TaskListV2({
   tasks,
   isStandalone = false
@@ -279,10 +290,11 @@ function TaskItem(t0) {
   const ownerWidth = t2;
   const maxSubjectWidth = Math.max(15, columns - 15 - ownerWidth);
   let t3;
-  if ($[5] !== maxSubjectWidth || $[6] !== task.subject) {
-    t3 = truncateToWidth(task.subject, maxSubjectWidth);
+  const taskSubject = getTaskDisplaySubject(task);
+  if ($[5] !== maxSubjectWidth || $[6] !== taskSubject) {
+    t3 = truncateToWidth(taskSubject, maxSubjectWidth);
     $[5] = maxSubjectWidth;
-    $[6] = task.subject;
+    $[6] = taskSubject;
     $[7] = t3;
   } else {
     t3 = $[7];
