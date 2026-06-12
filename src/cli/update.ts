@@ -144,7 +144,7 @@ export async function update() {
     writeToStdout('\n')
 
     if (packageManager === 'homebrew') {
-      writeToStdout('Claude is managed by Homebrew.\n')
+      writeToStdout('Limitless is managed by Homebrew.\n')
       const latest = await getLatestVersion(channel)
       if (latest && !gte(MACRO.DISPLAY_VERSION, latest)) {
         writeToStdout(`Update available: ${MACRO.DISPLAY_VERSION} → ${latest}\n`)
@@ -152,10 +152,10 @@ export async function update() {
         writeToStdout('To update, run:\n')
         writeToStdout(chalk.bold('  brew upgrade claude-code') + '\n')
       } else {
-        writeToStdout('Claude is up to date!\n')
+        writeToStdout('Limitless is up to date!\n')
       }
     } else if (packageManager === 'winget') {
-      writeToStdout('Claude is managed by winget.\n')
+      writeToStdout('Limitless is managed by winget.\n')
       const latest = await getLatestVersion(channel)
       if (latest && !gte(MACRO.DISPLAY_VERSION, latest)) {
         writeToStdout(`Update available: ${MACRO.DISPLAY_VERSION} → ${latest}\n`)
@@ -165,10 +165,10 @@ export async function update() {
           chalk.bold('  winget upgrade Anthropic.ClaudeCode') + '\n',
         )
       } else {
-        writeToStdout('Claude is up to date!\n')
+        writeToStdout('Limitless is up to date!\n')
       }
     } else if (packageManager === 'apk') {
-      writeToStdout('Claude is managed by apk.\n')
+      writeToStdout('Limitless is managed by apk.\n')
       const latest = await getLatestVersion(channel)
       if (latest && !gte(MACRO.DISPLAY_VERSION, latest)) {
         writeToStdout(`Update available: ${MACRO.DISPLAY_VERSION} → ${latest}\n`)
@@ -176,13 +176,13 @@ export async function update() {
         writeToStdout('To update, run:\n')
         writeToStdout(chalk.bold('  apk upgrade claude-code') + '\n')
       } else {
-        writeToStdout('Claude is up to date!\n')
+        writeToStdout('Limitless is up to date!\n')
       }
     } else {
       // pacman, deb, and rpm don't get specific commands because they each have
       // multiple frontends (pacman: yay/paru/makepkg, deb: apt/apt-get/aptitude/nala,
       // rpm: dnf/yum/zypper)
-      writeToStdout('Claude is managed by a package manager.\n')
+      writeToStdout('Limitless is managed by a package manager.\n')
       writeToStdout('Please use your package manager to update.\n')
     }
 
@@ -249,7 +249,7 @@ export async function update() {
           : ''
         writeToStdout(
           chalk.yellow(
-            `Another Claude process${pidInfo} is currently running. Please try again in a moment.`,
+            `Another Limitless process${pidInfo} is currently running. Please try again in a moment.`,
           ) + '\n',
         )
         await gracefulShutdown(0)

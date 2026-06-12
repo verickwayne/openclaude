@@ -386,7 +386,7 @@ ${HOOK_VERIFICATION_FLOW}
 
 ### Adding a Hook
 
-User: "Format my code after Claude writes it"
+User: "Format my code after Limitless writes it"
 
 1. **Clarify**: Which formatter? (prettier, gofmt, etc.)
 2. **Read**: \`.limitless/settings.json\` (or create if missing)
