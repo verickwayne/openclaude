@@ -1,0 +1,16 @@
+{
+  "//": "Honest source-level type signal for the ratchet gate. NOT green: ~1,451 genuine errors exist (the bundler+esbuild ships fine without tsc). Tests excluded (run by `bun test`; their type-globals are a separate concern). Orphan subtrees slated for Phase 3 deletion are excluded. Use with scripts/tsc-ratchet.ts: freeze the baseline, fail CI on any NEW (file,error-code) fingerprint.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/cli/transports/**",
+    "src/assistant/**",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/__tests__/**"
+  ]
+}
