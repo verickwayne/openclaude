@@ -14,6 +14,8 @@ const originalEnv = {
     process.env.CLAUDE_CODE_OPENAI_CONTEXT_WINDOWS,
   CLAUDE_CODE_OPENAI_MAX_OUTPUT_TOKENS:
     process.env.CLAUDE_CODE_OPENAI_MAX_OUTPUT_TOKENS,
+  LIMITLESS_DISABLE_MAX_OUTPUT_SLOT_CAP:
+    process.env.LIMITLESS_DISABLE_MAX_OUTPUT_SLOT_CAP,
   OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
   OPENAI_API_BASE: process.env.OPENAI_API_BASE,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
@@ -28,6 +30,7 @@ beforeEach(async () => {
   delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
   delete process.env.CLAUDE_CODE_OPENAI_CONTEXT_WINDOWS
   delete process.env.CLAUDE_CODE_OPENAI_MAX_OUTPUT_TOKENS
+  delete process.env.LIMITLESS_DISABLE_MAX_OUTPUT_SLOT_CAP
   delete process.env.OPENAI_BASE_URL
   delete process.env.OPENAI_API_BASE
   delete process.env.OPENAI_API_KEY
@@ -60,6 +63,12 @@ afterEach(() => {
     } else {
       process.env.CLAUDE_CODE_OPENAI_MAX_OUTPUT_TOKENS =
         originalEnv.CLAUDE_CODE_OPENAI_MAX_OUTPUT_TOKENS
+    }
+    if (originalEnv.LIMITLESS_DISABLE_MAX_OUTPUT_SLOT_CAP === undefined) {
+      delete process.env.LIMITLESS_DISABLE_MAX_OUTPUT_SLOT_CAP
+    } else {
+      process.env.LIMITLESS_DISABLE_MAX_OUTPUT_SLOT_CAP =
+        originalEnv.LIMITLESS_DISABLE_MAX_OUTPUT_SLOT_CAP
     }
     if (originalEnv.OPENAI_MODEL === undefined) {
       delete process.env.OPENAI_MODEL
@@ -106,7 +115,7 @@ test('deepseek-v4-flash uses the gateway-safe output cap by default', () => {
     default: 65_536,
     upperLimit: 65_536,
   })
-  expect(getMaxOutputTokensForModel('deepseek-v4-flash')).toBe(65_536)
+  expect(getMaxOutputTokensForModel('deepseek-v4-flash')).toBe(8_000)
 })
 
 test('deepseek-v4-flash uses DeepSeek direct API max output cap on api.deepseek.com', () => {
@@ -120,7 +129,7 @@ test('deepseek-v4-flash uses DeepSeek direct API max output cap on api.deepseek.
     default: 393_216,
     upperLimit: 393_216,
   })
-  expect(getMaxOutputTokensForModel('deepseek-v4-flash')).toBe(393_216)
+  expect(getMaxOutputTokensForModel('deepseek-v4-flash')).toBe(8_000)
 })
 
 test('deepseek-v4-pro uses the gateway-safe output cap by default', () => {
@@ -133,7 +142,7 @@ test('deepseek-v4-pro uses the gateway-safe output cap by default', () => {
     default: 65_536,
     upperLimit: 65_536,
   })
-  expect(getMaxOutputTokensForModel('deepseek-v4-pro')).toBe(65_536)
+  expect(getMaxOutputTokensForModel('deepseek-v4-pro')).toBe(8_000)
 })
 
 test('deepseek-v4-pro uses DeepSeek direct API max output cap on api.deepseek.com', () => {
@@ -147,7 +156,7 @@ test('deepseek-v4-pro uses DeepSeek direct API max output cap on api.deepseek.co
     default: 393_216,
     upperLimit: 393_216,
   })
-  expect(getMaxOutputTokensForModel('deepseek-v4-pro')).toBe(393_216)
+  expect(getMaxOutputTokensForModel('deepseek-v4-pro')).toBe(8_000)
 })
 
 test('deepseek-v4-pro keeps gateway routes on the lower output cap', () => {
@@ -160,7 +169,7 @@ test('deepseek-v4-pro keeps gateway routes on the lower output cap', () => {
     default: 65_536,
     upperLimit: 65_536,
   })
-  expect(getMaxOutputTokensForModel('deepseek-v4-pro')).toBe(65_536)
+  expect(getMaxOutputTokensForModel('deepseek-v4-pro')).toBe(8_000)
 })
 
 test('deepseek legacy aliases keep their documented provider caps', () => {
@@ -170,8 +179,8 @@ test('deepseek legacy aliases keep their documented provider caps', () => {
 
   expect(getContextWindowForModel('deepseek-chat')).toBe(128_000)
   expect(getContextWindowForModel('deepseek-reasoner')).toBe(128_000)
-  expect(getMaxOutputTokensForModel('deepseek-chat')).toBe(8_192)
-  expect(getMaxOutputTokensForModel('deepseek-reasoner')).toBe(65_536)
+  expect(getMaxOutputTokensForModel('deepseek-chat')).toBe(8_000)
+  expect(getMaxOutputTokensForModel('deepseek-reasoner')).toBe(8_000)
 })
 
 test('deepseek-v4-pro clamps oversized max output overrides to the provider limit', () => {
@@ -201,7 +210,7 @@ test('gpt-4o uses provider-specific context and output caps', () => {
     default: 16_384,
     upperLimit: 16_384,
   })
-  expect(getMaxOutputTokensForModel('gpt-4o')).toBe(16_384)
+  expect(getMaxOutputTokensForModel('gpt-4o')).toBe(8_000)
 })
 
 test('gpt-4o clamps oversized max output overrides to the provider limit', () => {
@@ -210,6 +219,15 @@ test('gpt-4o clamps oversized max output overrides to the provider limit', () =>
   delete process.env.OPENAI_MODEL
 
   expect(getMaxOutputTokensForModel('gpt-4o')).toBe(16_384)
+})
+
+test('max output slot cap can be disabled for full provider defaults', () => {
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.LIMITLESS_DISABLE_MAX_OUTPUT_SLOT_CAP = '1'
+  delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
+  delete process.env.OPENAI_MODEL
+
+  expect(getMaxOutputTokensForModel('MiniMax-M2.7')).toBe(131_072)
 })
 
 test('gpt-5.5 uses conservative Codex-route context window (issue #1118)', () => {
@@ -268,7 +286,7 @@ test('MiniMax-M2.7 uses explicit provider-specific context and output caps', () 
     default: 131_072,
     upperLimit: 131_072,
   })
-  expect(getMaxOutputTokensForModel('MiniMax-M2.7')).toBe(131_072)
+  expect(getMaxOutputTokensForModel('MiniMax-M2.7')).toBe(8_000)
 })
 
 test('env-only MiniMax key uses provider-specific context and output caps before client setup', () => {
@@ -282,7 +300,7 @@ test('env-only MiniMax key uses provider-specific context and output caps before
     default: 131_072,
     upperLimit: 131_072,
   })
-  expect(getMaxOutputTokensForModel('MiniMax-M2.7')).toBe(131_072)
+  expect(getMaxOutputTokensForModel('MiniMax-M2.7')).toBe(8_000)
 })
 
 test('env-only xAI key uses provider-specific context and output caps before client setup', () => {
@@ -296,13 +314,13 @@ test('env-only xAI key uses provider-specific context and output caps before cli
     default: 32_768,
     upperLimit: 32_768,
   })
-  expect(getMaxOutputTokensForModel('grok-4.3')).toBe(32_768)
+  expect(getMaxOutputTokensForModel('grok-4.3')).toBe(8_000)
   expect(getContextWindowForModel('grok-4')).toBe(2_000_000)
   expect(getModelMaxOutputTokens('grok-4')).toEqual({
     default: 32_768,
     upperLimit: 32_768,
   })
-  expect(getMaxOutputTokensForModel('grok-4')).toBe(32_768)
+  expect(getMaxOutputTokensForModel('grok-4')).toBe(8_000)
 })
 
 test('unknown openai-compatible models use the 128k fallback window (not 8k, see #635)', () => {
@@ -323,7 +341,7 @@ test('prefixed OpenGateway Gemini Flash Lite uses integration metadata', () => {
     default: 65_536,
     upperLimit: 65_536,
   })
-  expect(getMaxOutputTokensForModel('google/gemini-3.1-flash-lite-preview')).toBe(65_536)
+  expect(getMaxOutputTokensForModel('google/gemini-3.1-flash-lite-preview')).toBe(8_000)
 })
 
 test('OpenAI-compatible custom model limits honor documented env overrides', () => {
@@ -460,7 +478,7 @@ test('DashScope qwen3.6-plus uses provider-specific context and output caps', ()
     default: 65_536,
     upperLimit: 65_536,
   })
-  expect(getMaxOutputTokensForModel('qwen3.6-plus')).toBe(65_536)
+  expect(getMaxOutputTokensForModel('qwen3.6-plus')).toBe(8_000)
 })
 
 test('DashScope qwen3.5-plus uses provider-specific context and output caps', () => {
@@ -472,7 +490,7 @@ test('DashScope qwen3.5-plus uses provider-specific context and output caps', ()
     default: 65_536,
     upperLimit: 65_536,
   })
-  expect(getMaxOutputTokensForModel('qwen3.5-plus')).toBe(65_536)
+  expect(getMaxOutputTokensForModel('qwen3.5-plus')).toBe(8_000)
 })
 
 test('DashScope qwen3-coder-plus uses provider-specific context and output caps', () => {

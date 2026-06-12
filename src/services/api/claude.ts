@@ -3473,9 +3473,14 @@ export function adjustParamsForNonStreaming<
   }
 }
 
-function isMaxTokensCapEnabled(): boolean {
-  // 3P default: false (not validated on Bedrock/Vertex)
-  return getFeatureValue_CACHED_MAY_BE_STALE('tengu_otk_slot_v1', false)
+export function isMaxTokensCapEnabled(): boolean {
+  if (isEnvTruthy(process.env.LIMITLESS_DISABLE_MAX_OUTPUT_SLOT_CAP)) {
+    return false
+  }
+  // Limitless defaults to the slot-reservation cap. Reserving huge output
+  // windows on every turn makes provider-neutral routes reject otherwise valid
+  // prompts earlier because most APIs validate input_tokens + max_tokens.
+  return getFeatureValue_CACHED_MAY_BE_STALE('tengu_otk_slot_v1', true)
 }
 
 export function getMaxOutputTokensForModel(model: string): number {
