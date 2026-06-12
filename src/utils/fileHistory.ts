@@ -882,6 +882,10 @@ function maybeExpandFilePath(filePath: string): string {
   return join(getOriginalCwd(), filePath)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /**
  * Restores file history snapshot state for a given log option.
  */
@@ -898,11 +902,14 @@ export function fileHistoryRestoreStateFromLog(
   // Rebuild the tracked files from the snapshots
   const trackedFiles = new Set<string>()
   for (const snapshot of fileHistorySnapshots) {
+    if (!isRecord(snapshot.trackedFileBackups)) {
+      continue
+    }
     const trackedFileBackups: Record<string, FileHistoryBackup> = {}
     for (const [path, backup] of Object.entries(snapshot.trackedFileBackups)) {
       const trackingPath = maybeShortenFilePath(path)
       trackedFiles.add(trackingPath)
-      trackedFileBackups[trackingPath] = backup
+      trackedFileBackups[trackingPath] = backup as FileHistoryBackup
     }
     snapshots.push({
       ...snapshot,
