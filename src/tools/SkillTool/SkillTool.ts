@@ -78,7 +78,7 @@ import {
  * Gets all commands including MCP skills/prompts from AppState.
  * SkillTool needs this because getCommands() only returns local/bundled skills.
  */
-async function getAllCommands(context: ToolUseContext): Promise<Command[]> {
+export async function getAllCommands(context: ToolUseContext): Promise<Command[]> {
   // Only include MCP skills (loadedFrom === 'mcp'), not plain MCP prompts.
   // Before this filter, the model could invoke MCP prompts via SkillTool
   // if it guessed the mcp__server__prompt name — they weren't discoverable

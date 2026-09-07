@@ -2739,7 +2739,11 @@ async function getSkillListingAttachments(
     toolUseContext.options.mainLoopModel,
     getSdkBetas(),
   )
-  const content = formatCommandsWithinBudget(newSkills, contextWindowTokens)
+  const fullListing = formatCommandsWithinBudget(newSkills, contextWindowTokens)
+  const canSearch = toolUseContext.options.tools.some(t => toolMatchesName(t, 'LocalSkillSearch'))
+  const content = canSearch && fullListing.length > 4000
+    ? `${newSkills.length} additional skills are available on demand. Use LocalSkillSearch(query="task keywords") before specialized work, then Skill(skill="exact-name") to load the matching instructions. An empty query browses all skills; follow next_offset for more. Full native skills and their permission checks remain available.`
+    : fullListing
 
   return [
     {
