@@ -3001,6 +3001,14 @@ async function getSkillListingAttachments(
       ? uniqBy([...localCommands, ...mcpSkills], 'name')
       : localCommands
 
+  // Large user/project/plugin catalogs belong behind the bounded native
+  // discovery tool.  Keep bundled and MCP skills visible at turn zero: they
+  // are small and explicitly connected, while every other native skill stays
+  // reachable through LocalSkillSearch.
+  if (allCommands.length > FILTERED_LISTING_MAX) {
+    allCommands = filterToBundledAndMcp(allCommands)
+  }
+
   // When skill search is active, filter to bundled + MCP instead of full
   // suppression. Resolves the turn-0 gap: main thread gets turn-0 discovery
   // via getTurnZeroSkillDiscovery (blocking), but subagents use the async
